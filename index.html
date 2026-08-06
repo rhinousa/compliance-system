@@ -303,7 +303,9 @@ const DUE_SOON_DAYS    = 180; // 6 months
 let pmmEntries = [];           // [{id,skuFamily,description,tier,category,supplier,chemCost,photoUrl,components:[{item,component,material}]}]
 let pmmActiveTab = "new";
 let pmmDraftComponents = [{item:"1",component:"",material:""}];
-let pmmDraftSku = "", pmmDraftDesc = "", pmmDraftTier = "", pmmDraftCategory = "", pmmDraftSupplier = "", pmmDraftCost = "";
+let pmmDraftSku = "", pmmDraftDesc = "", pmmDraftTier = "", pmmDraftCategory = "", pmmDraftSupplier = "", pmmDraftCost = "", pmmDraftParentSku = "";
+let pmmSubmitting = false;
+let pmmSheetGidCache = null;
 let pmmDraftPhotoUrl = "";
 let pmmDraftPhotoUploading = false;
 let pmmFilterCategory = "ALL";
@@ -481,7 +483,7 @@ async function fetchSheetData(){
     GROUPS=buildGroups(itemRows,subRows);
     if(!GROUPS.length) throw new Error("Sheet returned 0 items.");
 
-    pmmEntries=pmmBuildEntriesFromRows(rowsToObjects(pmmRange));
+    pmmEntries=pmmBuildEntriesFromRows(pmmRowsToObjectsWithIndex(pmmRange));
 
     localStorage.setItem(LS_CACHE,JSON.stringify(GROUPS));
     const ts=new Date().toISOString();
@@ -2345,14 +2347,38 @@ function pmmBuildEntriesFromRows(rows){
         supplier:pmmPick(row,"Preferred Supplier"),
         chemCost:pmmPick(row,"Estimate Chemical Cost"),
         tier:pmmPick(row,"Tier"),
+        parentSku:pmmPick(row,"Parent SKU"),
         photoUrl:pmmPick(row,"Photo URL"),
         components:[],
+        rowIndexes:[],
       };
     }
+    if(row.__rowIndex) byId[entryId].rowIndexes.push(row.__rowIndex);
     const comp=pmmPick(row,"Component"), item=pmmPick(row,"Item"), material=pmmPick(row,"Material");
     if(comp||item||material) byId[entryId].components.push({item,component:comp,material});
   });
   return Object.values(byId).filter(e=>e.skuFamily||e.description||e.components.length);
+}
+
+// Same as rowsToObjects, but tags each object with its absolute 1-indexed sheet row —
+// needed so a delete can target the exact rows to remove.
+function pmmRowsToObjectsWithIndex(rows){
+  if(!rows||!rows.length) return [];
+  const headers=rows[0].map(h=>String(h||"").trim());
+  const out=[];
+  for(let r=1;r<rows.length;r++){
+    const row=rows[r];
+    if(!row||!row.length) continue;
+    const obj={}; let hasAny=false;
+    headers.forEach((h,i)=>{
+      if(!h) return;
+      const v=row[i]!==undefined?String(row[i]):"";
+      obj[h]=v;
+      if(v) hasAny=true;
+    });
+    if(hasAny){ obj.__rowIndex=r+1; out.push(obj); }
+  }
+  return out;
 }
 
 function pmmMaterialColor(material){
@@ -2406,21 +2432,25 @@ function pmmRenderNewEntry(){
       <div class="pmm-card">
         <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">Product Details</div>
         <div class="pmm-grid2">
-          <div class="pmm-field"><label class="pmm-label">A SKU Family</label><textarea id="pmm-in-sku" class="pmm-input" rows="2" placeholder="e.g. HDKIT-4PK-COLORS" oninput="pmmDraftSku=this.value">${esc(pmmDraftSku)}</textarea></div>
+          <div class="pmm-field"><label class="pmm-label">SKU Family</label><textarea id="pmm-in-sku" class="pmm-input" rows="2" placeholder="e.g. HDKIT-4PK-COLORS" oninput="pmmDraftSku=this.value">${esc(pmmDraftSku)}</textarea></div>
           <div class="pmm-field"><label class="pmm-label">Product Description</label><textarea id="pmm-in-desc" class="pmm-input" rows="2" placeholder="e.g. Rhino USA Heavy Duty Ratchet Tie-Down" oninput="pmmDraftDesc=this.value">${esc(pmmDraftDesc)}</textarea></div>
         </div>
         <div class="pmm-grid2">
+          <div class="pmm-field"><label class="pmm-label">Parent SKU</label><input id="pmm-in-parentsku" class="pmm-input" placeholder="e.g. HDKIT-4PK-COLORS" value="${esc(pmmDraftParentSku)}" oninput="pmmDraftParentSku=this.value"/></div>
           <div class="pmm-field"><label class="pmm-label">Tier</label><input id="pmm-in-tier" class="pmm-input" placeholder="e.g. Tier 1" value="${esc(pmmDraftTier)}" oninput="pmmDraftTier=this.value"/></div>
+        </div>
+        <div class="pmm-grid2">
           <div class="pmm-field"><label class="pmm-label">Category</label>
             <select id="pmm-in-category" class="pmm-input" onchange="pmmDraftCategory=this.value">
               <option value="">Select category…</option>
               ${PMM_CATEGORIES.map(c=>`<option value="${c}" ${pmmDraftCategory===c?"selected":""}>${c}</option>`).join("")}
             </select>
           </div>
+          <div class="pmm-field"><label class="pmm-label">Preferred Supplier</label><input id="pmm-in-supplier" class="pmm-input" placeholder="Supplier name" value="${esc(pmmDraftSupplier)}" oninput="pmmDraftSupplier=this.value"/></div>
         </div>
         <div class="pmm-grid2">
-          <div class="pmm-field"><label class="pmm-label">Preferred Supplier</label><input id="pmm-in-supplier" class="pmm-input" placeholder="Supplier name" value="${esc(pmmDraftSupplier)}" oninput="pmmDraftSupplier=this.value"/></div>
           <div class="pmm-field"><label class="pmm-label">Estimate Chemical Cost</label><input id="pmm-in-cost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftCost)}" oninput="pmmDraftCost=this.value"/></div>
+          <div></div>
         </div>
       </div>
 
@@ -2459,7 +2489,7 @@ function pmmRenderNewEntry(){
         </div>
       </div>
 
-      <button onclick="pmmSubmitEntry()" style="width:100%;padding:13px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:9px;cursor:pointer">✓ Submit Entry</button>
+      <button id="pmm-submit-btn" onclick="pmmSubmitEntry()" style="width:100%;padding:13px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:9px;cursor:pointer">✓ Submit Entry</button>
     </div>`;
 }
 
@@ -2484,7 +2514,7 @@ async function pmmUploadPhoto(file){
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`+
       `--${boundary}\r\nContent-Type: ${file.type||"image/jpeg"}\r\nContent-Transfer-Encoding: base64\r\n\r\n${base64}\r\n`+
       `--${boundary}--`;
-    const res=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink",{
+    const res=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink&supportsAllDrives=true",{
       method:"POST",
       headers:{Authorization:"Bearer "+accessToken,"Content-Type":`multipart/related; boundary=${boundary}`},
       body,
@@ -2494,7 +2524,7 @@ async function pmmUploadPhoto(file){
     // Make it viewable by teammates — drive.file scope only grants access to files THIS app
     // created, so without a public "anyone with the link can view" permission, only the
     // uploader's own token could ever load the image.
-    await fetch(`https://www.googleapis.com/drive/v3/files/${json.id}/permissions`,{
+    await fetch(`https://www.googleapis.com/drive/v3/files/${json.id}/permissions?supportsAllDrives=true`,{
       method:"POST",
       headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
       body:JSON.stringify({role:"reader",type:"anyone"}),
@@ -2534,8 +2564,8 @@ function pmmImportFile(file){
 }
 
 async function pmmEnsureHeaders(){
-  const headers=["A SKU Family","Product Description","Category","Preferred Supplier","Estimate Chemical Cost","Tier","Entry ID","Photo URL","Item","Component","Material"];
-  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_SHEET)}!A1:K1?valueInputOption=USER_ENTERED`;
+  const headers=["A SKU Family","Product Description","Category","Preferred Supplier","Estimate Chemical Cost","Tier","Entry ID","Photo URL","Item","Component","Material","Parent SKU"];
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_SHEET)}!A1:L1?valueInputOption=USER_ENTERED`;
   await fetch(url,{
     method:"PUT",
     headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
@@ -2543,7 +2573,60 @@ async function pmmEnsureHeaders(){
   });
 }
 
+// Sheets deleteDimension needs the tab's numeric sheetId (not its name) — fetched once and cached.
+async function pmmGetSheetGid(){
+  if(pmmSheetGidCache!==null) return pmmSheetGidCache;
+  const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
+  if(!res.ok) throw new Error("Could not look up the sheet tab info.");
+  const data=await res.json();
+  const sheet=(data.sheets||[]).find(s=>s.properties.title===PMM_SHEET);
+  if(!sheet) throw new Error(`Could not find a tab named "${PMM_SHEET}".`);
+  pmmSheetGidCache=sheet.properties.sheetId;
+  return pmmSheetGidCache;
+}
+
+// Parses a Sheets API updatedRange like "'Product Matrix'!A15:L16" into [15,16].
+function pmmParseRowRange(rangeStr){
+  const m=String(rangeStr||"").match(/![A-Z]+(\d+):[A-Z]+(\d+)/);
+  if(!m) return [];
+  const start=parseInt(m[1]), end=parseInt(m[2]);
+  const out=[]; for(let r=start;r<=end;r++) out.push(r);
+  return out;
+}
+
+async function pmmDeleteEntry(entryId){
+  const entry=pmmEntries.find(e=>e.id===entryId);
+  if(!entry) return;
+  if(!confirm(`Delete "${entry.skuFamily||"this entry"}"? This removes it from the Google Sheet permanently.`)) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+
+  try{
+    if(entry.rowIndexes && entry.rowIndexes.length){
+      const gid=await pmmGetSheetGid();
+      const rowsDesc=[...entry.rowIndexes].sort((a,b)=>b-a); // delete bottom-up so earlier deletes don't shift later ones
+      const requests=rowsDesc.map(r=>({deleteDimension:{range:{sheetId:gid,dimension:"ROWS",startIndex:r-1,endIndex:r}}}));
+      const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{
+        method:"POST",
+        headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
+        body:JSON.stringify({requests}),
+      });
+      if(!res.ok){ const t=await res.text(); throw new Error(`Sheet delete failed (${res.status}): ${t.slice(0,150)}`); }
+    } else {
+      // No known row numbers (e.g. very old cached entry) — remove locally only.
+      pmmEntries=pmmEntries.filter(e=>e.id!==entryId);
+      localStorage.setItem("rhino_pmm_entries_v1",JSON.stringify(pmmEntries));
+      pmmRender();
+      return;
+    }
+    // Deleting rows shifts every other entry's row numbers, so re-sync to refresh them all correctly.
+    await fetchSheetData();
+  }catch(e){
+    alert("Could not delete: "+e.message);
+  }
+}
+
 async function pmmSubmitEntry(){
+  if(pmmSubmitting) return; // prevents double-click / slow-network duplicate submissions
   if(pmmDraftPhotoUploading){ alert("Please wait for the photo to finish uploading."); return; }
   const skuFamily=pmmDraftSku.trim();
   const description=pmmDraftDesc.trim();
@@ -2551,17 +2634,22 @@ async function pmmSubmitEntry(){
   const category=pmmDraftCategory.trim();
   const supplier=pmmDraftSupplier.trim();
   const chemCost=pmmDraftCost.trim();
-  if(!skuFamily){ alert("A SKU Family is required."); return; }
+  const parentSku=pmmDraftParentSku.trim();
+  if(!skuFamily){ alert("SKU Family is required."); return; }
   const components=pmmDraftComponents.filter(c=>c.item||c.component||c.material);
   if(!components.length){ alert("Add at least one Item / Component / Material row."); return; }
   if(!accessToken){ alert('Please "Connect & Sync" with Google first (top of the Compliance Dashboard tab), then submit again.'); return; }
 
+  pmmSubmitting=true;
+  const btn=document.getElementById("pmm-submit-btn");
+  if(btn){ btn.disabled=true; btn.style.opacity=".6"; btn.textContent="Saving…"; }
+
   const entryId="pmm_"+Date.now();
-  const entry={id:entryId,skuFamily,description,tier,category,supplier,chemCost,photoUrl:pmmDraftPhotoUrl,components};
+  const entry={id:entryId,skuFamily,description,tier,category,supplier,chemCost,parentSku,photoUrl:pmmDraftPhotoUrl,components,rowIndexes:[]};
 
   try{
     await pmmEnsureHeaders();
-    const rows=components.map(c=>[skuFamily,description,category,supplier,chemCost,tier,entryId,pmmDraftPhotoUrl,c.item,c.component,c.material]);
+    const rows=components.map(c=>[skuFamily,description,category,supplier,chemCost,tier,entryId,pmmDraftPhotoUrl,c.item,c.component,c.material,parentSku]);
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const res=await fetch(url,{
       method:"POST",
@@ -2569,15 +2657,21 @@ async function pmmSubmitEntry(){
       body:JSON.stringify({values:rows}),
     });
     if(!res.ok){ const t=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${t.slice(0,150)}`); }
+    const resJson=await res.json();
+    entry.rowIndexes=pmmParseRowRange(resJson?.updates?.updatedRange);
 
     pmmEntries.push(entry);
     localStorage.setItem("rhino_pmm_entries_v1",JSON.stringify(pmmEntries));
     pmmDraftComponents=[{item:"1",component:"",material:""}];
     pmmDraftPhotoUrl="";
-    pmmDraftSku=""; pmmDraftDesc=""; pmmDraftTier=""; pmmDraftCategory=""; pmmDraftSupplier=""; pmmDraftCost="";
+    pmmDraftSku=""; pmmDraftDesc=""; pmmDraftTier=""; pmmDraftCategory=""; pmmDraftSupplier=""; pmmDraftCost=""; pmmDraftParentSku="";
     pmmSwitchTab("compiled");
   }catch(e){
     alert("Could not save entry: "+e.message);
+  }finally{
+    pmmSubmitting=false;
+    const btn2=document.getElementById("pmm-submit-btn");
+    if(btn2){ btn2.disabled=false; btn2.style.opacity="1"; btn2.textContent="✓ Submit Entry"; }
   }
 }
 
@@ -2635,34 +2729,35 @@ function pmmEntryCardHtml(e){
   const rows=e.components.map(c=>{
     const col=pmmMaterialColor(c.material);
     return `<tr>
-      <td style="padding:7px 12px;border-bottom:1px solid #f0f1f3;font-size:11.5px;color:#555;width:50px">${esc(c.item)}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid #f0f1f3;font-size:11.5px;color:#333">${esc(c.component)}</td>
-      <td style="padding:7px 12px;border-bottom:1px solid #f0f1f3;font-size:11.5px;font-weight:600;background:${col.bg};color:${col.text}"><span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}</td>
+      <td style="padding:4px 10px;border-bottom:1px solid #f0f1f3;font-size:10.5px;color:#555;width:36px">${esc(c.item)}</td>
+      <td style="padding:4px 10px;border-bottom:1px solid #f0f1f3;font-size:10.5px;color:#333">${esc(c.component)}</td>
+      <td style="padding:4px 10px;border-bottom:1px solid #f0f1f3;font-size:10.5px;font-weight:600;background:${col.bg};color:${col.text}"><span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}</td>
     </tr>`;
   }).join("");
   return `<div class="pmm-entry-card">
-    <div class="pmm-entry-hdr">
+    <div class="pmm-entry-hdr" style="padding:9px 14px">
       <div>
-        <div style="font-size:13px;font-weight:700;color:#222">${esc(e.skuFamily)}</div>
-        <div style="font-size:11px;color:#888;margin-top:2px">${esc(e.description)}</div>
+        <div style="font-size:12px;font-weight:700;color:#222">${esc(e.skuFamily)}</div>
+        <div style="font-size:10px;color:#888;margin-top:1px">${esc(e.description)}${e.parentSku?` · Parent: ${esc(e.parentSku)}`:""}</div>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
         ${e.tier?`<span class="pmm-tier-badge">${esc(e.tier)}</span>`:""}
         ${e.category?`<span class="pmm-cat-badge">${esc(e.category)}</span>`:""}
+        <button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1">✕</button>
       </div>
     </div>
-    <div style="padding:18px 20px;display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
-      ${e.photoUrl?`<img src="${e.photoUrl}" style="width:220px;max-width:100%;border-radius:8px;flex-shrink:0;border:1px solid #eee"/>`:""}
-      <div style="flex:1;min-width:280px">
+    <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
+      ${e.photoUrl?`<img src="${e.photoUrl}" style="width:110px;max-width:100%;border-radius:6px;flex-shrink:0;border:1px solid #eee"/>`:""}
+      <div style="flex:1;min-width:260px">
         <table style="width:100%;border-collapse:collapse">
           <thead><tr>
-            <th style="text-align:left;padding:6px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
-            <th style="text-align:left;padding:6px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
-            <th style="text-align:left;padding:6px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
+            <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
+            <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
+            <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
-        <div style="font-size:10px;color:#aaa;margin-top:8px">${e.supplier?`Supplier: ${esc(e.supplier)}`:""}${e.supplier&&e.chemCost?" · ":""}${e.chemCost?`Est. Chemical Cost: ${esc(e.chemCost)}`:""}</div>
+        <div style="font-size:9.5px;color:#aaa;margin-top:6px">${e.supplier?`Supplier: ${esc(e.supplier)}`:""}${e.supplier&&e.chemCost?" · ":""}${e.chemCost?`Est. Chemical Cost: ${esc(e.chemCost)}`:""}</div>
       </div>
     </div>
   </div>`;
@@ -2677,8 +2772,9 @@ function pmmRenderDatabase(){
     const q=pmmSearchSku.toLowerCase();
     entries=entries.filter(e=>(e.skuFamily||"").toLowerCase().includes(q));
   }
+  entries.forEach(e=>e.components.forEach(c=>pmmMaterialColor(c.material))); // stable color order
 
-  let html=`<div style="max-width:1300px;margin:0 auto">`;
+  let html=`<div style="max-width:100%;margin:0 auto">`;
   html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
     <div style="flex:1;min-width:200px;max-width:320px">
       <input value="${esc(pmmSearchSku)}" oninput="pmmSearchSku=this.value;pmmRenderDatabase()" placeholder="Search SKU Family…" class="pmm-input"/>
@@ -2693,33 +2789,45 @@ function pmmRenderDatabase(){
   if(!entries.length){
     html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">🗄️</div><div style="font-size:12px">${pmmEntries.length?"No rows match the current filter/search.":'No entries yet — submit one from "New Entry", or click Re-sync in the Compliance Dashboard tab to pull in anything already in the sheet.'}</div></div>`;
   } else {
-    const cols=["SKU Family","Product Description","Category","Tier","Preferred Supplier","Est. Chemical Cost","Item","Component","Material"];
+    const maxComp=Math.max(1, ...entries.map(e=>e.components.length));
+    const fixedCols=["","SKU Family","Product Description","Category","Tier","Preferred Supplier","Parent SKU","Est. Chemical Cost"];
+    const compCols=[]; for(let i=1;i<=maxComp;i++) compCols.push("Component "+i);
+    const matCols=[]; for(let i=1;i<=maxComp;i++) matCols.push("Material "+i);
+    const allCols=[...fixedCols,...compCols,...matCols];
+
     html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap">
+      <table style="width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap">
         <thead><tr style="background:#f2f3f6">
-          ${cols.map(c=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px;border-bottom:1.5px solid #dde0e9;position:sticky;top:0;background:#f2f3f6">${c}</th>`).join("")}
+          ${allCols.map(c=>`<th style="text-align:left;padding:7px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.3px;border-bottom:1.5px solid #dde0e9;position:sticky;top:0;background:#f2f3f6">${c}</th>`).join("")}
         </tr></thead>
         <tbody>`;
     entries.forEach(e=>{
-      const rows=e.components.length?e.components:[{item:"",component:"",material:""}];
-      rows.forEach((c,idx)=>{
-        html+=`<tr style="border-bottom:0.5px solid #f0f1f3">
-          ${idx===0?`
-            <td style="padding:7px 12px;font-weight:600;color:#222;white-space:normal;min-width:140px">${esc(e.skuFamily)}</td>
-            <td style="padding:7px 12px;color:#555;white-space:normal;min-width:180px">${esc(e.description)}</td>
-            <td style="padding:7px 12px;color:#555">${esc(e.category)}</td>
-            <td style="padding:7px 12px;color:#555">${esc(e.tier)}</td>
-            <td style="padding:7px 12px;color:#555">${esc(e.supplier)}</td>
-            <td style="padding:7px 12px;color:#555">${esc(e.chemCost)}</td>
-          `:`<td colspan="6" style="border-right:1px dashed #eee"></td>`}
-          <td style="padding:7px 12px;color:#555">${esc(c.item)}</td>
-          <td style="padding:7px 12px;color:#333">${esc(c.component)}</td>
-          <td style="padding:7px 12px;color:#333;font-weight:600">${esc(c.material)}</td>
-        </tr>`;
-      });
+      const compCells=[]; const matCells=[];
+      for(let i=0;i<maxComp;i++){
+        const c=e.components[i];
+        compCells.push(`<td style="padding:6px 10px;color:#333">${c?esc(c.component):""}</td>`);
+        if(c){
+          const col=pmmMaterialColor(c.material);
+          matCells.push(`<td style="padding:6px 10px;font-weight:600;background:${col.bg};color:${col.text}">${c.material?`<span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}`:""}</td>`);
+        } else {
+          matCells.push(`<td style="padding:6px 10px"></td>`);
+        }
+      }
+      html+=`<tr style="border-bottom:0.5px solid #f0f1f3">
+        <td style="padding:6px 8px"><button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:20px;height:20px;cursor:pointer;font-size:10px;line-height:1">✕</button></td>
+        <td style="padding:6px 10px;font-weight:600;color:#222;white-space:normal;min-width:130px">${esc(e.skuFamily)}</td>
+        <td style="padding:6px 10px;color:#555;white-space:normal;min-width:170px">${esc(e.description)}</td>
+        <td style="padding:6px 10px;color:#555">${esc(e.category)}</td>
+        <td style="padding:6px 10px;color:#555">${esc(e.tier)}</td>
+        <td style="padding:6px 10px;color:#555">${esc(e.supplier)}</td>
+        <td style="padding:6px 10px;color:#555">${esc(e.parentSku)}</td>
+        <td style="padding:6px 10px;color:#555">${esc(e.chemCost)}</td>
+        ${compCells.join("")}
+        ${matCells.join("")}
+      </tr>`;
     });
     html+=`</tbody></table></div>
-      <div style="font-size:10px;color:#aaa;margin-top:8px">${entries.length} product${entries.length!==1?"s":""} · ${entries.reduce((a,e)=>a+e.components.length,0)} component rows · synced from the "Product Matrix" tab</div>`;
+      <div style="font-size:10px;color:#aaa;margin-top:8px">${entries.length} product${entries.length!==1?"s":""} · synced from the "Product Matrix" tab</div>`;
   }
   html+=`</div>`;
   body.innerHTML=html;
