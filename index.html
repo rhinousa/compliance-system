@@ -246,8 +246,8 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
   <div id="board-wrap"></div>
 </div>
 
-<!-- Modal container -->
-<div id="modal-root"></div>
+<!-- Modal container lives here, OUTSIDE both panels, so it's never hidden by
+     a panel's display:none — modals need to work from any sidebar section. -->
 
 </div><!-- /panel-compliance -->
 
@@ -275,6 +275,8 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
 
   </div><!-- /app-main -->
 </div><!-- /app-shell -->
+
+<div id="modal-root"></div>
 
 <script>
 // ── CONFIG ─────────────────────────────────────────────────────────────────
@@ -309,6 +311,7 @@ let pmmDraftSkuFamilyA = "", pmmDraftSkuFamilyB = "", pmmDraftSkuFamilyC = "";
 let pmmDraftChemTest = "", pmmDraftChemCost = "", pmmDraftChemSample = "";
 let pmmDraftPhysTest = "", pmmDraftPhysCost = "", pmmDraftPhysSample = "";
 let pmmDraftCorrTest = "", pmmDraftCorrCost = "", pmmDraftCorrSample = "";
+let pmmDraftTestLab = "", pmmDraftQuotationDate = "";
 let pmmLookupIndex = {}; // SKU (uppercased) -> {description, parentSku, tier, category, supplier}
 let pmmLookupSheetTitle = null;
 let pmmSubmitting = false;
@@ -2171,7 +2174,6 @@ function renderModals(){
             ${field("Tier","tier",e.tier)}
             ${field("Category","category",e.category)}
             ${field("Preferred Supplier","supplier",e.supplier)}
-            ${field("Estimate Chemical Cost","chemCost",e.chemCost)}
           </div>
           <div style="flex:1;min-width:340px">
             ${field("Product Description","description",e.description)}
@@ -2184,9 +2186,10 @@ function renderModals(){
               <tbody>${compRowsHtml}</tbody>
             </table>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:16px">
-              ${field("Chemical Test","chemTest",e.chemTest)}${field("Chem. Cost","chemTestCost",e.chemTestCost)}${field("Chem. Sample","chemTestSample",e.chemTestSample)}
-              ${field("Physical Test","physTest",e.physTest)}${field("Phys. Cost","physTestCost",e.physTestCost)}${field("Phys. Sample","physTestSample",e.physTestSample)}
-              ${field("Corrosion Test","corrTest",e.corrTest)}${field("Corr. Cost","corrTestCost",e.corrTestCost)}${field("Corr. Sample","corrTestSample",e.corrTestSample)}
+              ${field("Chemical Test","chemTest",e.chemTest)}${field("Chem. Quotation","chemTestCost",e.chemTestCost)}${field("Chem. Sample","chemTestSample",e.chemTestSample)}
+              ${field("Physical Test","physTest",e.physTest)}${field("Phys. Quotation","physTestCost",e.physTestCost)}${field("Phys. Sample","physTestSample",e.physTestSample)}
+              ${field("Corrosion Test","corrTest",e.corrTest)}${field("Corr. Quotation","corrTestCost",e.corrTestCost)}${field("Corr. Sample","corrTestSample",e.corrTestSample)}
+              ${field("Test Lab","testLab",e.testLab)}${field("Quotation Date","quotationDate",e.quotationDate)}
             </div>
           </div>
         </div>
@@ -2392,7 +2395,7 @@ function showSection(name){
 // ── SKU lookup catalogue (separate spreadsheet: "Product Master Data Catalogue") ──
 // Column positions are fixed by index rather than header text, since the sheet's
 // headers have inconsistent spacing that makes exact-text matching unreliable.
-// A=SKU(0) B=Parent SKU(1) D=Description(3) E=Tier(4) J=Category code(9) BX=Priority Supplier(75) BY=Preferred Vendor(76)
+// A=SKU(0) B=Parent SKU(1) D=Description(3) E=Tier(4) J=Category code(9) BY=Preferred Vendor(76)
 const PMM_CATEGORY_CODE_MAP = {TD:"Tie-Down",RG:"Recovery Gear",AC:"Accessories",TO:"Towing",CA:"Camping"};
 
 async function pmmLoadLookupCatalogue(){
@@ -2420,7 +2423,7 @@ async function pmmLoadLookupCatalogue(){
         parentSku:row[1]||"",
         tier:row[4]||"",
         category:PMM_CATEGORY_CODE_MAP[catCode]||"",
-        supplier:row[75]||row[76]||"",
+        supplier:row[76]||"",
       };
     });
     pmmLookupIndex=idx;
@@ -2468,9 +2471,10 @@ function pmmBuildEntriesFromRows(rows){
         tier:pmmPick(row,"Tier"),
         parentSku:pmmPick(row,"Parent SKU"),
         photoUrl:pmmPick(row,"Photo URL"),
-        chemTest:pmmPick(row,"Chemical Test"), chemTestCost:pmmPick(row,"Chemical Cost"), chemTestSample:pmmPick(row,"Chemical Sample"),
-        physTest:pmmPick(row,"Physical Test"), physTestCost:pmmPick(row,"Physical Cost"), physTestSample:pmmPick(row,"Physical Sample"),
-        corrTest:pmmPick(row,"Corrosion Test"), corrTestCost:pmmPick(row,"Corrosion Cost"), corrTestSample:pmmPick(row,"Corrosion Sample"),
+        chemTest:pmmPick(row,"Chemical Test"), chemTestCost:pmmPick(row,"Chemical Quotation","Chemical Cost"), chemTestSample:pmmPick(row,"Chemical Sample"),
+        physTest:pmmPick(row,"Physical Test"), physTestCost:pmmPick(row,"Physical Quotation","Physical Cost"), physTestSample:pmmPick(row,"Physical Sample"),
+        corrTest:pmmPick(row,"Corrosion Test"), corrTestCost:pmmPick(row,"Corrosion Quotation","Corrosion Cost"), corrTestSample:pmmPick(row,"Corrosion Sample"),
+        testLab:pmmPick(row,"Test Lab"), quotationDate:pmmPick(row,"Quotation Date"),
         components:[],
         rowIndexes:[],
       };
@@ -2576,7 +2580,6 @@ function pmmRenderNewEntry(){
         </div>
         <div class="pmm-grid2">
           <div class="pmm-field"><label class="pmm-label">Preferred Supplier</label><input id="pmm-in-supplier" class="pmm-input" placeholder="Supplier name" value="${esc(pmmDraftSupplier)}" oninput="pmmDraftSupplier=this.value"/></div>
-          <div class="pmm-field"><label class="pmm-label">Estimate Chemical Cost</label><input id="pmm-in-cost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftCost)}" oninput="pmmDraftCost=this.value"/></div>
         </div>
       </div>
 
@@ -2586,22 +2589,27 @@ function pmmRenderNewEntry(){
         <div style="font-size:11px;font-weight:700;color:#0073ea;text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px">Chemical Testing</div>
         <div class="pmm-grid2" style="grid-template-columns:2fr 1fr 1fr">
           <div class="pmm-field"><label class="pmm-label">Test</label><input id="pmm-in-chemtest" class="pmm-input" placeholder="e.g. RoHS, Prop 65" value="${esc(pmmDraftChemTest)}" oninput="pmmDraftChemTest=this.value"/></div>
-          <div class="pmm-field"><label class="pmm-label">Estimated Cost</label><input id="pmm-in-chemcost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftChemCost)}" oninput="pmmDraftChemCost=this.value"/></div>
+          <div class="pmm-field"><label class="pmm-label">Quotation</label><input id="pmm-in-chemcost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftChemCost)}" oninput="pmmDraftChemCost=this.value"/></div>
           <div class="pmm-field"><label class="pmm-label">Recommended Sample</label><input id="pmm-in-chemsample" class="pmm-input" placeholder="e.g. 1" value="${esc(pmmDraftChemSample)}" oninput="pmmDraftChemSample=this.value"/></div>
         </div>
 
         <div style="font-size:11px;font-weight:700;color:#0073ea;text-transform:uppercase;letter-spacing:.3px;margin:14px 0 8px">Physical Testing</div>
         <div class="pmm-grid2" style="grid-template-columns:2fr 1fr 1fr">
           <div class="pmm-field"><label class="pmm-label">Test</label><input id="pmm-in-phystest" class="pmm-input" placeholder="e.g. Tensile Strength" value="${esc(pmmDraftPhysTest)}" oninput="pmmDraftPhysTest=this.value"/></div>
-          <div class="pmm-field"><label class="pmm-label">Estimated Cost</label><input id="pmm-in-physcost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftPhysCost)}" oninput="pmmDraftPhysCost=this.value"/></div>
+          <div class="pmm-field"><label class="pmm-label">Quotation</label><input id="pmm-in-physcost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftPhysCost)}" oninput="pmmDraftPhysCost=this.value"/></div>
           <div class="pmm-field"><label class="pmm-label">Recommended Sample</label><input id="pmm-in-physsample" class="pmm-input" placeholder="e.g. 1" value="${esc(pmmDraftPhysSample)}" oninput="pmmDraftPhysSample=this.value"/></div>
         </div>
 
         <div style="font-size:11px;font-weight:700;color:#0073ea;text-transform:uppercase;letter-spacing:.3px;margin:14px 0 8px">Corrosion Testing</div>
         <div class="pmm-grid2" style="grid-template-columns:2fr 1fr 1fr">
           <div class="pmm-field"><label class="pmm-label">Test</label><input id="pmm-in-corrtest" class="pmm-input" placeholder="e.g. Salt Spray" value="${esc(pmmDraftCorrTest)}" oninput="pmmDraftCorrTest=this.value"/></div>
-          <div class="pmm-field"><label class="pmm-label">Estimated Cost</label><input id="pmm-in-corrcost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftCorrCost)}" oninput="pmmDraftCorrCost=this.value"/></div>
+          <div class="pmm-field"><label class="pmm-label">Quotation</label><input id="pmm-in-corrcost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftCorrCost)}" oninput="pmmDraftCorrCost=this.value"/></div>
           <div class="pmm-field"><label class="pmm-label">Recommended Sample</label><input id="pmm-in-corrsample" class="pmm-input" placeholder="e.g. 1" value="${esc(pmmDraftCorrSample)}" oninput="pmmDraftCorrSample=this.value"/></div>
+        </div>
+
+        <div class="pmm-grid2" style="margin-top:14px;padding-top:14px;border-top:1px solid #f0f1f3">
+          <div class="pmm-field"><label class="pmm-label">Test Lab</label><input id="pmm-in-testlab" class="pmm-input" placeholder="Lab name" value="${esc(pmmDraftTestLab)}" oninput="pmmDraftTestLab=this.value"/></div>
+          <div class="pmm-field"><label class="pmm-label">Quotation Date</label><input id="pmm-in-quotedate" type="date" class="pmm-input" value="${esc(pmmDraftQuotationDate)}" oninput="pmmDraftQuotationDate=this.value"/></div>
         </div>
       </div>
 
@@ -2739,8 +2747,8 @@ function pmmImportFile(file){
 }
 
 async function pmmEnsureHeaders(){
-  const headers=["SKU","Product Description","Category","Preferred Supplier","Estimate Chemical Cost","Tier","Entry ID","Photo URL","Item","Component","Material","Parent SKU","A SKU Family","B SKU Family","C SKU Family","Chemical Test","Chemical Cost","Chemical Sample","Physical Test","Physical Cost","Physical Sample","Corrosion Test","Corrosion Cost","Corrosion Sample"];
-  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_SHEET)}!A1:X1?valueInputOption=USER_ENTERED`;
+  const headers=["SKU","Product Description","Category","Preferred Supplier","Estimate Chemical Cost","Tier","Entry ID","Photo URL","Item","Component","Material","Parent SKU","A SKU Family","B SKU Family","C SKU Family","Chemical Test","Chemical Quotation","Chemical Sample","Physical Test","Physical Quotation","Physical Sample","Corrosion Test","Corrosion Quotation","Corrosion Sample","Test Lab","Quotation Date"];
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_SHEET)}!A1:Z1?valueInputOption=USER_ENTERED`;
   await fetch(url,{
     method:"PUT",
     headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
@@ -2808,7 +2816,7 @@ async function pmmSaveEntryDetail(entryId){
     }
     const components=e.components.filter(c=>c.item||c.component||c.material);
     const rows=components.map(c=>[e.sku,e.description,e.category,e.supplier,e.chemCost,e.tier,e.id,e.photoUrl,c.item,c.component,c.material,e.parentSku,
-      e.skuFamily,e.skuFamilyB,e.skuFamilyC,e.chemTest,e.chemTestCost,e.chemTestSample,e.physTest,e.physTestCost,e.physTestSample,e.corrTest,e.corrTestCost,e.corrTestSample]);
+      e.skuFamily,e.skuFamilyB,e.skuFamilyC,e.chemTest,e.chemTestCost,e.chemTestSample,e.physTest,e.physTestCost,e.physTestSample,e.corrTest,e.corrTestCost,e.corrTestSample,e.testLab,e.quotationDate]);
     await pmmEnsureHeaders();
     const appendRes=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,{
       method:"POST",
@@ -2871,6 +2879,7 @@ async function pmmSubmitEntry(){
   const chemTest=pmmDraftChemTest.trim(), chemTestCost=pmmDraftChemCost.trim(), chemTestSample=pmmDraftChemSample.trim();
   const physTest=pmmDraftPhysTest.trim(), physTestCost=pmmDraftPhysCost.trim(), physTestSample=pmmDraftPhysSample.trim();
   const corrTest=pmmDraftCorrTest.trim(), corrTestCost=pmmDraftCorrCost.trim(), corrTestSample=pmmDraftCorrSample.trim();
+  const testLab=pmmDraftTestLab.trim(), quotationDate=pmmDraftQuotationDate.trim();
   if(!sku){ alert("SKU is required."); return; }
   const components=pmmDraftComponents.filter(c=>c.item||c.component||c.material);
   if(!components.length){ alert("Add at least one Item / Component / Material row."); return; }
@@ -2882,13 +2891,13 @@ async function pmmSubmitEntry(){
 
   const entryId="pmm_"+Date.now();
   const entry={id:entryId,sku,skuFamily,skuFamilyB,skuFamilyC,description,tier,category,supplier,chemCost,parentSku,
-    chemTest,chemTestCost,chemTestSample,physTest,physTestCost,physTestSample,corrTest,corrTestCost,corrTestSample,
+    chemTest,chemTestCost,chemTestSample,physTest,physTestCost,physTestSample,corrTest,corrTestCost,corrTestSample,testLab,quotationDate,
     photoUrl:pmmDraftPhotoUrl,components,rowIndexes:[]};
 
   try{
     await pmmEnsureHeaders();
     const rows=components.map(c=>[sku,description,category,supplier,chemCost,tier,entryId,pmmDraftPhotoUrl,c.item,c.component,c.material,parentSku,
-      skuFamily,skuFamilyB,skuFamilyC,chemTest,chemTestCost,chemTestSample,physTest,physTestCost,physTestSample,corrTest,corrTestCost,corrTestSample]);
+      skuFamily,skuFamilyB,skuFamilyC,chemTest,chemTestCost,chemTestSample,physTest,physTestCost,physTestSample,corrTest,corrTestCost,corrTestSample,testLab,quotationDate]);
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const res=await fetch(url,{
       method:"POST",
@@ -2908,6 +2917,7 @@ async function pmmSubmitEntry(){
     pmmDraftChemTest=""; pmmDraftChemCost=""; pmmDraftChemSample="";
     pmmDraftPhysTest=""; pmmDraftPhysCost=""; pmmDraftPhysSample="";
     pmmDraftCorrTest=""; pmmDraftCorrCost=""; pmmDraftCorrSample="";
+    pmmDraftTestLab=""; pmmDraftQuotationDate="";
     pmmSwitchTab("compiled");
   }catch(e){
     alert("Could not save entry: "+e.message);
@@ -3163,7 +3173,7 @@ function pmmEntryCardHtml(e){
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
-        <div style="font-size:9.5px;color:#aaa;margin-top:6px">${e.supplier?`Supplier: ${esc(e.supplier)}`:""}${e.supplier&&e.chemCost?" · ":""}${e.chemCost?`Est. Chemical Cost: ${esc(e.chemCost)}`:""}</div>
+        <div style="font-size:9.5px;color:#aaa;margin-top:6px">${e.supplier?`Supplier: ${esc(e.supplier)}`:""}</div>
       </div>
     </div>
   </div>`;
@@ -3196,8 +3206,8 @@ function pmmRenderDatabase(){
     html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">🗄️</div><div style="font-size:12px">${pmmEntries.length?"No rows match the current filter/search.":'No entries yet — submit one from "New Entry", or click Re-sync in the Compliance Dashboard tab to pull in anything already in the sheet.'}</div></div>`;
   } else {
     // Same columns as the actual Google Sheet — just without the Photo URL or internal Entry ID columns.
-    const cols=["","SKU","A SKU Family","B SKU Family","C SKU Family","Product Description","Category","Preferred Supplier","Estimate Chemical Cost","Tier","Parent SKU",
-      "Chemical Test","Chem. Cost","Chem. Sample","Physical Test","Phys. Cost","Phys. Sample","Corrosion Test","Corr. Cost","Corr. Sample","Item","Component","Material"];
+    const cols=["","SKU","A SKU Family","B SKU Family","C SKU Family","Product Description","Category","Preferred Supplier","Tier","Parent SKU",
+      "Chemical Test","Chem. Quotation","Chem. Sample","Physical Test","Phys. Quotation","Phys. Sample","Corrosion Test","Corr. Quotation","Corr. Sample","Test Lab","Quotation Date","Item","Component","Material"];
     html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap">
         <thead><tr style="background:#f2f3f6">
@@ -3218,7 +3228,6 @@ function pmmRenderDatabase(){
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.description)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.category)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.supplier)}</td>
-            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.chemCost)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.tier)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.parentSku)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.chemTest)}</td>
@@ -3230,7 +3239,9 @@ function pmmRenderDatabase(){
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.corrTest)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.corrTestCost)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.corrTestSample)}</td>
-          `:`<td colspan="20" style="border-right:1px dashed #eee"></td>`}
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.testLab)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.quotationDate)}</td>
+          `:`<td colspan="21" style="border-right:1px dashed #eee"></td>`}
           <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(c.item)}</td>
           <td style="padding:7px 12px;color:#333;white-space:nowrap">${esc(c.component)}</td>
           <td style="padding:7px 12px;font-weight:600;background:${col.bg};color:${col.text};white-space:nowrap">${c.material?`<span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}`:""}</td>
