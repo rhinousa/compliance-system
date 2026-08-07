@@ -304,7 +304,11 @@ const DUE_SOON_DAYS    = 180; // 6 months
 let pmmEntries = [];           // [{id,sku,skuFamily,description,tier,category,supplier,chemCost,parentSku,photoUrl,components:[{item,component,material}]}]
 let pmmActiveTab = "new";
 let pmmDraftComponents = [{item:"1",component:"",material:""}];
-let pmmDraftSku = "", pmmDraftDesc = "", pmmDraftTier = "", pmmDraftCategory = "", pmmDraftSupplier = "", pmmDraftCost = "", pmmDraftParentSku = "", pmmDraftSkuFamily = "";
+let pmmDraftSku = "", pmmDraftDesc = "", pmmDraftTier = "", pmmDraftCategory = "", pmmDraftSupplier = "", pmmDraftCost = "", pmmDraftParentSku = "";
+let pmmDraftSkuFamilyA = "", pmmDraftSkuFamilyB = "", pmmDraftSkuFamilyC = "";
+let pmmDraftChemTest = "", pmmDraftChemCost = "", pmmDraftChemSample = "";
+let pmmDraftPhysTest = "", pmmDraftPhysCost = "", pmmDraftPhysSample = "";
+let pmmDraftCorrTest = "", pmmDraftCorrCost = "", pmmDraftCorrSample = "";
 let pmmLookupIndex = {}; // SKU (uppercased) -> {description, parentSku, tier, category, supplier}
 let pmmLookupSheetTitle = null;
 let pmmSubmitting = false;
@@ -2140,6 +2144,58 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="pmmDetail"){
+    const e=pmmEntries.find(x=>x.id===modal.entryId);
+    if(!e){ root.innerHTML=""; return; }
+    const normName=(typeof pmmNormalizeProductName==="function")?pmmNormalizeProductName(e.description):e.description;
+    const compRowsHtml=e.components.map((c,i)=>`<tr>
+      <td style="padding:5px 8px;border-bottom:1px solid #f0f1f3"><input value="${esc(c.item)}" oninput="pmmDetailUpdateComponent('${e.id}',${i},'item',this.value)" style="width:100%;padding:5px 6px;border:1px solid #dde0e7;border-radius:5px;font-size:11px"/></td>
+      <td style="padding:5px 8px;border-bottom:1px solid #f0f1f3"><input value="${esc(c.component)}" oninput="pmmDetailUpdateComponent('${e.id}',${i},'component',this.value)" style="width:100%;padding:5px 6px;border:1px solid #dde0e7;border-radius:5px;font-size:11px"/></td>
+      <td style="padding:5px 8px;border-bottom:1px solid #f0f1f3"><input value="${esc(c.material)}" oninput="pmmDetailUpdateComponent('${e.id}',${i},'material',this.value)" style="width:100%;padding:5px 6px;border:1px solid #dde0e7;border-radius:5px;font-size:11px"/></td>
+    </tr>`).join("");
+    const field=(label,key,val)=>`<div style="margin-bottom:8px"><label style="font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px">${label}</label><input value="${esc(val||"")}" oninput="pmmDetailUpdateField('${e.id}','${key}',this.value)" style="width:100%;padding:6px 8px;border:1px solid #dde0e7;border-radius:6px;font-size:11.5px"/></div>`;
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:920px">
+        <div style="background:#0073ea;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between">
+          <div style="color:#fff;font-weight:800;font-size:16px">${esc(normName||e.sku)}</div>
+          <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+        </div>
+        <div style="padding:20px;display:flex;gap:20px;flex-wrap:wrap">
+          <div style="flex:0 0 260px">
+            ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:100%;border-radius:8px;border:1px solid #eee;margin-bottom:14px"/>`:`<div style="width:100%;height:200px;background:#f7f8fa;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;margin-bottom:14px">No photo</div>`}
+            ${field("SKU","sku",e.sku)}
+            ${field("A SKU Family","skuFamily",e.skuFamily)}
+            ${field("B SKU Family","skuFamilyB",e.skuFamilyB)}
+            ${field("C SKU Family","skuFamilyC",e.skuFamilyC)}
+            ${field("Parent SKU","parentSku",e.parentSku)}
+            ${field("Tier","tier",e.tier)}
+            ${field("Category","category",e.category)}
+            ${field("Preferred Supplier","supplier",e.supplier)}
+            ${field("Estimate Chemical Cost","chemCost",e.chemCost)}
+          </div>
+          <div style="flex:1;min-width:340px">
+            ${field("Product Description","description",e.description)}
+            <table style="width:100%;border-collapse:collapse;margin-top:10px">
+              <thead><tr>
+                <th style="text-align:left;padding:5px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
+                <th style="text-align:left;padding:5px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
+                <th style="text-align:left;padding:5px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
+              </tr></thead>
+              <tbody>${compRowsHtml}</tbody>
+            </table>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:16px">
+              ${field("Chemical Test","chemTest",e.chemTest)}${field("Chem. Cost","chemTestCost",e.chemTestCost)}${field("Chem. Sample","chemTestSample",e.chemTestSample)}
+              ${field("Physical Test","physTest",e.physTest)}${field("Phys. Cost","physTestCost",e.physTestCost)}${field("Phys. Sample","physTestSample",e.physTestSample)}
+              ${field("Corrosion Test","corrTest",e.corrTest)}${field("Corr. Cost","corrTestCost",e.corrTestCost)}${field("Corr. Sample","corrTestSample",e.corrTestSample)}
+            </div>
+          </div>
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid #eee;display:flex;gap:10px;justify-content:flex-end">
+          <button onclick="closeModal()" style="padding:9px 16px;font-size:12px;font-weight:600;color:#555;background:#f0f2f5;border:none;border-radius:7px;cursor:pointer">Cancel</button>
+          <button id="pmm-detail-save-btn" onclick="pmmSaveEntryDetail('${e.id}')" style="padding:9px 20px;font-size:12px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:7px;cursor:pointer">💾 Save Changes</button>
+        </div>
+      </div>
+    </div>`;
   } else if(modal.type==="website"){
     const {url,name}=modal;
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
@@ -2402,7 +2458,9 @@ function pmmBuildEntriesFromRows(rows){
       byId[entryId]={
         id:entryId,
         sku:pmmPick(row,"SKU"),
-        skuFamily:pmmPick(row,"SKU Family","A SKU Family"),
+        skuFamily:pmmPick(row,"A SKU Family","SKU Family"),
+        skuFamilyB:pmmPick(row,"B SKU Family"),
+        skuFamilyC:pmmPick(row,"C SKU Family"),
         description:pmmPick(row,"Product Description"),
         category:pmmPick(row,"Category"),
         supplier:pmmPick(row,"Preferred Supplier"),
@@ -2410,6 +2468,9 @@ function pmmBuildEntriesFromRows(rows){
         tier:pmmPick(row,"Tier"),
         parentSku:pmmPick(row,"Parent SKU"),
         photoUrl:pmmPick(row,"Photo URL"),
+        chemTest:pmmPick(row,"Chemical Test"), chemTestCost:pmmPick(row,"Chemical Cost"), chemTestSample:pmmPick(row,"Chemical Sample"),
+        physTest:pmmPick(row,"Physical Test"), physTestCost:pmmPick(row,"Physical Cost"), physTestSample:pmmPick(row,"Physical Sample"),
+        corrTest:pmmPick(row,"Corrosion Test"), corrTestCost:pmmPick(row,"Corrosion Cost"), corrTestSample:pmmPick(row,"Corrosion Sample"),
         components:[],
         rowIndexes:[],
       };
@@ -2497,7 +2558,11 @@ function pmmRenderNewEntry(){
           <div class="pmm-field"><label class="pmm-label">Product Description</label><textarea id="pmm-in-desc" class="pmm-input" rows="2" placeholder="e.g. Rhino USA Heavy Duty Ratchet Tie-Down" oninput="pmmDraftDesc=this.value">${esc(pmmDraftDesc)}</textarea></div>
         </div>
         <div class="pmm-grid2">
-          <div class="pmm-field"><label class="pmm-label">SKU Family</label><textarea id="pmm-in-skufamily" class="pmm-input" rows="2" placeholder="e.g. HDKIT-4PK-COLORS" oninput="pmmDraftSkuFamily=this.value">${esc(pmmDraftSkuFamily)}</textarea></div>
+          <div class="pmm-field"><label class="pmm-label">A SKU Family</label><textarea id="pmm-in-skufamilya" class="pmm-input" rows="2" placeholder="e.g. HDKIT-4PK-COLORS" oninput="pmmDraftSkuFamilyA=this.value">${esc(pmmDraftSkuFamilyA)}</textarea></div>
+          <div class="pmm-field"><label class="pmm-label">B SKU Family</label><textarea id="pmm-in-skufamilyb" class="pmm-input" rows="2" oninput="pmmDraftSkuFamilyB=this.value">${esc(pmmDraftSkuFamilyB)}</textarea></div>
+        </div>
+        <div class="pmm-grid2">
+          <div class="pmm-field"><label class="pmm-label">C SKU Family</label><textarea id="pmm-in-skufamilyc" class="pmm-input" rows="2" oninput="pmmDraftSkuFamilyC=this.value">${esc(pmmDraftSkuFamilyC)}</textarea></div>
           <div class="pmm-field"><label class="pmm-label">Parent SKU</label><input id="pmm-in-parentsku" class="pmm-input" placeholder="e.g. HDKIT-4PK-COLORS" value="${esc(pmmDraftParentSku)}" oninput="pmmDraftParentSku=this.value"/></div>
         </div>
         <div class="pmm-grid2">
@@ -2512,6 +2577,31 @@ function pmmRenderNewEntry(){
         <div class="pmm-grid2">
           <div class="pmm-field"><label class="pmm-label">Preferred Supplier</label><input id="pmm-in-supplier" class="pmm-input" placeholder="Supplier name" value="${esc(pmmDraftSupplier)}" oninput="pmmDraftSupplier=this.value"/></div>
           <div class="pmm-field"><label class="pmm-label">Estimate Chemical Cost</label><input id="pmm-in-cost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftCost)}" oninput="pmmDraftCost=this.value"/></div>
+        </div>
+      </div>
+
+      <div class="pmm-card">
+        <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">Testing Information</div>
+
+        <div style="font-size:11px;font-weight:700;color:#0073ea;text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px">Chemical Testing</div>
+        <div class="pmm-grid2" style="grid-template-columns:2fr 1fr 1fr">
+          <div class="pmm-field"><label class="pmm-label">Test</label><input id="pmm-in-chemtest" class="pmm-input" placeholder="e.g. RoHS, Prop 65" value="${esc(pmmDraftChemTest)}" oninput="pmmDraftChemTest=this.value"/></div>
+          <div class="pmm-field"><label class="pmm-label">Estimated Cost</label><input id="pmm-in-chemcost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftChemCost)}" oninput="pmmDraftChemCost=this.value"/></div>
+          <div class="pmm-field"><label class="pmm-label">Recommended Sample</label><input id="pmm-in-chemsample" class="pmm-input" placeholder="e.g. 1" value="${esc(pmmDraftChemSample)}" oninput="pmmDraftChemSample=this.value"/></div>
+        </div>
+
+        <div style="font-size:11px;font-weight:700;color:#0073ea;text-transform:uppercase;letter-spacing:.3px;margin:14px 0 8px">Physical Testing</div>
+        <div class="pmm-grid2" style="grid-template-columns:2fr 1fr 1fr">
+          <div class="pmm-field"><label class="pmm-label">Test</label><input id="pmm-in-phystest" class="pmm-input" placeholder="e.g. Tensile Strength" value="${esc(pmmDraftPhysTest)}" oninput="pmmDraftPhysTest=this.value"/></div>
+          <div class="pmm-field"><label class="pmm-label">Estimated Cost</label><input id="pmm-in-physcost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftPhysCost)}" oninput="pmmDraftPhysCost=this.value"/></div>
+          <div class="pmm-field"><label class="pmm-label">Recommended Sample</label><input id="pmm-in-physsample" class="pmm-input" placeholder="e.g. 1" value="${esc(pmmDraftPhysSample)}" oninput="pmmDraftPhysSample=this.value"/></div>
+        </div>
+
+        <div style="font-size:11px;font-weight:700;color:#0073ea;text-transform:uppercase;letter-spacing:.3px;margin:14px 0 8px">Corrosion Testing</div>
+        <div class="pmm-grid2" style="grid-template-columns:2fr 1fr 1fr">
+          <div class="pmm-field"><label class="pmm-label">Test</label><input id="pmm-in-corrtest" class="pmm-input" placeholder="e.g. Salt Spray" value="${esc(pmmDraftCorrTest)}" oninput="pmmDraftCorrTest=this.value"/></div>
+          <div class="pmm-field"><label class="pmm-label">Estimated Cost</label><input id="pmm-in-corrcost" class="pmm-input" placeholder="$0.00" value="${esc(pmmDraftCorrCost)}" oninput="pmmDraftCorrCost=this.value"/></div>
+          <div class="pmm-field"><label class="pmm-label">Recommended Sample</label><input id="pmm-in-corrsample" class="pmm-input" placeholder="e.g. 1" value="${esc(pmmDraftCorrSample)}" oninput="pmmDraftCorrSample=this.value"/></div>
         </div>
       </div>
 
@@ -2597,6 +2687,10 @@ async function pmmUploadPhoto(file){
       headers:{Authorization:"Bearer "+accessToken,"Content-Type":`multipart/related; boundary=${boundary}`},
       body,
     });
+    if(res.status===401){
+      accessToken=null;
+      throw new Error("Your Google session expired. Go to the Compliance Dashboard tab and click Re-sync, then try the photo again.");
+    }
     if(!res.ok){ const t=await res.text(); throw new Error(`Drive upload failed (${res.status}): ${t.slice(0,150)}`); }
     const json=await res.json();
     // Make it viewable by teammates — drive.file scope only grants access to files THIS app
@@ -2645,8 +2739,8 @@ function pmmImportFile(file){
 }
 
 async function pmmEnsureHeaders(){
-  const headers=["SKU","Product Description","Category","Preferred Supplier","Estimate Chemical Cost","Tier","Entry ID","Photo URL","Item","Component","Material","Parent SKU","SKU Family"];
-  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_SHEET)}!A1:M1?valueInputOption=USER_ENTERED`;
+  const headers=["SKU","Product Description","Category","Preferred Supplier","Estimate Chemical Cost","Tier","Entry ID","Photo URL","Item","Component","Material","Parent SKU","A SKU Family","B SKU Family","C SKU Family","Chemical Test","Chemical Cost","Chemical Sample","Physical Test","Physical Cost","Physical Sample","Corrosion Test","Corrosion Cost","Corrosion Sample"];
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_SHEET)}!A1:X1?valueInputOption=USER_ENTERED`;
   await fetch(url,{
     method:"PUT",
     headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
@@ -2673,6 +2767,61 @@ function pmmParseRowRange(rangeStr){
   const start=parseInt(m[1]), end=parseInt(m[2]);
   const out=[]; for(let r=start;r<=end;r++) out.push(r);
   return out;
+}
+
+function pmmOpenEntryDetail(entryId){
+  openModal({type:"pmmDetail", entryId});
+}
+
+// These just update the in-memory entry as the user types — nothing is written to
+// the sheet until "Save Changes" is clicked, so editing never leaves the page but
+// also never silently overwrites the sheet mid-edit.
+function pmmDetailUpdateField(entryId, key, value){
+  const e=pmmEntries.find(x=>x.id===entryId);
+  if(e) e[key]=value;
+}
+function pmmDetailUpdateComponent(entryId, idx, field, value){
+  const e=pmmEntries.find(x=>x.id===entryId);
+  if(e && e.components[idx]) e.components[idx][field]=value;
+}
+
+async function pmmSaveEntryDetail(entryId){
+  const e=pmmEntries.find(x=>x.id===entryId);
+  if(!e) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  const btn=document.getElementById("pmm-detail-save-btn");
+  if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
+  try{
+    // Simplest reliable way to persist an edit across a variable number of component
+    // rows: remove the entry's old rows entirely, then re-append fresh ones with the
+    // same Entry ID so it stays the same logical entry, just with updated content.
+    if(e.rowIndexes && e.rowIndexes.length){
+      const gid=await pmmGetSheetGid();
+      const rowsDesc=[...e.rowIndexes].sort((a,b)=>b-a);
+      const requests=rowsDesc.map(r=>({deleteDimension:{range:{sheetId:gid,dimension:"ROWS",startIndex:r-1,endIndex:r}}}));
+      const delRes=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{
+        method:"POST",
+        headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
+        body:JSON.stringify({requests}),
+      });
+      if(!delRes.ok){ const t=await delRes.text(); throw new Error(`Sheet update failed (${delRes.status}): ${t.slice(0,150)}`); }
+    }
+    const components=e.components.filter(c=>c.item||c.component||c.material);
+    const rows=components.map(c=>[e.sku,e.description,e.category,e.supplier,e.chemCost,e.tier,e.id,e.photoUrl,c.item,c.component,c.material,e.parentSku,
+      e.skuFamily,e.skuFamilyB,e.skuFamilyC,e.chemTest,e.chemTestCost,e.chemTestSample,e.physTest,e.physTestCost,e.physTestSample,e.corrTest,e.corrTestCost,e.corrTestSample]);
+    await pmmEnsureHeaders();
+    const appendRes=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,{
+      method:"POST",
+      headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
+      body:JSON.stringify({values:rows}),
+    });
+    if(!appendRes.ok){ const t=await appendRes.text(); throw new Error(`Sheet update failed (${appendRes.status}): ${t.slice(0,150)}`); }
+    closeModal();
+    await fetchSheetData(); // refresh row indices for this and every other entry
+  }catch(err){
+    alert("Could not save changes: "+err.message);
+    if(btn){ btn.disabled=false; btn.textContent="💾 Save Changes"; }
+  }
 }
 
 async function pmmDeleteEntry(entryId){
@@ -2710,13 +2859,18 @@ async function pmmSubmitEntry(){
   if(pmmSubmitting) return; // prevents double-click / slow-network duplicate submissions
   if(pmmDraftPhotoUploading){ alert("Please wait for the photo to finish uploading."); return; }
   const sku=pmmDraftSku.trim();
-  const skuFamily=pmmDraftSkuFamily.trim();
+  const skuFamily=pmmDraftSkuFamilyA.trim();
+  const skuFamilyB=pmmDraftSkuFamilyB.trim();
+  const skuFamilyC=pmmDraftSkuFamilyC.trim();
   const description=pmmDraftDesc.trim();
   const tier=pmmDraftTier.trim();
   const category=pmmDraftCategory.trim();
   const supplier=pmmDraftSupplier.trim();
   const chemCost=pmmDraftCost.trim();
   const parentSku=pmmDraftParentSku.trim();
+  const chemTest=pmmDraftChemTest.trim(), chemTestCost=pmmDraftChemCost.trim(), chemTestSample=pmmDraftChemSample.trim();
+  const physTest=pmmDraftPhysTest.trim(), physTestCost=pmmDraftPhysCost.trim(), physTestSample=pmmDraftPhysSample.trim();
+  const corrTest=pmmDraftCorrTest.trim(), corrTestCost=pmmDraftCorrCost.trim(), corrTestSample=pmmDraftCorrSample.trim();
   if(!sku){ alert("SKU is required."); return; }
   const components=pmmDraftComponents.filter(c=>c.item||c.component||c.material);
   if(!components.length){ alert("Add at least one Item / Component / Material row."); return; }
@@ -2727,11 +2881,14 @@ async function pmmSubmitEntry(){
   if(btn){ btn.disabled=true; btn.style.opacity=".6"; btn.textContent="Saving…"; }
 
   const entryId="pmm_"+Date.now();
-  const entry={id:entryId,sku,skuFamily,description,tier,category,supplier,chemCost,parentSku,photoUrl:pmmDraftPhotoUrl,components,rowIndexes:[]};
+  const entry={id:entryId,sku,skuFamily,skuFamilyB,skuFamilyC,description,tier,category,supplier,chemCost,parentSku,
+    chemTest,chemTestCost,chemTestSample,physTest,physTestCost,physTestSample,corrTest,corrTestCost,corrTestSample,
+    photoUrl:pmmDraftPhotoUrl,components,rowIndexes:[]};
 
   try{
     await pmmEnsureHeaders();
-    const rows=components.map(c=>[sku,description,category,supplier,chemCost,tier,entryId,pmmDraftPhotoUrl,c.item,c.component,c.material,parentSku,skuFamily]);
+    const rows=components.map(c=>[sku,description,category,supplier,chemCost,tier,entryId,pmmDraftPhotoUrl,c.item,c.component,c.material,parentSku,
+      skuFamily,skuFamilyB,skuFamilyC,chemTest,chemTestCost,chemTestSample,physTest,physTestCost,physTestSample,corrTest,corrTestCost,corrTestSample]);
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const res=await fetch(url,{
       method:"POST",
@@ -2746,7 +2903,11 @@ async function pmmSubmitEntry(){
     localStorage.setItem("rhino_pmm_entries_v1",JSON.stringify(pmmEntries));
     pmmDraftComponents=[{item:"1",component:"",material:""}];
     pmmDraftPhotoUrl="";
-    pmmDraftSku=""; pmmDraftDesc=""; pmmDraftTier=""; pmmDraftCategory=""; pmmDraftSupplier=""; pmmDraftCost=""; pmmDraftParentSku=""; pmmDraftSkuFamily="";
+    pmmDraftSku=""; pmmDraftDesc=""; pmmDraftTier=""; pmmDraftCategory=""; pmmDraftSupplier=""; pmmDraftCost=""; pmmDraftParentSku="";
+    pmmDraftSkuFamilyA=""; pmmDraftSkuFamilyB=""; pmmDraftSkuFamilyC="";
+    pmmDraftChemTest=""; pmmDraftChemCost=""; pmmDraftChemSample="";
+    pmmDraftPhysTest=""; pmmDraftPhysCost=""; pmmDraftPhysSample="";
+    pmmDraftCorrTest=""; pmmDraftCorrCost=""; pmmDraftCorrSample="";
     pmmSwitchTab("compiled");
   }catch(e){
     alert("Could not save entry: "+e.message);
@@ -2979,19 +3140,19 @@ function pmmEntryCardHtml(e){
   }).join("");
   const normName=pmmNormalizeProductName(e.description);
   return `<div class="pmm-entry-card">
-    <div class="pmm-entry-hdr" style="padding:9px 14px">
+    <div class="pmm-entry-hdr" style="padding:9px 14px;cursor:pointer" onclick="pmmOpenEntryDetail('${e.id}')">
       <div>
-        <div style="font-size:12px;font-weight:700;color:#222">${esc(normName||e.sku)}</div>
-        <div style="font-size:10px;color:#888;margin-top:1px">${esc(e.description)}</div>
+        <div style="font-size:17px;font-weight:800;color:#222">${esc(normName||e.sku)}</div>
+        <div style="font-size:10px;color:#888;margin-top:2px">${esc(e.description)}</div>
         <div style="font-size:9.5px;color:#aaa;margin-top:1px">SKU: ${esc(e.sku)}${e.skuFamily?` · Family: ${esc(e.skuFamily)}`:""}${e.parentSku?` · Parent: ${esc(e.parentSku)}`:""}</div>
       </div>
       <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
         ${e.tier?`<span class="pmm-tier-badge">${esc(e.tier)}</span>`:""}
         ${e.category?`<span class="pmm-cat-badge">${esc(e.category)}</span>`:""}
-        <button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1">✕</button>
+        <button onclick="event.stopPropagation();pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1">✕</button>
       </div>
     </div>
-    <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
+    <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;cursor:pointer" onclick="pmmOpenEntryDetail('${e.id}')">
       ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:110px;max-width:100%;border-radius:6px;flex-shrink:0;border:1px solid #eee"/>`:""}
       <div style="flex:1;min-width:260px">
         <table style="width:100%;border-collapse:collapse">
@@ -3035,11 +3196,12 @@ function pmmRenderDatabase(){
     html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">🗄️</div><div style="font-size:12px">${pmmEntries.length?"No rows match the current filter/search.":'No entries yet — submit one from "New Entry", or click Re-sync in the Compliance Dashboard tab to pull in anything already in the sheet.'}</div></div>`;
   } else {
     // Same columns as the actual Google Sheet — just without the Photo URL or internal Entry ID columns.
-    const cols=["","SKU","SKU Family","Product Description","Category","Preferred Supplier","Estimate Chemical Cost","Tier","Parent SKU","Item","Component","Material"];
+    const cols=["","SKU","A SKU Family","B SKU Family","C SKU Family","Product Description","Category","Preferred Supplier","Estimate Chemical Cost","Tier","Parent SKU",
+      "Chemical Test","Chem. Cost","Chem. Sample","Physical Test","Phys. Cost","Phys. Sample","Corrosion Test","Corr. Cost","Corr. Sample","Item","Component","Material"];
     html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap">
         <thead><tr style="background:#f2f3f6">
-          ${cols.map(c=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px;border-bottom:1.5px solid #dde0e9;position:sticky;top:0;background:#f2f3f6">${c}</th>`).join("")}
+          ${cols.map(c=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px;border-bottom:1.5px solid #dde0e9;position:sticky;top:0;background:#f2f3f6;white-space:nowrap">${c}</th>`).join("")}
         </tr></thead>
         <tbody>`;
     entries.forEach(e=>{
@@ -3048,24 +3210,36 @@ function pmmRenderDatabase(){
         const col=pmmMaterialColor(c.material);
         html+=`<tr style="border-bottom:0.5px solid #f0f1f3">
           ${idx===0?`
-            <td style="padding:7px 8px">${idx===0?`<button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:20px;height:20px;cursor:pointer;font-size:10px;line-height:1">✕</button>`:""}</td>
-            <td style="padding:7px 12px;font-weight:600;color:#222;white-space:normal;min-width:130px">${esc(e.sku)}</td>
-            <td style="padding:7px 12px;color:#555;white-space:normal;min-width:130px">${esc(e.skuFamily)}</td>
-            <td style="padding:7px 12px;color:#555;white-space:normal;min-width:170px">${esc(e.description)}</td>
-            <td style="padding:7px 12px;color:#555">${esc(e.category)}</td>
-            <td style="padding:7px 12px;color:#555">${esc(e.supplier)}</td>
-            <td style="padding:7px 12px;color:#555">${esc(e.chemCost)}</td>
-            <td style="padding:7px 12px;color:#555">${esc(e.tier)}</td>
-            <td style="padding:7px 12px;color:#555">${esc(e.parentSku)}</td>
-          `:`<td colspan="9" style="border-right:1px dashed #eee"></td>`}
-          <td style="padding:7px 12px;color:#555">${esc(c.item)}</td>
-          <td style="padding:7px 12px;color:#333">${esc(c.component)}</td>
-          <td style="padding:7px 12px;font-weight:600;background:${col.bg};color:${col.text}">${c.material?`<span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}`:""}</td>
+            <td style="padding:7px 8px;white-space:nowrap">${idx===0?`<button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:20px;height:20px;cursor:pointer;font-size:10px;line-height:1">✕</button>`:""}</td>
+            <td style="padding:7px 12px;font-weight:600;color:#222;white-space:nowrap" onclick="pmmOpenEntryDetail('${e.id}')" title="Click to edit">${esc(e.sku)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.skuFamily)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.skuFamilyB)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.skuFamilyC)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.description)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.category)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.supplier)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.chemCost)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.tier)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.parentSku)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.chemTest)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.chemTestCost)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.chemTestSample)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.physTest)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.physTestCost)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.physTestSample)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.corrTest)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.corrTestCost)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.corrTestSample)}</td>
+          `:`<td colspan="20" style="border-right:1px dashed #eee"></td>`}
+          <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(c.item)}</td>
+          <td style="padding:7px 12px;color:#333;white-space:nowrap">${esc(c.component)}</td>
+          <td style="padding:7px 12px;font-weight:600;background:${col.bg};color:${col.text};white-space:nowrap">${c.material?`<span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}`:""}</td>
         </tr>`;
       });
     });
     html+=`</tbody></table></div>
-      <div style="font-size:10px;color:#aaa;margin-top:8px">${entries.length} product${entries.length!==1?"s":""} · ${entries.reduce((a,e)=>a+e.components.length,0)} component rows · synced from the "Product Matrix" tab</div>`;
+      <div style="font-size:10px;color:#aaa;margin-top:6px">Click any SKU cell to open the full editable detail view.</div>
+      <div style="font-size:10px;color:#aaa;margin-top:2px">${entries.length} product${entries.length!==1?"s":""} · ${entries.reduce((a,e)=>a+e.components.length,0)} component rows · synced from the "Product Matrix" tab</div>`;
   }
   html+=`</div>`;
   body.innerHTML=html;
