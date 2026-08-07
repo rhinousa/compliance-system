@@ -103,6 +103,8 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
 .pmm-cat-badge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;background:#e8f2ff;color:#0055bb;border:1px solid #c0d8f8}
 .pmm-tier-badge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;background:#f0efff;color:#5b21b6;border:1px solid #d8d0f8}
 .pmm-mat-swatch{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:6px;flex-shrink:0;vertical-align:middle}
+.pmm-zoom-lens{position:absolute;border:2px solid #0073ea;width:90px;height:90px;cursor:zoom-in;pointer-events:none;background:rgba(0,115,234,.08);display:none}
+.pmm-zoom-result{position:fixed;width:320px;height:320px;border:1.5px solid #dde0e7;border-radius:10px;background-repeat:no-repeat;background-color:#fff;box-shadow:0 12px 32px rgba(0,0,0,.28);z-index:600;display:none}
 .pmm-insight-box{background:#f0f6ff;border:1.5px solid #c0d8f8;border-radius:10px;padding:16px 20px;margin-bottom:18px}
 </style>
 </head>
@@ -2165,13 +2167,12 @@ function renderModals(){
         </div>
         <div style="padding:20px;display:flex;gap:20px;flex-wrap:wrap">
           <div style="flex:0 0 260px">
-            ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:100%;border-radius:8px;border:1px solid #eee;margin-bottom:14px"/>`:`<div style="width:100%;height:200px;background:#f7f8fa;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;margin-bottom:14px">No photo</div>`}
+            ${e.photoUrl?`<div id="pmm-detail-photo-wrap" style="position:relative;margin-bottom:14px"><img id="pmm-detail-photo" src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:100%;border-radius:8px;border:1px solid #eee;display:block"/></div>`:`<div style="width:100%;height:200px;background:#f7f8fa;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;margin-bottom:14px">No photo</div>`}
             ${field("SKU","sku",e.sku)}
             ${field("A SKU Family","skuFamily",e.skuFamily)}
             ${field("B SKU Family","skuFamilyB",e.skuFamilyB)}
             ${field("C SKU Family","skuFamilyC",e.skuFamilyC)}
             ${field("Parent SKU","parentSku",e.parentSku)}
-            ${field("Tier","tier",e.tier)}
             ${field("Category","category",e.category)}
             ${field("Preferred Supplier","supplier",e.supplier)}
           </div>
@@ -2199,6 +2200,7 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+    if(e.photoUrl) setTimeout(()=>{ if(typeof pmmSetupImageZoom==="function") pmmSetupImageZoom("pmm-detail-photo"); }, 0);
   } else if(modal.type==="website"){
     const {url,name}=modal;
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
@@ -2319,7 +2321,7 @@ function switchTab(t){
 }
 
 function openModal(m){ modal=m; renderModals(); }
-function closeModal(){ modal=null; renderModals(); }
+function closeModal(){ modal=null; renderModals(); const zr=document.getElementById("pmm-zoom-result-panel"); if(zr) zr.style.display="none"; }
 
 function openWebsiteModal(itemId){
   let found=null;
@@ -2440,12 +2442,29 @@ function pmmLookupSku(){
     if(match.tier) pmmDraftTier=match.tier;
     if(match.category) pmmDraftCategory=match.category;
     if(match.supplier) pmmDraftSupplier=match.supplier;
+    const familyMatches=pmmFindSkuFamilyMatches(sku);
+    if(familyMatches.length) pmmDraftSkuFamilyA=familyMatches.join(", ");
     pmmRenderNewEntry();
   } else if(status){
     status.textContent = Object.keys(pmmLookupIndex).length
       ? "No match found in the catalogue for this SKU — fill in manually."
       : "Catalogue not loaded yet — sync from the Compliance Dashboard tab first.";
   }
+}
+
+// Finds every SKU in the catalogue whose product description normalizes to the same
+// core product family (same product, just different color/pack/dimension variants) —
+// used to auto-fill "A SKU Family" with the full list of sibling SKUs.
+function pmmFindSkuFamilyMatches(sku){
+  const entry=pmmLookupIndex[sku];
+  if(!entry || !entry.description) return [];
+  const targetName=pmmNormalizeProductName(entry.description);
+  if(!targetName) return [];
+  const matches=[];
+  Object.entries(pmmLookupIndex).forEach(([s,data])=>{
+    if(data.description && pmmNormalizeProductName(data.description)===targetName) matches.push(s);
+  });
+  return matches.sort();
 }
 
 function pmmPick(row, ...keys){
@@ -3130,6 +3149,61 @@ function pmmInsightsHtml(){
   return html;
 }
 
+// Amazon-style zoom: a small lens box follows the cursor over the image, and a
+// larger fixed-position panel shows a magnified view of whatever's under the lens.
+function pmmSetupImageZoom(imgId){
+  const img=document.getElementById(imgId);
+  if(!img) return;
+  const wrap=img.parentElement;
+  wrap.style.position="relative";
+
+  let lens=wrap.querySelector(".pmm-zoom-lens");
+  if(!lens){ lens=document.createElement("div"); lens.className="pmm-zoom-lens"; wrap.appendChild(lens); }
+
+  let result=document.getElementById("pmm-zoom-result-panel");
+  if(!result){
+    result=document.createElement("div");
+    result.id="pmm-zoom-result-panel";
+    result.className="pmm-zoom-result";
+    document.body.appendChild(result);
+  }
+
+  const zoomFactor=2.8;
+
+  function positionResult(){
+    const wrapRect=wrap.getBoundingClientRect();
+    let left=wrapRect.right+16;
+    if(left+320>window.innerWidth) left=Math.max(8,wrapRect.left-336); // flip to the left if it wouldn't fit on the right
+    result.style.left=left+"px";
+    result.style.top=Math.max(8,wrapRect.top)+"px";
+  }
+
+  function moveLens(e){
+    e.preventDefault();
+    const rect=img.getBoundingClientRect();
+    const clientX=(e.touches?e.touches[0].clientX:e.clientX);
+    const clientY=(e.touches?e.touches[0].clientY:e.clientY);
+    let x=clientX-rect.left-lens.offsetWidth/2;
+    let y=clientY-rect.top-lens.offsetHeight/2;
+    x=Math.max(0,Math.min(x,rect.width-lens.offsetWidth));
+    y=Math.max(0,Math.min(y,rect.height-lens.offsetHeight));
+    lens.style.left=x+"px";
+    lens.style.top=y+"px";
+    result.style.backgroundImage=`url('${img.src}')`;
+    result.style.backgroundSize=(rect.width*zoomFactor)+"px "+(rect.height*zoomFactor)+"px";
+    result.style.backgroundPosition="-"+(x*zoomFactor)+"px -"+(y*zoomFactor)+"px";
+  }
+  function show(e){ lens.style.display="block"; result.style.display="block"; positionResult(); moveLens(e); }
+  function hide(){ lens.style.display="none"; result.style.display="none"; }
+
+  img.onmouseenter=show;
+  img.onmousemove=moveLens;
+  img.onmouseleave=hide;
+  img.ontouchstart=show;
+  img.ontouchmove=moveLens;
+  img.ontouchend=hide;
+}
+
 function pmmPhotoDisplayUrl(url){
   if(!url) return "";
   if(url.includes("uc?export=view")){
@@ -3173,7 +3247,15 @@ function pmmEntryCardHtml(e){
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
-        <div style="font-size:9.5px;color:#aaa;margin-top:6px">${e.supplier?`Supplier: ${esc(e.supplier)}`:""}</div>
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f1f3;display:flex;flex-wrap:wrap;gap:10px;font-size:9.5px;color:#888">
+          ${e.parentSku?`<span><strong style="color:#666">Parent SKU:</strong> ${esc(e.parentSku)}</span>`:""}
+          ${e.supplier?`<span><strong style="color:#666">Supplier:</strong> ${esc(e.supplier)}</span>`:""}
+          ${e.chemTest?`<span><strong style="color:#666">Chemical Test:</strong> ${esc(e.chemTest)}${e.chemTestCost?` (${esc(e.chemTestCost)})`:""}</span>`:""}
+          ${e.physTest?`<span><strong style="color:#666">Physical Test:</strong> ${esc(e.physTest)}${e.physTestCost?` (${esc(e.physTestCost)})`:""}</span>`:""}
+          ${e.corrTest?`<span><strong style="color:#666">Corrosion Test:</strong> ${esc(e.corrTest)}${e.corrTestCost?` (${esc(e.corrTestCost)})`:""}</span>`:""}
+          ${e.testLab?`<span><strong style="color:#666">Test Lab:</strong> ${esc(e.testLab)}</span>`:""}
+          ${e.quotationDate?`<span><strong style="color:#666">Quotation Date:</strong> ${esc(e.quotationDate)}</span>`:""}
+        </div>
       </div>
     </div>
   </div>`;
