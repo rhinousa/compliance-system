@@ -2149,6 +2149,21 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="pmmEditGate"){
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:420px;background:#141824;border-radius:14px">
+        <div style="padding:22px 24px 18px">
+          <div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:6px">Edit Access</div>
+          <div style="color:#8a8f9c;font-size:11.5px;margin-bottom:18px">Enter the password to edit this item.</div>
+          <input id="pmm-editgate-input" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')pmmConfirmEditGate('${modal.entryId}')" style="width:100%;padding:11px 14px;border:1.5px solid #00c853;border-radius:8px;background:#0c0f18;color:#fff;font-size:13px;outline:none;box-sizing:border-box"/>
+          <div id="pmm-editgate-error" style="color:#ff6b6b;font-size:11px;margin-top:6px;min-height:14px"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+            <button onclick="closeModal()" style="padding:9px 18px;font-size:12.5px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Cancel</button>
+            <button onclick="pmmConfirmEditGate('${modal.entryId}')" style="padding:9px 20px;font-size:12.5px;font-weight:700;color:#0b1f0f;background:#00e05e;border:none;border-radius:8px;cursor:pointer">Confirm</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
   } else if(modal.type==="pmmSkuFamilyList"){
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
       <div class="modal-box" style="max-width:480px">
@@ -2603,10 +2618,6 @@ function pmmRenderNewEntry(){
         </div>
         <div class="pmm-grid2">
           <div class="pmm-field"><label class="pmm-label">C SKU Family</label><textarea id="pmm-in-skufamilyc" class="pmm-input" rows="2" oninput="pmmDraftSkuFamilyC=this.value">${esc(pmmDraftSkuFamilyC)}</textarea></div>
-          <div class="pmm-field"><label class="pmm-label">Parent SKU</label><input id="pmm-in-parentsku" class="pmm-input" placeholder="e.g. HDKIT-4PK-COLORS" value="${esc(pmmDraftParentSku)}" oninput="pmmDraftParentSku=this.value"/></div>
-        </div>
-        <div class="pmm-grid2">
-          <div class="pmm-field"><label class="pmm-label">Tier</label><input id="pmm-in-tier" class="pmm-input" placeholder="e.g. Tier 1" value="${esc(pmmDraftTier)}" oninput="pmmDraftTier=this.value"/></div>
           <div class="pmm-field"><label class="pmm-label">Category</label>
             <select id="pmm-in-category" class="pmm-input" onchange="pmmDraftCategory=this.value">
               <option value="">Select category…</option>
@@ -3310,10 +3321,32 @@ function pmmEntryCardHtml(e){
 
 // Lightweight edit gate -- not real security, just a soft deterrent against
 // accidental/casual edits. Anyone with the password can still edit.
+// Lightweight edit gate -- not real security (this all runs in the browser, so a
+// determined person could always find and reverse a weak hash, or just read the
+// comparison logic in dev tools). Hashing at least means the plaintext password
+// itself isn't sitting in readable page source for a casual look.
+const PMM_EDIT_PASSWORD_HASH="fff9dfeaa22b620f2857f6423e7bb1da427f14c3f3a0adcb534f05f2adccfad3";
+async function pmmHashText(text){
+  const enc=new TextEncoder().encode(text);
+  const digest=await crypto.subtle.digest("SHA-256", enc);
+  return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
 function pmmRequestEdit(entryId){
-  const pwd=prompt("Enter password to edit this entry:");
-  if(pwd===null) return; // cancelled
-  if(pwd!=="editme"){ alert("Incorrect password."); return; }
+  openModal({type:"pmmEditGate", entryId});
+  setTimeout(()=>document.getElementById("pmm-editgate-input")?.focus(), 50);
+}
+async function pmmConfirmEditGate(entryId){
+  const input=document.getElementById("pmm-editgate-input");
+  const errEl=document.getElementById("pmm-editgate-error");
+  const pwd=(input?.value||"");
+  if(!pwd){ if(errEl) errEl.textContent="Please enter a password."; return; }
+  const hash=await pmmHashText(pwd);
+  if(hash!==PMM_EDIT_PASSWORD_HASH){
+    if(errEl) errEl.textContent="Incorrect password.";
+    if(input){ input.value=""; input.focus(); }
+    return;
+  }
+  closeModal();
   pmmOpenEntryDetail(entryId);
 }
 
@@ -3360,9 +3393,9 @@ function pmmRenderDatabase(){
           ${idx===0?`
             <td style="padding:7px 8px;white-space:nowrap">${idx===0?`<button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:20px;height:20px;cursor:pointer;font-size:10px;line-height:1">✕</button>`:""}</td>
             <td style="padding:7px 12px;font-weight:600;color:#222;white-space:nowrap" onclick="pmmOpenEntryDetail('${e.id}')" title="Click to edit">${esc(e.sku)}</td>
-            <td style="padding:7px 12px;color:#555;white-space:normal;max-width:220px;min-width:180px">${esc(e.skuFamily)}</td>
-            <td style="padding:7px 12px;color:#555;white-space:normal;max-width:220px;min-width:180px">${esc(e.skuFamilyB)}</td>
-            <td style="padding:7px 12px;color:#555;white-space:normal;max-width:220px;min-width:180px">${esc(e.skuFamilyC)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${esc(e.skuFamily)}">${esc(e.skuFamily)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${esc(e.skuFamilyB)}">${esc(e.skuFamilyB)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${esc(e.skuFamilyC)}">${esc(e.skuFamilyC)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.description)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.category)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.supplier)}</td>
