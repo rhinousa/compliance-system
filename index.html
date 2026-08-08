@@ -2149,6 +2149,18 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="pmmSkuFamilyList"){
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:480px">
+        <div style="background:#0073ea;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between">
+          <div style="color:#fff;font-weight:700;font-size:14px">${esc(modal.title)} (${modal.skus.length})</div>
+          <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+        </div>
+        <div style="padding:18px 20px;display:flex;flex-wrap:wrap;gap:6px">
+          ${modal.skus.map(s=>`<span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:14px;background:#f0f2f5;color:#333">${esc(s)}</span>`).join("")}
+        </div>
+      </div>
+    </div>`;
   } else if(modal.type==="pmmDetail"){
     const e=pmmEntries.find(x=>x.id===modal.entryId);
     if(!e){ root.innerHTML=""; return; }
@@ -2443,7 +2455,12 @@ function pmmLookupSku(){
     if(match.category) pmmDraftCategory=match.category;
     if(match.supplier) pmmDraftSupplier=match.supplier;
     const familyMatches=pmmFindSkuFamilyMatches(sku);
-    if(familyMatches.length) pmmDraftSkuFamilyA=familyMatches.join(", ");
+    if(familyMatches.length){
+      const joined=familyMatches.join(", ");
+      pmmDraftSkuFamilyA=joined;
+      pmmDraftSkuFamilyB=joined;
+      pmmDraftSkuFamilyC=joined;
+    }
     pmmRenderNewEntry();
   } else if(status){
     status.textContent = Object.keys(pmmLookupIndex).length
@@ -3004,19 +3021,28 @@ const PMM_PROCESSING_COST_PER_SKU = 200;
 const PMM_COLOR_WORDS=["black","green","blue","red","orange","gray","grey","yellow","purple","pink","white","tan","camo","silver","gold","brown","navy","maroon"];
 function pmmNormalizeProductName(desc){
   if(!desc) return "";
+  const dimRe=/\b\d+(\/\d+)?(\.\d+)?\s*in\s*x\s*\d+(\/\d+)?(\.\d+)?\s*ft\b/gi;
+  const dims=[];
+  let dm;
+  while((dm=dimRe.exec(desc))!==null){ dims.push(dm[0].replace(/\s+/g," ")); }
+
   let s=desc;
   s=s.replace(/\([^)]*\)/g," ");           // (4PK 1INX10FT), (Green), etc.
   s=s.replace(/\[[^\]]*\]/g," ");
   s=s.replace(/\brhino\s*usa\b/gi," ");    // brand
-  s=s.replace(/\b\d+(\/\d+)?(\.\d+)?\s*in\s*x\s*\d+(\/\d+)?(\.\d+)?\s*ft\b/gi," "); // 1IN X 10FT, 3/4IN X 30FT style dimensions
-  s=s.replace(/\b\d+\/\d+\s*$/,""); // leftover trailing fraction fragment if a dimension partially matched
+  s=s.replace(dimRe," ");                  // remove raw dimension text from the base -- we re-add a cleaned copy below
+  s=s.replace(/\b\d+\/\d+\s*$/,"");        // leftover trailing fraction fragment if a dimension partially matched
   s=s.replace(/\b\d+\s*-?\s*(pk|pack|pcs?|ct|count)\b/gi," ");      // 4PK, 8-Pack, 2 PCS
   s=s.replace(/\btier\s*\d+\b/gi," ");     // Tier 1, Tier 2
   const colorRe=new RegExp("\\b("+PMM_COLOR_WORDS.join("|")+")\\b","gi");
   s=s.replace(colorRe," ");
   s=s.replace(/\s{2,}/g," ").trim();
   s=s.replace(/^[-–—,:\s]+|[-–—,:\s]+$/g,"");
-  return s || desc.trim();
+
+  const base=s || desc.trim();
+  // Retain the size/dimension -- two products with the same base name but different
+  // sizes are genuinely different products and must not be grouped as siblings.
+  return dims.length ? `${base} ${dims[0]}`.trim() : base;
 }
 
 // For each representative product, count how many OTHER products' entire material
@@ -3172,8 +3198,8 @@ function pmmSetupImageZoom(imgId){
 
   function positionResult(){
     const wrapRect=wrap.getBoundingClientRect();
-    let left=wrapRect.right+16;
-    if(left+320>window.innerWidth) left=Math.max(8,wrapRect.left-336); // flip to the left if it wouldn't fit on the right
+    let left=wrapRect.left-336; // prefer left of the photo, so it never covers the table on the right
+    if(left<8) left=wrapRect.right+16; // fall back to the right only if there's no room on the left
     result.style.left=left+"px";
     result.style.top=Math.max(8,wrapRect.top)+"px";
   }
@@ -3213,6 +3239,22 @@ function pmmPhotoDisplayUrl(url){
   return url;
 }
 
+function pmmFamilyLineHtml(label, value, entryId, key){
+  if(!value) return `<strong>${label}:</strong> <span style="color:#bbb">--</span>`;
+  const skus=value.split(/,\s*/).filter(Boolean);
+  const preview=skus.slice(0,2).join(", ")+(skus.length>2?"...":"");
+  return `<strong>${label}:</strong> ${esc(preview)}${skus.length>2?` <button onclick="event.stopPropagation();pmmShowSkuFamilyList('${entryId}','${key}')" style="font-size:9px;color:#0073ea;background:none;border:none;cursor:pointer;text-decoration:underline;padding:0">view all (${skus.length})</button>`:""}`;
+}
+
+function pmmShowSkuFamilyList(entryId, key){
+  const e=pmmEntries.find(x=>x.id===entryId);
+  if(!e) return;
+  const labelMap={skuFamily:"A SKU Family",skuFamilyB:"B SKU Family",skuFamilyC:"C SKU Family"};
+  const value=e[key]||"";
+  const skus=value.split(/,\s*/).filter(Boolean);
+  openModal({type:"pmmSkuFamilyList", title:labelMap[key]||key, skus});
+}
+
 function pmmEntryCardHtml(e){
   const rows=e.components.map(c=>{
     const col=pmmMaterialColor(c.material);
@@ -3227,17 +3269,31 @@ function pmmEntryCardHtml(e){
     <div class="pmm-entry-hdr" style="padding:9px 14px;cursor:pointer" onclick="pmmOpenEntryDetail('${e.id}')">
       <div>
         <div style="font-size:17px;font-weight:800;color:#222">${esc(normName||e.sku)}</div>
-        <div style="font-size:10px;color:#888;margin-top:2px">${esc(e.description)}</div>
-        <div style="font-size:9.5px;color:#aaa;margin-top:1px">SKU: ${esc(e.sku)}${e.skuFamily?` · Family: ${esc(e.skuFamily)}`:""}${e.parentSku?` · Parent: ${esc(e.parentSku)}`:""}</div>
       </div>
       <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-        ${e.tier?`<span class="pmm-tier-badge">${esc(e.tier)}</span>`:""}
         ${e.category?`<span class="pmm-cat-badge">${esc(e.category)}</span>`:""}
         <button onclick="event.stopPropagation();pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1">✕</button>
       </div>
     </div>
     <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;cursor:pointer" onclick="pmmOpenEntryDetail('${e.id}')">
-      ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:110px;max-width:100%;border-radius:6px;flex-shrink:0;border:1px solid #eee"/>`:""}
+      <div style="width:220px;flex-shrink:0">
+        ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:100%;border-radius:6px;border:1px solid #eee;display:block"/>`:""}
+        <div style="background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:9px 11px;margin-top:10px;font-size:10px;line-height:1.7;color:#333">
+          <div><strong>SKU:</strong> ${esc(e.sku)}</div>
+          <div>${pmmFamilyLineHtml("A SKU Family", e.skuFamily, e.id, "skuFamily")}</div>
+          <div>${pmmFamilyLineHtml("B SKU Family", e.skuFamilyB, e.id, "skuFamilyB")}</div>
+          <div>${pmmFamilyLineHtml("C SKU Family", e.skuFamilyC, e.id, "skuFamilyC")}</div>
+        </div>
+        <div style="margin-top:10px;padding-top:8px;border-top:1px solid #f0f1f3;font-size:9.5px;color:#888;line-height:1.7">
+          ${e.parentSku?`<div><strong style="color:#666">Parent SKU:</strong> ${esc(e.parentSku)}</div>`:""}
+          ${e.supplier?`<div><strong style="color:#666">Supplier:</strong> ${esc(e.supplier)}</div>`:""}
+          ${e.chemTest?`<div><strong style="color:#666">Chemical Test:</strong> ${esc(e.chemTest)}${e.chemTestCost?` (${esc(e.chemTestCost)})`:""}</div>`:""}
+          ${e.physTest?`<div><strong style="color:#666">Physical Test:</strong> ${esc(e.physTest)}${e.physTestCost?` (${esc(e.physTestCost)})`:""}</div>`:""}
+          ${e.corrTest?`<div><strong style="color:#666">Corrosion Test:</strong> ${esc(e.corrTest)}${e.corrTestCost?` (${esc(e.corrTestCost)})`:""}</div>`:""}
+          ${e.testLab?`<div><strong style="color:#666">Test Lab:</strong> ${esc(e.testLab)}</div>`:""}
+          ${e.quotationDate?`<div><strong style="color:#666">Quotation Date:</strong> ${esc(e.quotationDate)}</div>`:""}
+        </div>
+      </div>
       <div style="flex:1;min-width:260px">
         <table style="width:100%;border-collapse:collapse">
           <thead><tr>
@@ -3247,15 +3303,6 @@ function pmmEntryCardHtml(e){
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
-        <div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f1f3;display:flex;flex-wrap:wrap;gap:10px;font-size:9.5px;color:#888">
-          ${e.parentSku?`<span><strong style="color:#666">Parent SKU:</strong> ${esc(e.parentSku)}</span>`:""}
-          ${e.supplier?`<span><strong style="color:#666">Supplier:</strong> ${esc(e.supplier)}</span>`:""}
-          ${e.chemTest?`<span><strong style="color:#666">Chemical Test:</strong> ${esc(e.chemTest)}${e.chemTestCost?` (${esc(e.chemTestCost)})`:""}</span>`:""}
-          ${e.physTest?`<span><strong style="color:#666">Physical Test:</strong> ${esc(e.physTest)}${e.physTestCost?` (${esc(e.physTestCost)})`:""}</span>`:""}
-          ${e.corrTest?`<span><strong style="color:#666">Corrosion Test:</strong> ${esc(e.corrTest)}${e.corrTestCost?` (${esc(e.corrTestCost)})`:""}</span>`:""}
-          ${e.testLab?`<span><strong style="color:#666">Test Lab:</strong> ${esc(e.testLab)}</span>`:""}
-          ${e.quotationDate?`<span><strong style="color:#666">Quotation Date:</strong> ${esc(e.quotationDate)}</span>`:""}
-        </div>
       </div>
     </div>
   </div>`;
