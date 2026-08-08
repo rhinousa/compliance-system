@@ -3266,33 +3266,33 @@ function pmmEntryCardHtml(e){
   }).join("");
   const normName=pmmNormalizeProductName(e.description);
   return `<div class="pmm-entry-card">
-    <div class="pmm-entry-hdr" style="padding:9px 14px;cursor:pointer" onclick="pmmOpenEntryDetail('${e.id}')">
-      <div>
+    <div class="pmm-entry-hdr" style="padding:9px 14px;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:8px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
         <div style="font-size:17px;font-weight:800;color:#222">${esc(normName||e.sku)}</div>
+        <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;flex-shrink:0">
+          ${e.category?`<span class="pmm-cat-badge">${esc(e.category)}</span>`:""}
+          <button onclick="pmmRequestEdit('${e.id}')" title="Edit entry" style="background:#e8f2ff;border:1px solid #c0d8f8;color:#0055bb;border-radius:5px;padding:3px 10px;cursor:pointer;font-size:10.5px;font-weight:600">✏ Edit</button>
+          <button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1">✕</button>
+        </div>
       </div>
-      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">
-        ${e.category?`<span class="pmm-cat-badge">${esc(e.category)}</span>`:""}
-        <button onclick="event.stopPropagation();pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1">✕</button>
+      <div style="background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:9px 11px;font-size:10px;line-height:1.7;color:#333">
+        <div><strong>SKU:</strong> ${esc(e.sku)}</div>
+        <div>${pmmFamilyLineHtml("A SKU Family", e.skuFamily, e.id, "skuFamily")}</div>
+        <div>${pmmFamilyLineHtml("B SKU Family", e.skuFamilyB, e.id, "skuFamilyB")}</div>
+        <div>${pmmFamilyLineHtml("C SKU Family", e.skuFamilyC, e.id, "skuFamilyC")}</div>
       </div>
     </div>
-    <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;cursor:pointer" onclick="pmmOpenEntryDetail('${e.id}')">
-      <div style="width:220px;flex-shrink:0">
-        ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:100%;border-radius:6px;border:1px solid #eee;display:block"/>`:""}
-        <div style="background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:9px 11px;margin-top:10px;font-size:10px;line-height:1.7;color:#333">
-          <div><strong>SKU:</strong> ${esc(e.sku)}</div>
-          <div>${pmmFamilyLineHtml("A SKU Family", e.skuFamily, e.id, "skuFamily")}</div>
-          <div>${pmmFamilyLineHtml("B SKU Family", e.skuFamilyB, e.id, "skuFamilyB")}</div>
-          <div>${pmmFamilyLineHtml("C SKU Family", e.skuFamilyC, e.id, "skuFamilyC")}</div>
-        </div>
-        <div style="margin-top:10px;padding-top:8px;border-top:1px solid #f0f1f3;font-size:9.5px;color:#888;line-height:1.7">
-          ${e.parentSku?`<div><strong style="color:#666">Parent SKU:</strong> ${esc(e.parentSku)}</div>`:""}
-          ${e.supplier?`<div><strong style="color:#666">Supplier:</strong> ${esc(e.supplier)}</div>`:""}
-          ${e.chemTest?`<div><strong style="color:#666">Chemical Test:</strong> ${esc(e.chemTest)}${e.chemTestCost?` (${esc(e.chemTestCost)})`:""}</div>`:""}
-          ${e.physTest?`<div><strong style="color:#666">Physical Test:</strong> ${esc(e.physTest)}${e.physTestCost?` (${esc(e.physTestCost)})`:""}</div>`:""}
-          ${e.corrTest?`<div><strong style="color:#666">Corrosion Test:</strong> ${esc(e.corrTest)}${e.corrTestCost?` (${esc(e.corrTestCost)})`:""}</div>`:""}
-          ${e.testLab?`<div><strong style="color:#666">Test Lab:</strong> ${esc(e.testLab)}</div>`:""}
-          ${e.quotationDate?`<div><strong style="color:#666">Quotation Date:</strong> ${esc(e.quotationDate)}</div>`:""}
-        </div>
+    <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
+      ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:150px;max-width:100%;border-radius:6px;border:1px solid #eee;flex-shrink:0"/>`:""}
+      <div style="width:190px;flex-shrink:0;background:#f0f6ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:9px 11px;font-size:9.5px;color:#333;line-height:1.7">
+        ${e.parentSku?`<div><strong style="color:#0055bb">Parent SKU:</strong> ${esc(e.parentSku)}</div>`:""}
+        ${e.supplier?`<div><strong style="color:#0055bb">Supplier:</strong> ${esc(e.supplier)}</div>`:""}
+        ${e.chemTest?`<div><strong style="color:#0055bb">Chemical Test:</strong> ${esc(e.chemTest)}${e.chemTestCost?` (${esc(e.chemTestCost)})`:""}</div>`:""}
+        ${e.physTest?`<div><strong style="color:#0055bb">Physical Test:</strong> ${esc(e.physTest)}${e.physTestCost?` (${esc(e.physTestCost)})`:""}</div>`:""}
+        ${e.corrTest?`<div><strong style="color:#0055bb">Corrosion Test:</strong> ${esc(e.corrTest)}${e.corrTestCost?` (${esc(e.corrTestCost)})`:""}</div>`:""}
+        ${e.testLab?`<div><strong style="color:#0055bb">Test Lab:</strong> ${esc(e.testLab)}</div>`:""}
+        ${e.quotationDate?`<div><strong style="color:#0055bb">Quotation Date:</strong> ${esc(e.quotationDate)}</div>`:""}
+        ${!e.parentSku&&!e.supplier&&!e.chemTest&&!e.physTest&&!e.corrTest&&!e.testLab&&!e.quotationDate?`<div style="color:#aaa">No testing info yet</div>`:""}
       </div>
       <div style="flex:1;min-width:260px">
         <table style="width:100%;border-collapse:collapse">
@@ -3306,6 +3306,15 @@ function pmmEntryCardHtml(e){
       </div>
     </div>
   </div>`;
+}
+
+// Lightweight edit gate -- not real security, just a soft deterrent against
+// accidental/casual edits. Anyone with the password can still edit.
+function pmmRequestEdit(entryId){
+  const pwd=prompt("Enter password to edit this entry:");
+  if(pwd===null) return; // cancelled
+  if(pwd!=="editme"){ alert("Incorrect password."); return; }
+  pmmOpenEntryDetail(entryId);
 }
 
 // ── Database (flat, mirrors the Product Matrix sheet exactly) ─────────────
@@ -3351,9 +3360,9 @@ function pmmRenderDatabase(){
           ${idx===0?`
             <td style="padding:7px 8px;white-space:nowrap">${idx===0?`<button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:20px;height:20px;cursor:pointer;font-size:10px;line-height:1">✕</button>`:""}</td>
             <td style="padding:7px 12px;font-weight:600;color:#222;white-space:nowrap" onclick="pmmOpenEntryDetail('${e.id}')" title="Click to edit">${esc(e.sku)}</td>
-            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.skuFamily)}</td>
-            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.skuFamilyB)}</td>
-            <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.skuFamilyC)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:normal;max-width:220px;min-width:180px">${esc(e.skuFamily)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:normal;max-width:220px;min-width:180px">${esc(e.skuFamilyB)}</td>
+            <td style="padding:7px 12px;color:#555;white-space:normal;max-width:220px;min-width:180px">${esc(e.skuFamilyC)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.description)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.category)}</td>
             <td style="padding:7px 12px;color:#555;white-space:nowrap">${esc(e.supplier)}</td>
