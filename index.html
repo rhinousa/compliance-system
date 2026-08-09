@@ -3149,11 +3149,10 @@ function pmmIsMetalMaterial(material){
 // Corrosion: same ratio method, but the representative set is computed using ONLY
 // metal materials (via materialFilter), since non-metal components don't need
 // corrosion testing at all.
-function pmmComputeTestingSavings(entries, testKey, costKey, sampleKey, materialFilter){
+function pmmComputeTestingSavings(entries, costKey, sampleKey, setCoverResult){
   const totalSamples=entries.reduce((s,e)=>s+pmmParseNum(e[sampleKey]),0);
   const totalCost=entries.reduce((s,e)=>s+pmmParseNum(e[costKey]),0);
-  const {selected}=pmmComputeSetCover(entries, materialFilter);
-  const repIds=new Set(selected.map(s=>s.entry.id));
+  const repIds=new Set(setCoverResult.selected.map(s=>s.entry.id));
   const repSamples=entries.reduce((s,e)=>s+(repIds.has(e.id)?pmmParseNum(e[sampleKey]):0),0);
   const costPerSample=totalSamples>0?totalCost/totalSamples:0;
   const repCost=costPerSample*repSamples;
@@ -3163,8 +3162,30 @@ function pmmComputeTestingSavings(entries, testKey, costKey, sampleKey, material
     samplesSaved:totalSamples-repSamples,
     costSaved:Math.round((totalCost-repCost)*100)/100,
     pctSaved:totalSamples>0?Math.round(((totalSamples-repSamples)/totalSamples)*1000)/10:0,
-    representatives:selected.map(s=>s.entry),
+    representatives:setCoverResult.selected.map(s=>s.entry),
   };
+}
+
+// Compact Top-N coverage cards, reused for both the general/chemical material
+// list and the corrosion-specific metal-only list.
+function pmmTopNCardsHtml(setCoverResult, accentColor){
+  const {materialDisplay, materialOccurrences, selected}=setCoverResult;
+  if(!selected.length) return `<div style="font-size:10.5px;color:#aaa;padding:8px 0">No materials in this scope yet.</div>`;
+  return selected.map((sel,idx)=>{
+    const name=pmmNormalizeProductName(sel.entry.description)||sel.entry.sku;
+    const chips=sel.newlyCovered.map(k=>{
+      const col=pmmMaterialColor(materialDisplay[k]);
+      return `<span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:10px;background:${col.bg};color:${col.text}">${esc(materialDisplay[k])}${idx===0?` (${materialOccurrences[k]})`:""}</span>`;
+    }).join("");
+    return `<div style="background:#fff;border:1px solid ${accentColor};border-radius:6px;padding:7px 10px;margin-bottom:6px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+        <span style="font-size:11px;font-weight:700;color:#222">${esc(name)}</span>
+        <span style="font-size:9px;color:#0055bb;font-weight:700;white-space:nowrap">Top ${idx+1}</span>
+      </div>
+      <div style="font-size:9px;color:#aaa;margin-bottom:4px">SKU: ${esc(sel.entry.sku)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:3px">${chips}</div>
+    </div>`;
+  }).join("");
 }
 
 // Restricts the entry set to Quotation Date's range when one is set (dates are plain
@@ -3209,27 +3230,28 @@ function pmmInsightsHtml(){
   if(entries.length<3){
     return `<div class="pmm-insight-box">${dateBarHtml}<div style="font-size:11px;color:#0055bb">${dateFilterActive?"Fewer than 3 entries fall in this date range — widen the range to see insights.":"Add at least 3 entries to see material consolidation insights."}</div></div>`;
   }
-  const {materialDisplay,materialOccurrences,allMaterials,selected,uncoveredLeftover,productMaterials}=pmmComputeSetCover(entries);
+  const generalCover=pmmComputeSetCover(entries);
+  const metalCover=pmmComputeSetCover(entries, pmmIsMetalMaterial);
 
-  if(!selected.length){
+  if(!generalCover.selected.length){
     return `<div class="pmm-insight-box">${dateBarHtml}<div style="font-size:11px;color:#0055bb">No materials recorded yet across these entries.</div></div>`;
   }
 
-  const top1=selected[0];
+  const {allMaterials, uncoveredLeftover}=generalCover;
+  const top1=generalCover.selected[0];
   const totalMaterials=allMaterials.size;
   const top1Coverage=Math.round((top1.newlyCovered.length/totalMaterials)*100);
-  const totalSamples=selected.length;
+  const totalSamples=generalCover.selected.length;
   const totalItems=entries.length;
-  const reductionPct=Math.round((1-(selected.length/totalItems))*100);
+  const reductionPct=Math.round((1-(totalSamples/totalItems))*100);
   const uniqueCombinations=pmmUniqueMaterialCombinationsCount(entries);
-  const representedCounts=pmmComputeRepresentedCounts(selected,productMaterials,entries);
 
   // Chemical and Corrosion are computed completely separately, per their own testing
   // fields, then combined for a final total. Physical Testing is intentionally left
   // out -- it validates the whole assembled product, not a shared material, so
   // consolidating by material doesn't reduce how many physical tests are needed.
-  const chem=pmmComputeTestingSavings(entries,"chemTest","chemTestCost","chemTestSample",null);
-  const corr=pmmComputeTestingSavings(entries,"corrTest","corrTestCost","corrTestSample",pmmIsMetalMaterial);
+  const chem=pmmComputeTestingSavings(entries,"chemTestCost","chemTestSample",generalCover);
+  const corr=pmmComputeTestingSavings(entries,"corrTestCost","corrTestSample",metalCover);
   const totalSamplesSaved=chem.samplesSaved+corr.samplesSaved;
   const totalCostSaved=Math.round((chem.costSaved+corr.costSaved)*100)/100;
   const combinedCostBefore=chem.totalCost+corr.totalCost;
@@ -3237,120 +3259,87 @@ function pmmInsightsHtml(){
   const fmtUsd=n=>"$"+n.toLocaleString("en-US",{maximumFractionDigits:2});
   const fmtNum=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
 
-  const top1Name=pmmNormalizeProductName(top1.entry.description)||top1.entry.sku;
-
   let html=`<div class="pmm-insight-box">
     ${dateBarHtml}
     <div style="font-size:10px;font-weight:700;color:#0055bb;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px">🔎 Smart Insights — Material Consolidation &amp; Sample Reduction</div>
 
-    <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:6px">Top 1 — Majority Material Coverage</div>
-    <div style="background:#fff;border:1px solid #c0d8f8;border-radius:8px;padding:12px 14px;margin-bottom:14px">
-      <div style="font-size:12px;font-weight:700;color:#222">${esc(top1Name)}</div>
-      <div style="font-size:10px;color:#aaa;margin-bottom:1px">SKU: ${esc(top1.entry.sku)}</div>
-      <div style="font-size:10.5px;color:#888;margin-bottom:8px">Represents the majority of materials used across all similar products.</div>
-      <div style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px">Materials Covered (${top1.newlyCovered.length} of ${totalMaterials})</div>
-      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
-        ${top1.newlyCovered.map(k=>{
-          const col=pmmMaterialColor(materialDisplay[k]);
-          return `<span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:12px;background:${col.bg};color:${col.text}">${esc(materialDisplay[k])} (${materialOccurrences[k]})</span>`;
-        }).join("")}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:14px">
+      <div>
+        <div style="font-size:10.5px;font-weight:700;color:#333;margin-bottom:6px">General Material Coverage <span style="color:#aaa;font-weight:400">(${totalMaterials} materials, all types)</span></div>
+        ${pmmTopNCardsHtml(generalCover, "#c0d8f8")}
       </div>
-      <div style="font-size:10.5px;color:#0a7a46;font-weight:700">Recommended Samples: 1 · Represents ${representedCounts[top1.entry.id]||1} product${(representedCounts[top1.entry.id]||1)!==1?"s":""}</div>
+      <div>
+        <div style="font-size:10.5px;font-weight:700;color:#333;margin-bottom:6px">Corrosion Coverage <span style="color:#aaa;font-weight:400">(metal materials only)</span></div>
+        ${pmmTopNCardsHtml(metalCover, "#fde0d0")}
+      </div>
+    </div>
+
+    <div style="background:#0e1b3d;border-radius:8px;padding:14px 16px;margin-top:6px">
+      <div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Sample Optimization Summary</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;font-size:11px;color:#fff">
+        <div><div style="font-size:18px;font-weight:700">${totalItems}</div><div style="color:#a8b8d8;font-size:9.5px">Product Item analyzed</div></div>
+        <div><div style="font-size:18px;font-weight:700">${uniqueCombinations}</div><div style="color:#a8b8d8;font-size:9.5px">Unique material combos</div></div>
+        <div><div style="font-size:18px;font-weight:700">${totalMaterials}</div><div style="color:#a8b8d8;font-size:9.5px">Unique materials</div></div>
+        <div><div style="font-size:18px;font-weight:700">${totalSamples}</div><div style="color:#a8b8d8;font-size:9.5px">Representative products</div></div>
+        <div><div style="font-size:18px;font-weight:700">${reductionPct}%</div><div style="color:#a8b8d8;font-size:9.5px">Products no longer needing review</div></div>
+        <div><div style="font-size:18px;font-weight:700">${top1Coverage}%</div><div style="color:#a8b8d8;font-size:9.5px">Top 1 coverage</div></div>
+      </div>
+      <div style="font-size:10px;color:#a8b8d8;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.15)">Testing ${totalSamples} representative product${totalSamples!==1?"s":""} instead of all ${totalItems} covers 100% of unique materials.</div>
+
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.15)">
+        <div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">💰 Actual Material Consolidation Savings</div>
+        <ul style="margin:0 0 10px 0;padding-left:18px;font-size:11px;color:#e8ecf5;line-height:1.7">
+          <li><strong style="color:#fff">Chemical Testing:</strong> ${fmtNum(chem.totalSamples)} samples across all ${totalItems} products at ${fmtUsd(chem.totalCost)} total → consolidating to ${chem.representatives.length} representative product${chem.representatives.length!==1?"s":""} needs only ${fmtNum(chem.repSamples)} samples (${fmtUsd(chem.totalSamples>0?chem.totalCost/chem.totalSamples:0)}/sample rate) ≈ ${fmtUsd(chem.repCost)}. <strong style="color:#7ee8b8">${fmtNum(chem.samplesSaved)} samples saved (${chem.pctSaved}%), ${fmtUsd(chem.costSaved)} saved.</strong></li>
+          <li><strong style="color:#fff">Corrosion Testing (metal only):</strong> ${fmtNum(corr.totalSamples)} samples at ${fmtUsd(corr.totalCost)} total → ${corr.representatives.length} representative product${corr.representatives.length!==1?"s":""} cover every unique metal material, needing only ${fmtNum(corr.repSamples)} samples ≈ ${fmtUsd(corr.repCost)}. <strong style="color:#7ee8b8">${fmtNum(corr.samplesSaved)} samples saved (${corr.pctSaved}%), ${fmtUsd(corr.costSaved)} saved.</strong></li>
+          <li><strong style="color:#fff">Combined:</strong> <strong style="color:#7ee8b8">${fmtNum(totalSamplesSaved)} total samples saved, ${fmtUsd(totalCostSaved)} in total savings (${totalPctSaved}% overall reduction).</strong></li>
+        </ul>
+        <table style="width:100%;border-collapse:collapse;font-size:10.5px">
+          <thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">
+            <th style="text-align:left;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Testing Type</th>
+            <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Samples</th>
+            <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Rep.</th>
+            <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Saved</th>
+            <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Cost</th>
+            <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">After</th>
+            <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Saved</th>
+            <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">%</th>
+          </tr></thead>
+          <tbody style="color:#e8ecf5">
+            <tr style="border-bottom:1px solid rgba(255,255,255,.1)">
+              <td style="padding:6px 8px;font-weight:600">Chemical</td>
+              <td style="padding:6px 8px;text-align:right">${fmtNum(chem.totalSamples)}</td>
+              <td style="padding:6px 8px;text-align:right">${fmtNum(chem.repSamples)}</td>
+              <td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${fmtNum(chem.samplesSaved)}</td>
+              <td style="padding:6px 8px;text-align:right">${fmtUsd(chem.totalCost)}</td>
+              <td style="padding:6px 8px;text-align:right">${fmtUsd(chem.repCost)}</td>
+              <td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${fmtUsd(chem.costSaved)}</td>
+              <td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${chem.pctSaved}%</td>
+            </tr>
+            <tr style="border-bottom:1px solid rgba(255,255,255,.2)">
+              <td style="padding:6px 8px;font-weight:600">Corrosion <span style="color:#a8b8d8;font-weight:400">(metal)</span></td>
+              <td style="padding:6px 8px;text-align:right">${fmtNum(corr.totalSamples)}</td>
+              <td style="padding:6px 8px;text-align:right">${fmtNum(corr.repSamples)}</td>
+              <td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${fmtNum(corr.samplesSaved)}</td>
+              <td style="padding:6px 8px;text-align:right">${fmtUsd(corr.totalCost)}</td>
+              <td style="padding:6px 8px;text-align:right">${fmtUsd(corr.repCost)}</td>
+              <td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${fmtUsd(corr.costSaved)}</td>
+              <td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${corr.pctSaved}%</td>
+            </tr>
+            <tr>
+              <td style="padding:6px 8px;font-weight:800;color:#fff">Total</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:700">${fmtNum(chem.totalSamples+corr.totalSamples)}</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:700">${fmtNum(chem.repSamples+corr.repSamples)}</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:800;color:#7ee8b8">${fmtNum(totalSamplesSaved)}</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:700">${fmtUsd(combinedCostBefore)}</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:700">${fmtUsd(chem.repCost+corr.repCost)}</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:800;color:#7ee8b8">${fmtUsd(totalCostSaved)}</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:800;color:#7ee8b8">${totalPctSaved}%</td>
+            </tr>
+          </tbody>
+        </table>
+        ${(chem.totalSamples===0&&corr.totalSamples===0)?`<div style="font-size:10px;color:#fdab3d;margin-top:8px">⚠ No Chemical or Corrosion quotation/sample data is filled in yet -- fill in Testing Information per entry for real numbers here.</div>`:""}
+      </div>
     </div>`;
-
-  if(selected.length>1){
-    html+=`<div style="font-size:11px;font-weight:700;color:#333;margin-bottom:6px">Additional Material Coverage</div>`;
-    selected.slice(1).forEach((sel,idx)=>{
-      const name=pmmNormalizeProductName(sel.entry.description)||sel.entry.sku;
-      html+=`<div style="background:#fff;border:1px solid #e0e3ea;border-radius:8px;padding:12px 14px;margin-bottom:10px">
-        <div style="font-size:11px;font-weight:700;color:#0055bb;margin-bottom:2px">Top ${idx+2}</div>
-        <div style="font-size:12px;font-weight:700;color:#222">${esc(name)}</div>
-        <div style="font-size:10px;color:#aaa;margin-bottom:1px">SKU: ${esc(sel.entry.sku)}</div>
-        <div style="font-size:10.5px;color:#888;margin-bottom:8px">Covers materials not included in the Top ${idx+1} representative product${idx>0?"s":""}.</div>
-        <div style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px">Additional Materials Covered</div>
-        <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">
-          ${sel.newlyCovered.map(k=>{
-            const col=pmmMaterialColor(materialDisplay[k]);
-            return `<span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:12px;background:${col.bg};color:${col.text}">${esc(materialDisplay[k])}</span>`;
-          }).join("")}
-        </div>
-        <div style="font-size:10.5px;color:#0a7a46;font-weight:700">Recommended Samples: 1 · Represents ${representedCounts[sel.entry.id]||1} product${(representedCounts[sel.entry.id]||1)!==1?"s":""}</div>
-      </div>`;
-    });
-  }
-
-  html+=`<div style="background:#0e1b3d;border-radius:8px;padding:14px 16px;margin-top:6px">
-    <div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Sample Optimization Summary</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;font-size:11px;color:#fff">
-      <div><div style="font-size:18px;font-weight:700">${totalItems}</div><div style="color:#a8b8d8;font-size:9.5px">Product Item analyzed</div></div>
-      <div><div style="font-size:18px;font-weight:700">${uniqueCombinations}</div><div style="color:#a8b8d8;font-size:9.5px">Unique material combos</div></div>
-      <div><div style="font-size:18px;font-weight:700">${totalMaterials}</div><div style="color:#a8b8d8;font-size:9.5px">Unique materials</div></div>
-      <div><div style="font-size:18px;font-weight:700">${totalSamples}</div><div style="color:#a8b8d8;font-size:9.5px">Representative products</div></div>
-      <div><div style="font-size:18px;font-weight:700">${reductionPct}%</div><div style="color:#a8b8d8;font-size:9.5px">Products no longer needing review</div></div>
-      <div><div style="font-size:18px;font-weight:700">${top1Coverage}%</div><div style="color:#a8b8d8;font-size:9.5px">Top 1 coverage</div></div>
-    </div>
-    <div style="font-size:10px;color:#a8b8d8;margin-top:8px">Testing ${totalSamples} representative product${totalSamples!==1?"s":""} instead of all ${totalItems} covers 100% of unique materials.</div>
-  </div>`;
-
-  // -- Actual savings, written out in words plus a breakdown table, computed
-  // separately per testing type as requested (Chemical and Corrosion use
-  // genuinely different methods, then get combined for the final total). --
-  html+=`<div style="background:#f0fff8;border:1.5px solid #c3f0da;border-radius:8px;padding:14px 16px;margin-top:12px">
-    <div style="font-size:10px;font-weight:700;color:#0a7a46;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">💰 Actual Material Consolidation Savings</div>
-
-    <div style="font-size:11.5px;color:#333;line-height:1.7;margin-bottom:14px">
-      <p style="margin-bottom:8px"><strong>Chemical Testing</strong> required ${fmtNum(chem.totalSamples)} sample${chem.totalSamples!==1?"s":""} across all ${totalItems} products, at a total quoted cost of ${fmtUsd(chem.totalCost)}. Consolidating down to ${chem.representatives.length} representative product${chem.representatives.length!==1?"s":""} (the same ones needed to cover every material) only requires ${fmtNum(chem.repSamples)} sample${chem.repSamples!==1?"s":""} — a blended rate of ${chem.totalSamples>0?fmtUsd(chem.totalCost/chem.totalSamples):"$0"} per sample applied to that reduced count comes to ${fmtUsd(chem.repCost)}. That's <strong>${fmtNum(chem.samplesSaved)} sample${chem.samplesSaved!==1?"s":""} saved (${chem.pctSaved}%)</strong> and <strong>${fmtUsd(chem.costSaved)} saved</strong> on Chemical Testing alone.</p>
-      <p style="margin-bottom:8px"><strong>Corrosion Testing</strong> only meaningfully applies to metal components, so its representative set is calculated separately, counting only metal materials (steel grades, aluminum, etc.) rather than every material. Across all ${totalItems} products, ${fmtNum(corr.totalSamples)} sample${corr.totalSamples!==1?"s":""} were quoted at ${fmtUsd(corr.totalCost)} total. Just ${corr.representatives.length} representative product${corr.representatives.length!==1?"s":""} cover every unique metal material, needing only ${fmtNum(corr.repSamples)} sample${corr.repSamples!==1?"s":""} at an estimated ${fmtUsd(corr.repCost)}. That's <strong>${fmtNum(corr.samplesSaved)} sample${corr.samplesSaved!==1?"s":""} saved (${corr.pctSaved}%)</strong> and <strong>${fmtUsd(corr.costSaved)} saved</strong> on Corrosion Testing.</p>
-      <p><strong>Combined, that's ${fmtNum(totalSamplesSaved)} total samples saved and ${fmtUsd(totalCostSaved)} in total savings (${totalPctSaved}% overall reduction)</strong> across both testing types.</p>
-    </div>
-
-    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:6px">
-      <thead><tr style="background:#e3f9ee">
-        <th style="text-align:left;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Testing Type</th>
-        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Total Samples</th>
-        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Rep. Samples</th>
-        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Samples Saved</th>
-        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Total Cost</th>
-        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Cost After</th>
-        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Cost Saved</th>
-        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">% Saved</th>
-      </tr></thead>
-      <tbody>
-        <tr style="border-bottom:1px solid #e8eaed">
-          <td style="padding:7px 10px;font-weight:600;color:#333">Chemical Testing</td>
-          <td style="padding:7px 10px;text-align:right">${fmtNum(chem.totalSamples)}</td>
-          <td style="padding:7px 10px;text-align:right">${fmtNum(chem.repSamples)}</td>
-          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${fmtNum(chem.samplesSaved)}</td>
-          <td style="padding:7px 10px;text-align:right">${fmtUsd(chem.totalCost)}</td>
-          <td style="padding:7px 10px;text-align:right">${fmtUsd(chem.repCost)}</td>
-          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${fmtUsd(chem.costSaved)}</td>
-          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${chem.pctSaved}%</td>
-        </tr>
-        <tr style="border-bottom:1.5px solid #c3f0da">
-          <td style="padding:7px 10px;font-weight:600;color:#333">Corrosion Testing <span style="color:#aaa;font-weight:400">(metal only)</span></td>
-          <td style="padding:7px 10px;text-align:right">${fmtNum(corr.totalSamples)}</td>
-          <td style="padding:7px 10px;text-align:right">${fmtNum(corr.repSamples)}</td>
-          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${fmtNum(corr.samplesSaved)}</td>
-          <td style="padding:7px 10px;text-align:right">${fmtUsd(corr.totalCost)}</td>
-          <td style="padding:7px 10px;text-align:right">${fmtUsd(corr.repCost)}</td>
-          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${fmtUsd(corr.costSaved)}</td>
-          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${corr.pctSaved}%</td>
-        </tr>
-        <tr style="background:#e3f9ee">
-          <td style="padding:7px 10px;font-weight:800;color:#0a7a46">Total</td>
-          <td style="padding:7px 10px;text-align:right;font-weight:700">${fmtNum(chem.totalSamples+corr.totalSamples)}</td>
-          <td style="padding:7px 10px;text-align:right;font-weight:700">${fmtNum(chem.repSamples+corr.repSamples)}</td>
-          <td style="padding:7px 10px;text-align:right;font-weight:800;color:#0a7a46">${fmtNum(totalSamplesSaved)}</td>
-          <td style="padding:7px 10px;text-align:right;font-weight:700">${fmtUsd(combinedCostBefore)}</td>
-          <td style="padding:7px 10px;text-align:right;font-weight:700">${fmtUsd(chem.repCost+corr.repCost)}</td>
-          <td style="padding:7px 10px;text-align:right;font-weight:800;color:#0a7a46">${fmtUsd(totalCostSaved)}</td>
-          <td style="padding:7px 10px;text-align:right;font-weight:800;color:#0a7a46">${totalPctSaved}%</td>
-        </tr>
-      </tbody>
-    </table>
-    ${(chem.totalSamples===0&&corr.totalSamples===0)?`<div style="font-size:10px;color:#b07000;margin-top:8px">⚠ No Chemical or Corrosion quotation/sample data is filled in yet for these entries -- fill in Testing Information per entry for this to reflect real numbers.</div>`:""}
-    <div style="font-size:9.5px;color:#888;margin-top:8px">Corrosion's representative set is calculated separately from the material-coverage list above, since it only counts metal materials. Physical Testing is excluded from this savings math since it validates the whole product, not a shared material.</div>
-  </div>`;
 
   if(uncoveredLeftover.size){
     html+=`<div style="font-size:10px;color:#c0392b;margin-top:8px">⚠ ${uncoveredLeftover.size} material(s) aren't linked to any product's components and couldn't be covered by a sample.</div>`;
