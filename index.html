@@ -2201,7 +2201,6 @@ function renderModals(){
             ${field("B SKU Family","skuFamilyB",e.skuFamilyB)}
             ${field("C SKU Family","skuFamilyC",e.skuFamilyC)}
             ${field("Retail SKU","retailSku",e.retailSku)}
-            ${field("Parent SKU","parentSku",e.parentSku)}
             ${field("Category","category",e.category)}
             ${field("Preferred Supplier","supplier",e.supplier)}
           </div>
@@ -2825,6 +2824,10 @@ async function pmmEnsureHeaders(){
 async function pmmGetSheetGid(){
   if(pmmSheetGidCache!==null) return pmmSheetGidCache;
   const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
+  if(res.status===401){
+    accessToken=null;
+    throw new Error("Your Google session expired. Go to the Compliance Dashboard tab and click Re-sync, then try saving again.");
+  }
   if(!res.ok) throw new Error("Could not look up the sheet tab info.");
   const data=await res.json();
   const sheet=(data.sheets||[]).find(s=>s.properties.title===PMM_SHEET);
@@ -2999,8 +3002,9 @@ async function pmmSubmitEntry(){
 // materials, until every unique material across all entries is covered by at least
 // one selected representative product. Minimizes how many products need physical
 // testing samples while still covering every distinct material at least once.
-function pmmComputeSetCover(entries){
+function pmmComputeSetCover(entries, materialFilter){
   entries=entries||pmmEntries;
+  const passesFilter=materialFilter||(()=>true);
   const materialDisplay={}; // lowercase key -> original-case display text (first seen)
   const materialOccurrences={}; // lowercase key -> count of entries containing it
   const productMaterials={}; // entryId -> Set of lowercase material keys
@@ -3010,6 +3014,7 @@ function pmmComputeSetCover(entries){
     e.components.forEach(c=>{
       const key=(c.material||"").trim().toLowerCase();
       if(!key) return;
+      if(!passesFilter(c.material)) return;
       matSet.add(key);
       if(!materialDisplay[key]) materialDisplay[key]=c.material.trim();
     });
@@ -3114,15 +3119,52 @@ function pmmUniqueMaterialCombinationsCount(entries){
 
 // -- Real cost/sample math, built from what's actually captured in Testing
 // Information per entry, instead of a flat assumed per-SKU rate. --
+// Physical Testing is deliberately excluded from savings math -- it validates the
+// whole assembled product, not a shared material, so consolidating by material
+// doesn't reduce how many physical tests are actually needed.
 function pmmParseNum(v){
   const n=parseFloat(String(v||"").replace(/[^0-9.]/g,""));
   return isNaN(n)?0:n;
 }
-function pmmEntryTestingCost(e){
-  return pmmParseNum(e.chemTestCost)+pmmParseNum(e.physTestCost)+pmmParseNum(e.corrTestCost);
+
+// Heuristic metal-material detector for Corrosion Testing, since corrosion only
+// meaningfully applies to metal components (steel grades, aluminum, etc.) -- not
+// plastics, fabrics, or coatings. Matches common steel grade codes (Q195, 1045,
+// 40Mn) as well as plain words (steel, aluminum, iron, zinc). This is a heuristic,
+// not a certified materials classification -- worth spot-checking against your data.
+function pmmIsMetalMaterial(material){
+  const m=(material||"").trim();
+  if(!m) return false;
+  if(/steel|aluminum|\biron\b|\bzinc\b|\bmetal\b/i.test(m)) return true;
+  if(/\bq\d{3}\b/i.test(m)) return true;          // e.g. Q195
+  if(/\b\d{3,4}\s*mn\b/i.test(m)) return true;     // e.g. 40Mn
+  if(/^\d{3,4}\b/.test(m)) return true;            // e.g. 1045, 1070 (steel grade codes)
+  return false;
 }
-function pmmEntryTestingSamples(e){
-  return pmmParseNum(e.chemTestSample)+pmmParseNum(e.physTestSample)+pmmParseNum(e.corrTestSample);
+
+// Chemical: total quotation cost / total samples across ALL entries gives a blended
+// "cost per sample" rate, which is then applied to however many samples the
+// representative products actually need -- rather than assuming each entry's own
+// quoted cost scales linearly with its own sample count.
+// Corrosion: same ratio method, but the representative set is computed using ONLY
+// metal materials (via materialFilter), since non-metal components don't need
+// corrosion testing at all.
+function pmmComputeTestingSavings(entries, testKey, costKey, sampleKey, materialFilter){
+  const totalSamples=entries.reduce((s,e)=>s+pmmParseNum(e[sampleKey]),0);
+  const totalCost=entries.reduce((s,e)=>s+pmmParseNum(e[costKey]),0);
+  const {selected}=pmmComputeSetCover(entries, materialFilter);
+  const repIds=new Set(selected.map(s=>s.entry.id));
+  const repSamples=entries.reduce((s,e)=>s+(repIds.has(e.id)?pmmParseNum(e[sampleKey]):0),0);
+  const costPerSample=totalSamples>0?totalCost/totalSamples:0;
+  const repCost=costPerSample*repSamples;
+  return {
+    totalSamples, totalCost, repSamples,
+    repCost:Math.round(repCost*100)/100,
+    samplesSaved:totalSamples-repSamples,
+    costSaved:Math.round((totalCost-repCost)*100)/100,
+    pctSaved:totalSamples>0?Math.round(((totalSamples-repSamples)/totalSamples)*1000)/10:0,
+    representatives:selected.map(s=>s.entry),
+  };
 }
 
 // Restricts the entry set to Quotation Date's range when one is set (dates are plain
@@ -3182,18 +3224,18 @@ function pmmInsightsHtml(){
   const uniqueCombinations=pmmUniqueMaterialCombinationsCount(entries);
   const representedCounts=pmmComputeRepresentedCounts(selected,productMaterials,entries);
 
-  // Real cost/sample totals, from each entry's actual Testing Information --
-  // not a flat assumed rate. "Actual" here means: what these specific SKUs' own
-  // captured quotations and recommended sample counts add up to.
-  const selectedIds=new Set(selected.map(s=>s.entry.id));
-  const costBefore=entries.reduce((sum,e)=>sum+pmmEntryTestingCost(e),0);
-  const costAfter=entries.reduce((sum,e)=>sum+(selectedIds.has(e.id)?pmmEntryTestingCost(e):0),0);
-  const samplesBefore=entries.reduce((sum,e)=>sum+pmmEntryTestingSamples(e),0);
-  const samplesAfter=entries.reduce((sum,e)=>sum+(selectedIds.has(e.id)?pmmEntryTestingSamples(e):0),0);
-  const dollarSavings=costBefore-costAfter;
-  const sampleSavings=samplesBefore-samplesAfter;
-  const pctCostSavings=costBefore>0?Math.round((dollarSavings/costBefore)*1000)/10:0;
+  // Chemical and Corrosion are computed completely separately, per their own testing
+  // fields, then combined for a final total. Physical Testing is intentionally left
+  // out -- it validates the whole assembled product, not a shared material, so
+  // consolidating by material doesn't reduce how many physical tests are needed.
+  const chem=pmmComputeTestingSavings(entries,"chemTest","chemTestCost","chemTestSample",null);
+  const corr=pmmComputeTestingSavings(entries,"corrTest","corrTestCost","corrTestSample",pmmIsMetalMaterial);
+  const totalSamplesSaved=chem.samplesSaved+corr.samplesSaved;
+  const totalCostSaved=Math.round((chem.costSaved+corr.costSaved)*100)/100;
+  const combinedCostBefore=chem.totalCost+corr.totalCost;
+  const totalPctSaved=combinedCostBefore>0?Math.round((totalCostSaved/combinedCostBefore)*1000)/10:0;
   const fmtUsd=n=>"$"+n.toLocaleString("en-US",{maximumFractionDigits:2});
+  const fmtNum=n=>n.toLocaleString("en-US",{maximumFractionDigits:1});
 
   const top1Name=pmmNormalizeProductName(top1.entry.description)||top1.entry.sku;
 
@@ -3250,24 +3292,64 @@ function pmmInsightsHtml(){
     <div style="font-size:10px;color:#a8b8d8;margin-top:8px">Testing ${totalSamples} representative product${totalSamples!==1?"s":""} instead of all ${totalItems} covers 100% of unique materials.</div>
   </div>`;
 
+  // -- Actual savings, written out in words plus a breakdown table, computed
+  // separately per testing type as requested (Chemical and Corrosion use
+  // genuinely different methods, then get combined for the final total). --
   html+=`<div style="background:#f0fff8;border:1.5px solid #c3f0da;border-radius:8px;padding:14px 16px;margin-top:12px">
-    <div style="font-size:10px;font-weight:700;color:#0a7a46;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">💰 Actual Material Consolidation Savings</div>
-    <div style="font-size:9.5px;color:#888;margin-bottom:10px">Computed from each entry's own Chemical / Physical / Corrosion Testing quotations and recommended sample counts -- not an assumed flat rate.</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
-      <div>
-        <div style="font-size:22px;font-weight:800;color:#0a7a46">${sampleSavings}</div>
-        <div style="color:#666;font-size:10px">Samples actually saved (${samplesBefore} → ${samplesAfter})</div>
-      </div>
-      <div>
-        <div style="font-size:22px;font-weight:800;color:#0a7a46">${fmtUsd(dollarSavings)}</div>
-        <div style="color:#666;font-size:10px">Actual dollar savings (${fmtUsd(costBefore)} → ${fmtUsd(costAfter)})</div>
-      </div>
-      <div>
-        <div style="font-size:22px;font-weight:800;color:#0a7a46">${pctCostSavings}%</div>
-        <div style="color:#666;font-size:10px">Cost reduction</div>
-      </div>
+    <div style="font-size:10px;font-weight:700;color:#0a7a46;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">💰 Actual Material Consolidation Savings</div>
+
+    <div style="font-size:11.5px;color:#333;line-height:1.7;margin-bottom:14px">
+      <p style="margin-bottom:8px"><strong>Chemical Testing</strong> required ${fmtNum(chem.totalSamples)} sample${chem.totalSamples!==1?"s":""} across all ${totalItems} products, at a total quoted cost of ${fmtUsd(chem.totalCost)}. Consolidating down to ${chem.representatives.length} representative product${chem.representatives.length!==1?"s":""} (the same ones needed to cover every material) only requires ${fmtNum(chem.repSamples)} sample${chem.repSamples!==1?"s":""} — a blended rate of ${chem.totalSamples>0?fmtUsd(chem.totalCost/chem.totalSamples):"$0"} per sample applied to that reduced count comes to ${fmtUsd(chem.repCost)}. That's <strong>${fmtNum(chem.samplesSaved)} sample${chem.samplesSaved!==1?"s":""} saved (${chem.pctSaved}%)</strong> and <strong>${fmtUsd(chem.costSaved)} saved</strong> on Chemical Testing alone.</p>
+      <p style="margin-bottom:8px"><strong>Corrosion Testing</strong> only meaningfully applies to metal components, so its representative set is calculated separately, counting only metal materials (steel grades, aluminum, etc.) rather than every material. Across all ${totalItems} products, ${fmtNum(corr.totalSamples)} sample${corr.totalSamples!==1?"s":""} were quoted at ${fmtUsd(corr.totalCost)} total. Just ${corr.representatives.length} representative product${corr.representatives.length!==1?"s":""} cover every unique metal material, needing only ${fmtNum(corr.repSamples)} sample${corr.repSamples!==1?"s":""} at an estimated ${fmtUsd(corr.repCost)}. That's <strong>${fmtNum(corr.samplesSaved)} sample${corr.samplesSaved!==1?"s":""} saved (${corr.pctSaved}%)</strong> and <strong>${fmtUsd(corr.costSaved)} saved</strong> on Corrosion Testing.</p>
+      <p><strong>Combined, that's ${fmtNum(totalSamplesSaved)} total samples saved and ${fmtUsd(totalCostSaved)} in total savings (${totalPctSaved}% overall reduction)</strong> across both testing types.</p>
     </div>
-    ${costBefore===0?`<div style="font-size:10px;color:#b07000;margin-top:8px">⚠ No quotation costs are filled in yet for these entries -- fill in Testing Information (Quotation + Recommended Sample) per entry for this to reflect real numbers.</div>`:""}
+
+    <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:6px">
+      <thead><tr style="background:#e3f9ee">
+        <th style="text-align:left;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Testing Type</th>
+        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Total Samples</th>
+        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Rep. Samples</th>
+        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Samples Saved</th>
+        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Total Cost</th>
+        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Cost After</th>
+        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">Cost Saved</th>
+        <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#0a7a46;text-transform:uppercase;border-bottom:1.5px solid #c3f0da">% Saved</th>
+      </tr></thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #e8eaed">
+          <td style="padding:7px 10px;font-weight:600;color:#333">Chemical Testing</td>
+          <td style="padding:7px 10px;text-align:right">${fmtNum(chem.totalSamples)}</td>
+          <td style="padding:7px 10px;text-align:right">${fmtNum(chem.repSamples)}</td>
+          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${fmtNum(chem.samplesSaved)}</td>
+          <td style="padding:7px 10px;text-align:right">${fmtUsd(chem.totalCost)}</td>
+          <td style="padding:7px 10px;text-align:right">${fmtUsd(chem.repCost)}</td>
+          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${fmtUsd(chem.costSaved)}</td>
+          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${chem.pctSaved}%</td>
+        </tr>
+        <tr style="border-bottom:1.5px solid #c3f0da">
+          <td style="padding:7px 10px;font-weight:600;color:#333">Corrosion Testing <span style="color:#aaa;font-weight:400">(metal only)</span></td>
+          <td style="padding:7px 10px;text-align:right">${fmtNum(corr.totalSamples)}</td>
+          <td style="padding:7px 10px;text-align:right">${fmtNum(corr.repSamples)}</td>
+          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${fmtNum(corr.samplesSaved)}</td>
+          <td style="padding:7px 10px;text-align:right">${fmtUsd(corr.totalCost)}</td>
+          <td style="padding:7px 10px;text-align:right">${fmtUsd(corr.repCost)}</td>
+          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${fmtUsd(corr.costSaved)}</td>
+          <td style="padding:7px 10px;text-align:right;color:#0a7a46;font-weight:600">${corr.pctSaved}%</td>
+        </tr>
+        <tr style="background:#e3f9ee">
+          <td style="padding:7px 10px;font-weight:800;color:#0a7a46">Total</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:700">${fmtNum(chem.totalSamples+corr.totalSamples)}</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:700">${fmtNum(chem.repSamples+corr.repSamples)}</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:800;color:#0a7a46">${fmtNum(totalSamplesSaved)}</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:700">${fmtUsd(combinedCostBefore)}</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:700">${fmtUsd(chem.repCost+corr.repCost)}</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:800;color:#0a7a46">${fmtUsd(totalCostSaved)}</td>
+          <td style="padding:7px 10px;text-align:right;font-weight:800;color:#0a7a46">${totalPctSaved}%</td>
+        </tr>
+      </tbody>
+    </table>
+    ${(chem.totalSamples===0&&corr.totalSamples===0)?`<div style="font-size:10px;color:#b07000;margin-top:8px">⚠ No Chemical or Corrosion quotation/sample data is filled in yet for these entries -- fill in Testing Information per entry for this to reflect real numbers.</div>`:""}
+    <div style="font-size:9.5px;color:#888;margin-top:8px">Corrosion's representative set is calculated separately from the material-coverage list above, since it only counts metal materials. Physical Testing is excluded from this savings math since it validates the whole product, not a shared material.</div>
   </div>`;
 
   if(uncoveredLeftover.size){
