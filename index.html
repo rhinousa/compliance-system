@@ -3045,10 +3045,13 @@ const PMM_PROCESSING_COST_PER_SKU = 200;
 const PMM_COLOR_WORDS=["black","green","blue","red","orange","gray","grey","yellow","purple","pink","white","tan","camo","silver","gold","brown","navy","maroon"];
 function pmmNormalizeProductName(desc){
   if(!desc) return "";
-  const dimRe=/\b\d+(\/\d+)?(\.\d+)?\s*in\s*x\s*\d+(\/\d+)?(\.\d+)?\s*ft\b/gi;
+  // No leading \b: retail-channel descriptions sometimes write dimensions as
+  // "2x1INX10FT" (a quantity multiplier glued directly onto the size) -- a leading
+  // word-boundary requirement would fail to match "1INX10FT" in that string at all.
+  const dimRe=/\d+(\/\d+)?(\.\d+)?\s*in\s*x\s*\d+(\/\d+)?(\.\d+)?\s*ft\b/gi;
   const dims=[];
   let dm;
-  while((dm=dimRe.exec(desc))!==null){ dims.push(dm[0].replace(/\s+/g," ")); }
+  while((dm=dimRe.exec(desc))!==null){ dims.push(dm[0].replace(/\s+/g,"").toUpperCase()); } // canonical form -- "2IN X 10FT" and "2inx10ft" must match "2INX10FT"
 
   let s=desc;
   s=s.replace(/\([^)]*\)/g," ");           // (4PK 1INX10FT), (Green), etc.
@@ -3058,6 +3061,12 @@ function pmmNormalizeProductName(desc){
   s=s.replace(/\b\d+\/\d+\s*$/,"");        // leftover trailing fraction fragment if a dimension partially matched
   s=s.replace(/\b\d+\s*-?\s*(pk|pack|pcs?|ct|count)\b/gi," ");      // 4PK, 8-Pack, 2 PCS
   s=s.replace(/\btier\s*\d+\b/gi," ");     // Tier 1, Tier 2
+  // Retail-channel names often appear as plain trailing text (not in parens), e.g.
+  // "... Walmart-Retail" or "... - 6 set in Pack" -- strip those too, since a product
+  // sold through a specific retailer is still the same underlying product family.
+  s=s.replace(/\b(walmart|costco|autozone|sam'?s|target|lowe'?s|pdq)\b/gi," ");
+  s=s.replace(/\bretail\b/gi," ");
+  s=s.replace(/-\s*\d+\s*set\s*in\s*p[a-z]*\b.*/gi," ");
   const colorRe=new RegExp("\\b("+PMM_COLOR_WORDS.join("|")+")\\b","gi");
   s=s.replace(colorRe," ");
   s=s.replace(/\s{2,}/g," ").trim();
