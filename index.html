@@ -324,6 +324,7 @@ let pmmFilterCategory = "ALL";
 let pmmSearchSku = "";
 let pmmMaterialColors = {}; // material text (lowercased) -> hex color, assigned on first sight
 let pmmRemarks = localStorage.getItem("rhino_pmm_remarks_v1") || "";
+let pmmInsightDateFrom = "", pmmInsightDateTo = "";
 const PMM_CATEGORIES = ["Tie-Down","Recovery Gear","Accessories","Towing","Camping"];
 const PMM_PALETTE = ["#e8f2ff","#e3f9ee","#fff8e0","#fdeaea","#f0efff","#e0f7fa","#fbe9e7","#f1f8e9","#fce4ec","#ede7f6"];
 const PMM_PALETTE_TEXT = ["#0055bb","#0a7a46","#7a5500","#a02020","#5b21b6","#00695c","#a04010","#33691e","#a01050","#4527a0"];
@@ -2998,12 +2999,13 @@ async function pmmSubmitEntry(){
 // materials, until every unique material across all entries is covered by at least
 // one selected representative product. Minimizes how many products need physical
 // testing samples while still covering every distinct material at least once.
-function pmmComputeSetCover(){
+function pmmComputeSetCover(entries){
+  entries=entries||pmmEntries;
   const materialDisplay={}; // lowercase key -> original-case display text (first seen)
   const materialOccurrences={}; // lowercase key -> count of entries containing it
   const productMaterials={}; // entryId -> Set of lowercase material keys
 
-  pmmEntries.forEach(e=>{
+  entries.forEach(e=>{
     const matSet=new Set();
     e.components.forEach(c=>{
       const key=(c.material||"").trim().toLowerCase();
@@ -3022,7 +3024,7 @@ function pmmComputeSetCover(){
 
   while(uncovered.size>0){
     let best=null, bestCovered=null, bestCount=-1;
-    pmmEntries.forEach(e=>{
+    entries.forEach(e=>{
       if(usedIds.has(e.id)) return;
       const matSet=productMaterials[e.id];
       if(!matSet||!matSet.size) return;
@@ -3037,10 +3039,6 @@ function pmmComputeSetCover(){
 
   return {materialDisplay, materialOccurrences, allMaterials, selected, uncoveredLeftover:uncovered, productMaterials};
 }
-
-// Cost-per-SKU used in the savings analysis below — change this if your actual
-// per-product processing/testing cost differs from $200.
-const PMM_PROCESSING_COST_PER_SKU = 200;
 
 // Strips brand, color, pack size, dimensions, and tier info from a product
 // description down to a generic family name (e.g. "Rhino USA Retractable Ratchet
@@ -3084,11 +3082,12 @@ function pmmNormalizeProductName(desc){
 }
 
 // For each representative product, count how many OTHER products' entire material
-// set is already fully contained within it — those products don't need their own
+// set is already fully contained within it -- those products don't need their own
 // separate testing sample, since the representative's results already cover them.
-function pmmComputeRepresentedCounts(selected, productMaterials){
+function pmmComputeRepresentedCounts(selected, productMaterials, entries){
+  entries=entries||pmmEntries;
   const assigned={};
-  pmmEntries.forEach(e=>{
+  entries.forEach(e=>{
     const pset=productMaterials[e.id];
     if(!pset||!pset.size) return;
     for(const sel of selected){
@@ -3103,43 +3102,103 @@ function pmmComputeRepresentedCounts(selected, productMaterials){
   return counts;
 }
 
-function pmmUniqueMaterialCombinationsCount(){
+function pmmUniqueMaterialCombinationsCount(entries){
+  entries=entries||pmmEntries;
   const sigs=new Set();
-  pmmEntries.forEach(e=>{
+  entries.forEach(e=>{
     const keys=[...new Set(e.components.map(c=>(c.material||"").trim().toLowerCase()).filter(Boolean))].sort();
     if(keys.length) sigs.add(keys.join("|"));
   });
   return sigs.size;
 }
 
-function pmmInsightsHtml(){
-  if(pmmEntries.length<3){
-    return `<div class="pmm-insight-box"><div style="font-size:11px;color:#0055bb">Add at least 3 entries to see material consolidation insights.</div></div>`;
+// -- Real cost/sample math, built from what's actually captured in Testing
+// Information per entry, instead of a flat assumed per-SKU rate. --
+function pmmParseNum(v){
+  const n=parseFloat(String(v||"").replace(/[^0-9.]/g,""));
+  return isNaN(n)?0:n;
+}
+function pmmEntryTestingCost(e){
+  return pmmParseNum(e.chemTestCost)+pmmParseNum(e.physTestCost)+pmmParseNum(e.corrTestCost);
+}
+function pmmEntryTestingSamples(e){
+  return pmmParseNum(e.chemTestSample)+pmmParseNum(e.physTestSample)+pmmParseNum(e.corrTestSample);
+}
+
+// Restricts the entry set to Quotation Date's range when one is set (dates are plain
+// "YYYY-MM-DD" strings from the date inputs, so lexicographic comparison is correct).
+function pmmGetInsightEntries(){
+  let entries=pmmEntries;
+  if(pmmInsightDateFrom||pmmInsightDateTo){
+    entries=entries.filter(e=>{
+      if(!e.quotationDate) return false;
+      if(pmmInsightDateFrom && e.quotationDate<pmmInsightDateFrom) return false;
+      if(pmmInsightDateTo && e.quotationDate>pmmInsightDateTo) return false;
+      return true;
+    });
   }
-  const {materialDisplay,materialOccurrences,allMaterials,selected,uncoveredLeftover,productMaterials}=pmmComputeSetCover();
+  return entries;
+}
+
+function pmmAnalyzeInsights(){
+  pmmInsightDateFrom=(document.getElementById("pmm-insight-from")?.value||"");
+  pmmInsightDateTo=(document.getElementById("pmm-insight-to")?.value||"");
+  pmmRenderCompiled();
+}
+function pmmClearInsightDates(){
+  pmmInsightDateFrom=""; pmmInsightDateTo="";
+  pmmRenderCompiled();
+}
+
+function pmmInsightsHtml(){
+  const entries=pmmGetInsightEntries();
+  const dateFilterActive=!!(pmmInsightDateFrom||pmmInsightDateTo);
+
+  const dateBarHtml=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #c0d8f8">
+    <span style="font-size:9.5px;font-weight:700;color:#0055bb;text-transform:uppercase;letter-spacing:.3px">Quotation Date Range</span>
+    <input id="pmm-insight-from" type="date" value="${esc(pmmInsightDateFrom)}" style="padding:5px 8px;border:1px solid #c0d8f8;border-radius:6px;font-size:11px"/>
+    <span style="font-size:10px;color:#888">to</span>
+    <input id="pmm-insight-to" type="date" value="${esc(pmmInsightDateTo)}" style="padding:5px 8px;border:1px solid #c0d8f8;border-radius:6px;font-size:11px"/>
+    <button onclick="pmmAnalyzeInsights()" style="font-size:11px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:6px;padding:6px 14px;cursor:pointer">Analyze</button>
+    ${dateFilterActive?`<button onclick="pmmClearInsightDates()" style="font-size:10.5px;color:#e2445c;background:none;border:none;cursor:pointer;text-decoration:underline">Clear filter</button>`:""}
+    ${dateFilterActive?`<span style="font-size:10px;color:#0a7a46;font-weight:600">Showing ${entries.length} of ${pmmEntries.length} entries in range</span>`:""}
+  </div>`;
+
+  if(entries.length<3){
+    return `<div class="pmm-insight-box">${dateBarHtml}<div style="font-size:11px;color:#0055bb">${dateFilterActive?"Fewer than 3 entries fall in this date range — widen the range to see insights.":"Add at least 3 entries to see material consolidation insights."}</div></div>`;
+  }
+  const {materialDisplay,materialOccurrences,allMaterials,selected,uncoveredLeftover,productMaterials}=pmmComputeSetCover(entries);
 
   if(!selected.length){
-    return `<div class="pmm-insight-box"><div style="font-size:11px;color:#0055bb">No materials recorded yet across entries.</div></div>`;
+    return `<div class="pmm-insight-box">${dateBarHtml}<div style="font-size:11px;color:#0055bb">No materials recorded yet across these entries.</div></div>`;
   }
 
   const top1=selected[0];
   const totalMaterials=allMaterials.size;
   const top1Coverage=Math.round((top1.newlyCovered.length/totalMaterials)*100);
   const totalSamples=selected.length;
-  const totalSkus=pmmEntries.length;
-  const reductionPct=Math.round((1-(selected.length/totalSkus))*100);
-  const uniqueCombinations=pmmUniqueMaterialCombinationsCount();
-  const representedCounts=pmmComputeRepresentedCounts(selected,productMaterials);
+  const totalItems=entries.length;
+  const reductionPct=Math.round((1-(selected.length/totalItems))*100);
+  const uniqueCombinations=pmmUniqueMaterialCombinationsCount(entries);
+  const representedCounts=pmmComputeRepresentedCounts(selected,productMaterials,entries);
 
-  const costBefore=totalSkus*PMM_PROCESSING_COST_PER_SKU;
-  const costAfter=totalSamples*PMM_PROCESSING_COST_PER_SKU;
+  // Real cost/sample totals, from each entry's actual Testing Information --
+  // not a flat assumed rate. "Actual" here means: what these specific SKUs' own
+  // captured quotations and recommended sample counts add up to.
+  const selectedIds=new Set(selected.map(s=>s.entry.id));
+  const costBefore=entries.reduce((sum,e)=>sum+pmmEntryTestingCost(e),0);
+  const costAfter=entries.reduce((sum,e)=>sum+(selectedIds.has(e.id)?pmmEntryTestingCost(e):0),0);
+  const samplesBefore=entries.reduce((sum,e)=>sum+pmmEntryTestingSamples(e),0);
+  const samplesAfter=entries.reduce((sum,e)=>sum+(selectedIds.has(e.id)?pmmEntryTestingSamples(e):0),0);
   const dollarSavings=costBefore-costAfter;
-  const pctSavings=costBefore>0?Math.round((dollarSavings/costBefore)*1000)/10:0;
-  const fmtUsd=n=>"$"+n.toLocaleString("en-US");
+  const sampleSavings=samplesBefore-samplesAfter;
+  const pctCostSavings=costBefore>0?Math.round((dollarSavings/costBefore)*1000)/10:0;
+  const fmtUsd=n=>"$"+n.toLocaleString("en-US",{maximumFractionDigits:2});
 
   const top1Name=pmmNormalizeProductName(top1.entry.description)||top1.entry.sku;
 
   let html=`<div class="pmm-insight-box">
+    ${dateBarHtml}
     <div style="font-size:10px;font-weight:700;color:#0055bb;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px">🔎 Smart Insights — Material Consolidation &amp; Sample Reduction</div>
 
     <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:6px">Top 1 — Majority Material Coverage</div>
@@ -3181,24 +3240,34 @@ function pmmInsightsHtml(){
   html+=`<div style="background:#0e1b3d;border-radius:8px;padding:14px 16px;margin-top:6px">
     <div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Sample Optimization Summary</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;font-size:11px;color:#fff">
-      <div><div style="font-size:18px;font-weight:700">${totalSkus}</div><div style="color:#a8b8d8;font-size:9.5px">SKUs analyzed</div></div>
+      <div><div style="font-size:18px;font-weight:700">${totalItems}</div><div style="color:#a8b8d8;font-size:9.5px">Product Item analyzed</div></div>
       <div><div style="font-size:18px;font-weight:700">${uniqueCombinations}</div><div style="color:#a8b8d8;font-size:9.5px">Unique material combos</div></div>
       <div><div style="font-size:18px;font-weight:700">${totalMaterials}</div><div style="color:#a8b8d8;font-size:9.5px">Unique materials</div></div>
       <div><div style="font-size:18px;font-weight:700">${totalSamples}</div><div style="color:#a8b8d8;font-size:9.5px">Representative products</div></div>
       <div><div style="font-size:18px;font-weight:700">${reductionPct}%</div><div style="color:#a8b8d8;font-size:9.5px">Products no longer needing review</div></div>
       <div><div style="font-size:18px;font-weight:700">${top1Coverage}%</div><div style="color:#a8b8d8;font-size:9.5px">Top 1 coverage</div></div>
     </div>
-    <div style="font-size:10px;color:#a8b8d8;margin-top:8px">Testing ${totalSamples} representative product${totalSamples!==1?"s":""} instead of all ${totalSkus} covers 100% of unique materials.</div>
+    <div style="font-size:10px;color:#a8b8d8;margin-top:8px">Testing ${totalSamples} representative product${totalSamples!==1?"s":""} instead of all ${totalItems} covers 100% of unique materials.</div>
   </div>`;
 
   html+=`<div style="background:#f0fff8;border:1.5px solid #c3f0da;border-radius:8px;padding:14px 16px;margin-top:12px">
-    <div style="font-size:10px;font-weight:700;color:#0a7a46;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">💰 Material Consolidation Cost Savings</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;font-size:11px">
-      <div><div style="font-size:16px;font-weight:700;color:#333">${fmtUsd(costBefore)}</div><div style="color:#777;font-size:9.5px">Cost before (${totalSkus} × ${fmtUsd(PMM_PROCESSING_COST_PER_SKU)})</div></div>
-      <div><div style="font-size:16px;font-weight:700;color:#333">${fmtUsd(costAfter)}</div><div style="color:#777;font-size:9.5px">Cost after (${totalSamples} × ${fmtUsd(PMM_PROCESSING_COST_PER_SKU)})</div></div>
-      <div><div style="font-size:16px;font-weight:700;color:#0a7a46">${fmtUsd(dollarSavings)}</div><div style="color:#777;font-size:9.5px">Estimated savings</div></div>
-      <div><div style="font-size:16px;font-weight:700;color:#0a7a46">${pctSavings}%</div><div style="color:#777;font-size:9.5px">Cost reduction</div></div>
+    <div style="font-size:10px;font-weight:700;color:#0a7a46;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">💰 Actual Material Consolidation Savings</div>
+    <div style="font-size:9.5px;color:#888;margin-bottom:10px">Computed from each entry's own Chemical / Physical / Corrosion Testing quotations and recommended sample counts -- not an assumed flat rate.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+      <div>
+        <div style="font-size:22px;font-weight:800;color:#0a7a46">${sampleSavings}</div>
+        <div style="color:#666;font-size:10px">Samples actually saved (${samplesBefore} → ${samplesAfter})</div>
+      </div>
+      <div>
+        <div style="font-size:22px;font-weight:800;color:#0a7a46">${fmtUsd(dollarSavings)}</div>
+        <div style="color:#666;font-size:10px">Actual dollar savings (${fmtUsd(costBefore)} → ${fmtUsd(costAfter)})</div>
+      </div>
+      <div>
+        <div style="font-size:22px;font-weight:800;color:#0a7a46">${pctCostSavings}%</div>
+        <div style="color:#666;font-size:10px">Cost reduction</div>
+      </div>
     </div>
+    ${costBefore===0?`<div style="font-size:10px;color:#b07000;margin-top:8px">⚠ No quotation costs are filled in yet for these entries -- fill in Testing Information (Quotation + Recommended Sample) per entry for this to reflect real numbers.</div>`:""}
   </div>`;
 
   if(uncoveredLeftover.size){
@@ -3211,70 +3280,6 @@ function pmmInsightsHtml(){
   </div>
   </div>`;
   return html;
-}
-
-// Amazon-style zoom: a small lens box follows the cursor over the image, and a
-// larger fixed-position panel shows a magnified view of whatever's under the lens.
-function pmmSetupImageZoom(imgId){
-  const img=document.getElementById(imgId);
-  if(!img) return;
-  const wrap=img.parentElement;
-  wrap.style.position="relative";
-
-  let lens=wrap.querySelector(".pmm-zoom-lens");
-  if(!lens){ lens=document.createElement("div"); lens.className="pmm-zoom-lens"; wrap.appendChild(lens); }
-
-  let result=document.getElementById("pmm-zoom-result-panel");
-  if(!result){
-    result=document.createElement("div");
-    result.id="pmm-zoom-result-panel";
-    result.className="pmm-zoom-result";
-    document.body.appendChild(result);
-  }
-
-  const zoomFactor=2.8;
-
-  function positionResult(){
-    const wrapRect=wrap.getBoundingClientRect();
-    let left=wrapRect.left-336; // prefer left of the photo, so it never covers the table on the right
-    if(left<8) left=wrapRect.right+16; // fall back to the right only if there's no room on the left
-    result.style.left=left+"px";
-    result.style.top=Math.max(8,wrapRect.top)+"px";
-  }
-
-  function moveLens(e){
-    e.preventDefault();
-    const rect=img.getBoundingClientRect();
-    const clientX=(e.touches?e.touches[0].clientX:e.clientX);
-    const clientY=(e.touches?e.touches[0].clientY:e.clientY);
-    let x=clientX-rect.left-lens.offsetWidth/2;
-    let y=clientY-rect.top-lens.offsetHeight/2;
-    x=Math.max(0,Math.min(x,rect.width-lens.offsetWidth));
-    y=Math.max(0,Math.min(y,rect.height-lens.offsetHeight));
-    lens.style.left=x+"px";
-    lens.style.top=y+"px";
-    result.style.backgroundImage=`url('${img.src}')`;
-    result.style.backgroundSize=(rect.width*zoomFactor)+"px "+(rect.height*zoomFactor)+"px";
-    result.style.backgroundPosition="-"+(x*zoomFactor)+"px -"+(y*zoomFactor)+"px";
-  }
-  function show(e){ lens.style.display="block"; result.style.display="block"; positionResult(); moveLens(e); }
-  function hide(){ lens.style.display="none"; result.style.display="none"; }
-
-  img.onmouseenter=show;
-  img.onmousemove=moveLens;
-  img.onmouseleave=hide;
-  img.ontouchstart=show;
-  img.ontouchmove=moveLens;
-  img.ontouchend=hide;
-}
-
-function pmmPhotoDisplayUrl(url){
-  if(!url) return "";
-  if(url.includes("uc?export=view")){
-    const m=url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-    if(m) return `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1000`;
-  }
-  return url;
 }
 
 function pmmFamilyLineHtml(label, value, entryId, key){
