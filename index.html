@@ -3298,6 +3298,74 @@ function pmmShowSkuFamilyList(entryId, key){
   openModal({type:"pmmSkuFamilyList", title:labelMap[key]||key, skus});
 }
 
+// Amazon-style zoom: a small lens box follows the cursor over the image, and a
+// larger fixed-position panel shows a magnified view of whatever's under the lens.
+function pmmSetupImageZoom(imgId){
+  const img=document.getElementById(imgId);
+  if(!img) return;
+  const wrap=img.parentElement;
+  wrap.style.position="relative";
+
+  let lens=wrap.querySelector(".pmm-zoom-lens");
+  if(!lens){ lens=document.createElement("div"); lens.className="pmm-zoom-lens"; wrap.appendChild(lens); }
+
+  let result=document.getElementById("pmm-zoom-result-panel");
+  if(!result){
+    result=document.createElement("div");
+    result.id="pmm-zoom-result-panel";
+    result.className="pmm-zoom-result";
+    document.body.appendChild(result);
+  }
+
+  const zoomFactor=2.8;
+
+  function positionResult(){
+    const wrapRect=wrap.getBoundingClientRect();
+    let left=wrapRect.left-336; // prefer left of the photo, so it never covers the table on the right
+    if(left<8) left=wrapRect.right+16; // fall back to the right only if there's no room on the left
+    result.style.left=left+"px";
+    result.style.top=Math.max(8,wrapRect.top)+"px";
+  }
+
+  function moveLens(e){
+    e.preventDefault();
+    const rect=img.getBoundingClientRect();
+    const clientX=(e.touches?e.touches[0].clientX:e.clientX);
+    const clientY=(e.touches?e.touches[0].clientY:e.clientY);
+    let x=clientX-rect.left-lens.offsetWidth/2;
+    let y=clientY-rect.top-lens.offsetHeight/2;
+    x=Math.max(0,Math.min(x,rect.width-lens.offsetWidth));
+    y=Math.max(0,Math.min(y,rect.height-lens.offsetHeight));
+    lens.style.left=x+"px";
+    lens.style.top=y+"px";
+    result.style.backgroundImage=`url('${img.src}')`;
+    result.style.backgroundSize=(rect.width*zoomFactor)+"px "+(rect.height*zoomFactor)+"px";
+    result.style.backgroundPosition="-"+(x*zoomFactor)+"px -"+(y*zoomFactor)+"px";
+  }
+  function show(e){ lens.style.display="block"; result.style.display="block"; positionResult(); moveLens(e); }
+  function hide(){ lens.style.display="none"; result.style.display="none"; }
+
+  img.onmouseenter=show;
+  img.onmousemove=moveLens;
+  img.onmouseleave=hide;
+  img.ontouchstart=show;
+  img.ontouchmove=moveLens;
+  img.ontouchend=hide;
+}
+
+// Google's uc?export=view URL frequently fails to render inline in <img> tags
+// (redirects to an interstitial, especially for larger files). The thumbnail
+// endpoint is built for exactly this and works reliably as a direct image source.
+// Also auto-converts any older-format URL already saved from before this fix.
+function pmmPhotoDisplayUrl(url){
+  if(!url) return "";
+  if(url.includes("uc?export=view")){
+    const m=url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if(m) return `https://drive.google.com/thumbnail?id=${m[1]}&sz=w1000`;
+  }
+  return url;
+}
+
 function pmmEntryCardHtml(e){
   const rows=e.components.map(c=>{
     const col=pmmMaterialColor(c.material);
