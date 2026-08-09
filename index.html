@@ -2719,10 +2719,15 @@ function pmmOnPhotoSelected(file){
 
 // Lets someone paste a copied/screenshotted image (Ctrl+V / Cmd+V) straight into the
 // photo field, instead of always needing to browse for a file. Only acts while the
-// Product Material Matrix "New Entry" tab is actually the visible one.
+// Product Material Matrix "New Entry" tab is actually the visible one, and only when
+// the paste ISN'T landing in a text field -- spreadsheet clipboards (Excel, Google
+// Sheets) often carry a hidden image snapshot of the copied cells alongside the plain
+// text, which would otherwise get mistaken for an intentional photo upload.
 document.addEventListener("paste", (e)=>{
   const pmmPanelActive=document.getElementById("panel-pmm")?.classList.contains("active");
   if(!pmmPanelActive || pmmActiveTab!=="new" || pmmDraftPhotoUploading || pmmDraftPhotoUrl) return;
+  const tag=(e.target?.tagName||"").toUpperCase();
+  if(tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT"||e.target?.isContentEditable) return;
   const items=e.clipboardData?.items;
   if(!items) return;
   for(const item of items){
