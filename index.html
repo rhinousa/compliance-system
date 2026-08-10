@@ -3009,14 +3009,24 @@ function pmmComputeSetCover(entries, materialFilter){
   const materialOccurrences={}; // lowercase key -> count of entries containing it
   const productMaterials={}; // entryId -> Set of lowercase material keys
 
+  // Splits a combined material like "1070 Steel + PVC" or "1045+PE" into its
+  // constituent parts. If PVC is already covered by an earlier representative on
+  // its own, a combo containing PVC shouldn't force a brand-new coverage slot --
+  // only whatever genuinely-new part it contributes (e.g. "1070 Steel") should.
+  function pmmSplitMaterialParts(material){
+    return String(material||"").split("+").map(p=>p.trim()).filter(Boolean);
+  }
+
   entries.forEach(e=>{
     const matSet=new Set();
     e.components.forEach(c=>{
-      const key=(c.material||"").trim().toLowerCase();
-      if(!key) return;
-      if(!passesFilter(c.material)) return;
-      matSet.add(key);
-      if(!materialDisplay[key]) materialDisplay[key]=c.material.trim();
+      pmmSplitMaterialParts(c.material).forEach(part=>{
+        const key=part.toLowerCase();
+        if(!key) return;
+        if(!passesFilter(part)) return;
+        matSet.add(key);
+        if(!materialDisplay[key]) materialDisplay[key]=part;
+      });
     });
     productMaterials[e.id]=matSet;
     matSet.forEach(key=>{ materialOccurrences[key]=(materialOccurrences[key]||0)+1; });
@@ -3111,7 +3121,11 @@ function pmmUniqueMaterialCombinationsCount(entries){
   entries=entries||pmmEntries;
   const sigs=new Set();
   entries.forEach(e=>{
-    const keys=[...new Set(e.components.map(c=>(c.material||"").trim().toLowerCase()).filter(Boolean))].sort();
+    const parts=new Set();
+    e.components.forEach(c=>{
+      String(c.material||"").split("+").map(p=>p.trim().toLowerCase()).filter(Boolean).forEach(p=>parts.add(p));
+    });
+    const keys=[...parts].sort();
     if(keys.length) sigs.add(keys.join("|"));
   });
   return sigs.size;
