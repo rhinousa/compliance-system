@@ -324,6 +324,8 @@ let pmmSheetGidCache = null;
 let pmmDraftPhotoUrl = "";
 let pmmDraftPhotoUploading = false;
 let pmmFilterCategory = "ALL";
+let pmmFilterSupplier = "ALL";
+let pmmSearchSuggestOpen = false;
 let pmmSearchSku = "";
 let pmmMaterialColors = {}; // material text (lowercased) -> hex color, assigned on first sight
 let pmmRemarks = localStorage.getItem("rhino_pmm_remarks_v1") || "";
@@ -2183,6 +2185,58 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="pmmViewLarge"){
+    const e=pmmEntries.find(x=>x.id===modal.entryId);
+    if(!e){ root.innerHTML=""; return; }
+    const normName=pmmNormalizeProductName(e.description)||e.sku;
+    const rows=e.components.map(c=>{
+      const col=pmmMaterialColor(c.material);
+      return `<tr>
+        <td style="padding:7px 12px;border-bottom:1px solid #f0f1f3;font-size:12px;color:#555;width:44px">${esc(c.item)}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #f0f1f3;font-size:12px;color:#333">${esc(c.component)}</td>
+        <td style="padding:7px 12px;border-bottom:1px solid #f0f1f3;font-size:12px;font-weight:600;background:${col.bg};color:${col.text}"><span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}</td>
+      </tr>`;
+    }).join("");
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:1080px">
+        <div style="background:#0073ea;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between">
+          <div style="color:#fff;font-weight:800;font-size:17px">${esc(normName)}</div>
+          <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+        </div>
+        <div style="padding:20px;display:flex;gap:20px;flex-wrap:wrap">
+          <div style="flex:0 0 300px">
+            ${e.photoUrl?`<div id="pmm-viewlarge-photo-wrap" style="margin-bottom:12px"><img id="pmm-viewlarge-photo" src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:100%;border-radius:8px;border:1px solid #eee;cursor:zoom-in;display:block"/></div>`:`<div style="width:100%;height:200px;background:#f7f8fa;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;margin-bottom:12px">No photo</div>`}
+            <div style="background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:10px 12px;font-size:11px;line-height:1.7;color:#333;margin-bottom:12px">
+              <div><strong>SKU:</strong> ${esc(e.sku)}</div>
+              <div>${pmmFamilyLineHtml("A SKU Family", e.skuFamily, e.id, "skuFamily")}</div>
+              <div>${pmmFamilyLineHtml("B SKU Family", e.skuFamilyB, e.id, "skuFamilyB")}</div>
+              <div>${pmmFamilyLineHtml("C SKU Family", e.skuFamilyC, e.id, "skuFamilyC")}</div>
+              <div>${pmmFamilyLineHtml("Retail SKU", e.retailSku, e.id, "retailSku")}</div>
+            </div>
+            <div style="background:#f0f6ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:10px 12px;font-size:11px;color:#333;line-height:1.7">
+              ${e.parentSku?`<div><strong style="color:#0055bb">Parent SKU:</strong> ${esc(e.parentSku)}</div>`:""}
+              ${e.supplier?`<div><strong style="color:#0055bb">Supplier:</strong> ${esc(e.supplier)}</div>`:""}
+              ${e.chemTest?`<div><strong style="color:#0055bb">Chemical Test:</strong> ${esc(e.chemTest)}${e.chemTestCost?` (${esc(e.chemTestCost)})`:""}</div>`:""}
+              ${e.physTest?`<div><strong style="color:#0055bb">Physical Test:</strong> ${esc(e.physTest)}${e.physTestCost?` (${esc(e.physTestCost)})`:""}</div>`:""}
+              ${e.corrTest?`<div><strong style="color:#0055bb">Corrosion Test:</strong> ${esc(e.corrTest)}${e.corrTestCost?` (${esc(e.corrTestCost)})`:""}</div>`:""}
+              ${e.testLab?`<div><strong style="color:#0055bb">Test Lab:</strong> ${esc(e.testLab)}</div>`:""}
+              ${e.quotationDate?`<div><strong style="color:#0055bb">Quotation Date:</strong> ${esc(e.quotationDate)}</div>`:""}
+            </div>
+          </div>
+          <div style="flex:1;min-width:360px">
+            <table style="width:100%;border-collapse:collapse">
+              <thead><tr>
+                <th style="text-align:left;padding:6px 12px;font-size:10.5px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
+                <th style="text-align:left;padding:6px 12px;font-size:10.5px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
+                <th style="text-align:left;padding:6px 12px;font-size:10.5px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    if(e.photoUrl) setTimeout(()=>{ if(typeof pmmSetupImageZoom==="function") pmmSetupImageZoom("pmm-viewlarge-photo"); }, 0);
   } else if(modal.type==="pmmDetail"){
     const e=pmmEntries.find(x=>x.id===modal.entryId);
     if(!e){ root.innerHTML=""; return; }
@@ -2855,6 +2909,10 @@ function pmmOpenEntryDetail(entryId){
   openModal({type:"pmmDetail", entryId});
 }
 
+function pmmOpenViewLarge(entryId){
+  openModal({type:"pmmViewLarge", entryId});
+}
+
 // These just update the in-memory entry as the user types — nothing is written to
 // the sheet until "Save Changes" is clicked, so editing never leaves the page but
 // also never silently overwrites the sheet mid-edit.
@@ -3220,9 +3278,10 @@ function pmmTopNCardsHtml(setCoverResult, accentColor){
 function pmmGetFilteredEntries(){
   let entries=pmmEntries;
   if(pmmFilterCategory!=="ALL") entries=entries.filter(e=>e.category===pmmFilterCategory);
+  if(pmmFilterSupplier!=="ALL") entries=entries.filter(e=>e.supplier===pmmFilterSupplier);
   if(pmmSearchSku){
     const q=pmmSearchSku.toLowerCase();
-    entries=entries.filter(e=>(e.sku||"").toLowerCase().includes(q));
+    entries=entries.filter(e=>(e.sku||"").toLowerCase().includes(q) || (e.supplier||"").toLowerCase().includes(q));
   }
   if(pmmInsightDateFrom||pmmInsightDateTo){
     entries=entries.filter(e=>{
@@ -3233,6 +3292,63 @@ function pmmGetFilteredEntries(){
     });
   }
   return entries;
+}
+
+// List of unique supplier names currently present, for the Supplier filter dropdown.
+function pmmGetSupplierList(){
+  return [...new Set(pmmEntries.map(e=>(e.supplier||"").trim()).filter(Boolean))].sort();
+}
+
+// Live suggestions shown under the search box as you type — matches against both
+// SKU and Supplier, tagging each result with which field it matched (mirrors the
+// reference screenshot's "SUPPLIER" tag + highlighted match pattern).
+function pmmSearchSuggestionsHtml(query){
+  if(!query) return "";
+  const q=query.toLowerCase();
+  const results=[];
+  const seen=new Set();
+  pmmEntries.forEach(e=>{
+    if((e.sku||"").toLowerCase().includes(q) && !seen.has("SKU:"+e.sku)){
+      seen.add("SKU:"+e.sku);
+      results.push({tag:"SKU", text:e.sku, entryId:e.id});
+    }
+  });
+  pmmEntries.forEach(e=>{
+    if(e.supplier && e.supplier.toLowerCase().includes(q) && !seen.has("SUP:"+e.supplier)){
+      seen.add("SUP:"+e.supplier);
+      results.push({tag:"SUPPLIER", text:e.supplier, entryId:e.id});
+    }
+  });
+  if(!results.length) return `<div style="padding:10px 14px;font-size:11px;color:#aaa">No matches</div>`;
+  const highlight=(text)=>{
+    const idx=text.toLowerCase().indexOf(q);
+    if(idx===-1) return esc(text);
+    return esc(text.slice(0,idx))+`<mark style="background:#fff3b0;padding:0 1px;border-radius:2px">${esc(text.slice(idx,idx+q.length))}</mark>`+esc(text.slice(idx+q.length));
+  };
+  return results.slice(0,8).map(r=>`
+    <div onclick="pmmSelectSearchSuggestion('${esc(r.text).replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">
+      <span style="font-size:8.5px;font-weight:700;color:${r.tag==="SKU"?"#0055bb":"#0a7a46"};border:1px solid ${r.tag==="SKU"?"#c0d8f8":"#c3f0da"};border-radius:4px;padding:2px 6px;flex-shrink:0">${r.tag}</span>
+      <span style="font-size:12px;color:#333">${highlight(r.text)}</span>
+    </div>`).join("");
+}
+
+function pmmRerenderActiveTab(){
+  if(pmmActiveTab==="database") pmmRenderDatabase();
+  else pmmRenderCompiled();
+}
+function pmmSelectSearchSuggestion(text){
+  pmmSearchSku=text;
+  pmmSearchSuggestOpen=false;
+  pmmRerenderActiveTab();
+}
+function pmmOnSearchInput(v){
+  pmmSearchSku=v;
+  pmmSearchSuggestOpen=!!v;
+  pmmRerenderActiveTab();
+}
+function pmmCloseSearchSuggest(){
+  // Small delay so a click on a suggestion registers before the dropdown disappears.
+  setTimeout(()=>{ pmmSearchSuggestOpen=false; pmmRerenderActiveTab(); }, 150);
 }
 
 function pmmSetInsightDateFrom(v){ pmmInsightDateFrom=v; pmmRenderCompiled(); }
@@ -3500,7 +3616,7 @@ function pmmEntryCardHtml(e){
       </div>
     </div>
     <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:stretch">
-      ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:150px;max-width:100%;border-radius:6px;border:1px solid #eee;flex-shrink:0;object-fit:cover"/>`:""}
+      ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" onclick="pmmOpenViewLarge('${e.id}')" title="Click to view larger" style="width:150px;max-width:100%;border-radius:6px;border:1px solid #eee;flex-shrink:0;object-fit:cover;cursor:zoom-in"/>`:""}
       <div style="width:190px;flex-shrink:0;background:#f0f6ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:9px 11px;font-size:9.5px;color:#333;line-height:1.7">
         ${e.parentSku?`<div><strong style="color:#0055bb">Parent SKU:</strong> ${esc(e.parentSku)}</div>`:""}
         ${e.supplier?`<div><strong style="color:#0055bb">Supplier:</strong> ${esc(e.supplier)}</div>`:""}
@@ -3512,7 +3628,7 @@ function pmmEntryCardHtml(e){
         ${!e.parentSku&&!e.supplier&&!e.chemTest&&!e.physTest&&!e.corrTest&&!e.testLab&&!e.quotationDate?`<div style="color:#aaa">No testing info yet</div>`:""}
       </div>
       <div style="flex:1;min-width:260px">
-        <div id="pmm-table-wrap-${e.id}" style="max-height:${pmmExpandedCards.has(e.id)?"none":"175px"};overflow:hidden;position:relative">
+        <div id="pmm-table-wrap-${e.id}" onclick="pmmOpenViewLarge('${e.id}')" title="Click to view larger" style="max-height:${pmmExpandedCards.has(e.id)?"none":"175px"};overflow:hidden;position:relative;cursor:zoom-in">
           <table style="width:100%;border-collapse:collapse">
             <thead><tr>
               <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
@@ -3569,22 +3685,22 @@ async function pmmConfirmEditGate(entryId){
 // ── Database (flat, mirrors the Product Matrix sheet exactly) ─────────────
 function pmmRenderDatabase(){
   const body=document.getElementById("pmm-body"); if(!body) return;
-  let entries=pmmEntries.slice();
-  if(pmmFilterCategory!=="ALL") entries=entries.filter(e=>e.category===pmmFilterCategory);
-  if(pmmSearchSku){
-    const q=pmmSearchSku.toLowerCase();
-    entries=entries.filter(e=>(e.sku||"").toLowerCase().includes(q));
-  }
+  const entries=pmmGetFilteredEntries();
   entries.forEach(e=>e.components.forEach(c=>pmmMaterialColor(c.material))); // stable color order
 
   let html=`<div style="max-width:100%;margin:0 auto">`;
-  html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
-    <div style="flex:1;min-width:200px;max-width:320px">
-      <input value="${esc(pmmSearchSku)}" oninput="pmmSearchSku=this.value;pmmRenderDatabase()" placeholder="Search SKU…" class="pmm-input"/>
+  html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-start">
+    <div style="position:relative;flex:1;min-width:200px;max-width:320px">
+      <input value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this.value)" onfocus="if(pmmSearchSku){pmmSearchSuggestOpen=true;pmmRenderDatabase()}" onblur="pmmCloseSearchSuggest()" placeholder="Search SKU or Supplier…" class="pmm-input"/>
+      ${pmmSearchSuggestOpen?`<div style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto">${pmmSearchSuggestionsHtml(pmmSearchSku)}</div>`:""}
     </div>
     <select onchange="pmmFilterCategory=this.value;pmmRenderDatabase()" class="pmm-input" style="max-width:200px">
       <option value="ALL" ${pmmFilterCategory==="ALL"?"selected":""}>All Categories</option>
       ${PMM_CATEGORIES.map(c=>`<option value="${c}" ${pmmFilterCategory===c?"selected":""}>${c}</option>`).join("")}
+    </select>
+    <select onchange="pmmFilterSupplier=this.value;pmmRenderDatabase()" class="pmm-input" style="max-width:220px">
+      <option value="ALL" ${pmmFilterSupplier==="ALL"?"selected":""}>All Suppliers</option>
+      ${pmmGetSupplierList().map(s=>`<option value="${esc(s)}" ${pmmFilterSupplier===s?"selected":""}>${esc(s)}</option>`).join("")}
     </select>
     <a href="${SHEET_EDIT_URL}" target="_blank" style="margin-left:auto;font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:8px 14px;text-decoration:none;white-space:nowrap">↗ Open Google Sheet</a>
   </div>`;
@@ -3650,13 +3766,18 @@ function pmmRenderCompiled(){
   pmmEntries.forEach(e=>e.components.forEach(c=>pmmMaterialColor(c.material))); // stable first-seen color order
 
   let html=`<div style="max-width:100%;margin:0 auto">`;
-  html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:center">
-    <div style="flex:1;min-width:200px;max-width:320px">
-      <input value="${esc(pmmSearchSku)}" oninput="pmmSearchSku=this.value;pmmRenderCompiled()" placeholder="Search SKU…" class="pmm-input"/>
+  html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-start">
+    <div style="position:relative;flex:1;min-width:200px;max-width:320px">
+      <input value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this.value)" onfocus="if(pmmSearchSku){pmmSearchSuggestOpen=true;pmmRenderCompiled()}" onblur="pmmCloseSearchSuggest()" placeholder="Search SKU or Supplier…" class="pmm-input"/>
+      ${pmmSearchSuggestOpen?`<div style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto">${pmmSearchSuggestionsHtml(pmmSearchSku)}</div>`:""}
     </div>
     <select onchange="pmmFilterCategory=this.value;pmmRenderCompiled()" class="pmm-input" style="max-width:200px">
       <option value="ALL" ${pmmFilterCategory==="ALL"?"selected":""}>All Categories</option>
       ${PMM_CATEGORIES.map(c=>`<option value="${c}" ${pmmFilterCategory===c?"selected":""}>${c}</option>`).join("")}
+    </select>
+    <select onchange="pmmFilterSupplier=this.value;pmmRenderCompiled()" class="pmm-input" style="max-width:220px">
+      <option value="ALL" ${pmmFilterSupplier==="ALL"?"selected":""}>All Suppliers</option>
+      ${pmmGetSupplierList().map(s=>`<option value="${esc(s)}" ${pmmFilterSupplier===s?"selected":""}>${esc(s)}</option>`).join("")}
     </select>
   </div>`;
 
