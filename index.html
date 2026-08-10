@@ -325,6 +325,7 @@ let pmmSearchSku = "";
 let pmmMaterialColors = {}; // material text (lowercased) -> hex color, assigned on first sight
 let pmmRemarks = localStorage.getItem("rhino_pmm_remarks_v1") || "";
 let pmmInsightDateFrom = "", pmmInsightDateTo = "";
+let pmmExpandedCards = new Set(); // entry ids whose full Item/Component/Material table is expanded
 const PMM_CATEGORIES = ["Tie-Down","Recovery Gear","Accessories","Towing","Camping"];
 const PMM_PALETTE = ["#e8f2ff","#e3f9ee","#fff8e0","#fdeaea","#f0efff","#e0f7fa","#fbe9e7","#f1f8e9","#fce4ec","#ede7f6"];
 const PMM_PALETTE_TEXT = ["#0055bb","#0a7a46","#7a5500","#a02020","#5b21b6","#00695c","#a04010","#33691e","#a01050","#4527a0"];
@@ -3209,8 +3210,17 @@ function pmmTopNCardsHtml(setCoverResult, accentColor){
 
 // Restricts the entry set to Quotation Date's range when one is set (dates are plain
 // "YYYY-MM-DD" strings from the date inputs, so lexicographic comparison is correct).
-function pmmGetInsightEntries(){
+// Single source of truth for "which entries are in scope right now" -- applies
+// search, category, AND date range together, and is used identically by both the
+// Smart Insights / Sample Optimization math and the visible entry cards below, so
+// they never disagree about which entries are included.
+function pmmGetFilteredEntries(){
   let entries=pmmEntries;
+  if(pmmFilterCategory!=="ALL") entries=entries.filter(e=>e.category===pmmFilterCategory);
+  if(pmmSearchSku){
+    const q=pmmSearchSku.toLowerCase();
+    entries=entries.filter(e=>(e.sku||"").toLowerCase().includes(q));
+  }
   if(pmmInsightDateFrom||pmmInsightDateTo){
     entries=entries.filter(e=>{
       if(!e.quotationDate) return false;
@@ -3222,32 +3232,29 @@ function pmmGetInsightEntries(){
   return entries;
 }
 
-function pmmAnalyzeInsights(){
-  pmmInsightDateFrom=(document.getElementById("pmm-insight-from")?.value||"");
-  pmmInsightDateTo=(document.getElementById("pmm-insight-to")?.value||"");
-  pmmRenderCompiled();
-}
+function pmmSetInsightDateFrom(v){ pmmInsightDateFrom=v; pmmRenderCompiled(); }
+function pmmSetInsightDateTo(v){ pmmInsightDateTo=v; pmmRenderCompiled(); }
 function pmmClearInsightDates(){
   pmmInsightDateFrom=""; pmmInsightDateTo="";
   pmmRenderCompiled();
 }
 
 function pmmInsightsHtml(){
-  const entries=pmmGetInsightEntries();
+  const entries=pmmGetFilteredEntries();
   const dateFilterActive=!!(pmmInsightDateFrom||pmmInsightDateTo);
+  const anyFilterActive=dateFilterActive||pmmFilterCategory!=="ALL"||!!pmmSearchSku;
 
   const dateBarHtml=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #c0d8f8">
     <span style="font-size:9.5px;font-weight:700;color:#0055bb;text-transform:uppercase;letter-spacing:.3px">Quotation Date Range</span>
-    <input id="pmm-insight-from" type="date" value="${esc(pmmInsightDateFrom)}" style="padding:5px 8px;border:1px solid #c0d8f8;border-radius:6px;font-size:11px"/>
+    <input id="pmm-insight-from" type="date" value="${esc(pmmInsightDateFrom)}" onchange="pmmSetInsightDateFrom(this.value)" style="padding:5px 8px;border:1px solid #c0d8f8;border-radius:6px;font-size:11px"/>
     <span style="font-size:10px;color:#888">to</span>
-    <input id="pmm-insight-to" type="date" value="${esc(pmmInsightDateTo)}" style="padding:5px 8px;border:1px solid #c0d8f8;border-radius:6px;font-size:11px"/>
-    <button onclick="pmmAnalyzeInsights()" style="font-size:11px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:6px;padding:6px 14px;cursor:pointer">Analyze</button>
-    ${dateFilterActive?`<button onclick="pmmClearInsightDates()" style="font-size:10.5px;color:#e2445c;background:none;border:none;cursor:pointer;text-decoration:underline">Clear filter</button>`:""}
-    ${dateFilterActive?`<span style="font-size:10px;color:#0a7a46;font-weight:600">Showing ${entries.length} of ${pmmEntries.length} entries in range</span>`:""}
+    <input id="pmm-insight-to" type="date" value="${esc(pmmInsightDateTo)}" onchange="pmmSetInsightDateTo(this.value)" style="padding:5px 8px;border:1px solid #c0d8f8;border-radius:6px;font-size:11px"/>
+    ${dateFilterActive?`<button onclick="pmmClearInsightDates()" style="font-size:10.5px;color:#e2445c;background:none;border:none;cursor:pointer;text-decoration:underline">Clear dates</button>`:""}
+    ${anyFilterActive?`<span style="font-size:10px;color:#0a7a46;font-weight:600">Reflecting ${entries.length} of ${pmmEntries.length} entries (search/category/date applied)</span>`:""}
   </div>`;
 
   if(entries.length<3){
-    return `<div class="pmm-insight-box">${dateBarHtml}<div style="font-size:11px;color:#0055bb">${dateFilterActive?"Fewer than 3 entries fall in this date range — widen the range to see insights.":"Add at least 3 entries to see material consolidation insights."}</div></div>`;
+    return `<div class="pmm-insight-box">${dateBarHtml}<div style="font-size:11px;color:#0055bb">${anyFilterActive?"Fewer than 3 entries match the current search/category/date filters — widen them to see insights.":"Add at least 3 entries to see material consolidation insights."}</div></div>`;
   }
   const generalCover=pmmComputeSetCover(entries);
   const metalCover=pmmComputeSetCover(entries, pmmIsMetalMaterial);
@@ -3502,17 +3509,27 @@ function pmmEntryCardHtml(e){
         ${!e.parentSku&&!e.supplier&&!e.chemTest&&!e.physTest&&!e.corrTest&&!e.testLab&&!e.quotationDate?`<div style="color:#aaa">No testing info yet</div>`:""}
       </div>
       <div style="flex:1;min-width:260px">
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr>
-            <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
-            <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
-            <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
+        <div id="pmm-table-wrap-${e.id}" style="max-height:${pmmExpandedCards.has(e.id)?"none":"220px"};overflow:hidden;position:relative">
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
+              <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
+              <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          ${(!pmmExpandedCards.has(e.id)&&e.components.length>6)?`<div style="position:absolute;bottom:0;left:0;right:0;height:36px;background:linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,1))"></div>`:""}
+        </div>
+        ${e.components.length>6?`<button onclick="pmmToggleCardExpand('${e.id}')" style="margin-top:4px;font-size:10px;font-weight:600;color:#0073ea;background:none;border:none;cursor:pointer;padding:0">${pmmExpandedCards.has(e.id)?`▲ Show less`:`▼ Show all ${e.components.length} items`}</button>`:""}
       </div>
     </div>
   </div>`;
+}
+
+function pmmToggleCardExpand(entryId){
+  if(pmmExpandedCards.has(entryId)) pmmExpandedCards.delete(entryId);
+  else pmmExpandedCards.add(entryId);
+  pmmRenderCompiled();
 }
 
 // Lightweight edit gate -- not real security, just a soft deterrent against
@@ -3626,12 +3643,7 @@ function pmmRenderDatabase(){
 
 function pmmRenderCompiled(){
   const body=document.getElementById("pmm-body"); if(!body) return;
-  let entries=pmmEntries.slice();
-  if(pmmFilterCategory!=="ALL") entries=entries.filter(e=>e.category===pmmFilterCategory);
-  if(pmmSearchSku){
-    const q=pmmSearchSku.toLowerCase();
-    entries=entries.filter(e=>(e.sku||"").toLowerCase().includes(q));
-  }
+  const entries=pmmGetFilteredEntries();
   pmmEntries.forEach(e=>e.components.forEach(c=>pmmMaterialColor(c.material))); // stable first-seen color order
 
   let html=`<div style="max-width:100%;margin:0 auto">`;
