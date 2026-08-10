@@ -3302,11 +3302,16 @@ function pmmInsightsHtml(){
 
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.15)">
         <div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">💰 Actual Material Consolidation Savings</div>
-        <ul style="margin:0 0 10px 0;padding-left:18px;font-size:11px;color:#e8ecf5;line-height:1.7">
-          <li><strong style="color:#fff">Chemical Testing:</strong> ${fmtNum(chem.totalSamples)} samples across all ${totalItems} products at ${fmtUsd(chem.totalCost)} total → consolidating to ${chem.representatives.length} representative product${chem.representatives.length!==1?"s":""} needs only ${fmtNum(chem.repSamples)} samples (${fmtUsd(chem.totalSamples>0?chem.totalCost/chem.totalSamples:0)}/sample rate) ≈ ${fmtUsd(chem.repCost)}. <strong style="color:#7ee8b8">${fmtNum(chem.samplesSaved)} samples saved (${chem.pctSaved}%), ${fmtUsd(chem.costSaved)} saved.</strong></li>
-          <li><strong style="color:#fff">Corrosion Testing (metal only):</strong> ${fmtNum(corr.totalSamples)} samples at ${fmtUsd(corr.totalCost)} total → ${corr.representatives.length} representative product${corr.representatives.length!==1?"s":""} cover every unique metal material, needing only ${fmtNum(corr.repSamples)} samples ≈ ${fmtUsd(corr.repCost)}. <strong style="color:#7ee8b8">${fmtNum(corr.samplesSaved)} samples saved (${corr.pctSaved}%), ${fmtUsd(corr.costSaved)} saved.</strong></li>
+        <ul style="margin:0 0 4px 0;padding-left:18px;font-size:11px;color:#e8ecf5;line-height:1.7">
+          <li><strong style="color:#fff">Chemical Testing:</strong> ${fmtNum(chem.totalSamples)} samples across all ${totalItems} products at ${fmtUsd(chem.totalCost)} total → consolidating to ${chem.representatives.length} representative product${chem.representatives.length!==1?"s":""} needs only ${fmtNum(chem.repSamples)} samples (${fmtUsd(chem.totalSamples>0?chem.totalCost/chem.totalSamples:0)}/sample rate) ≈ ${fmtUsd(chem.repCost)}. <strong style="color:#7ee8b8">${fmtNum(chem.samplesSaved)} samples saved (${chem.pctSaved}%), ${fmtUsd(chem.costSaved)} saved.</strong>
+            <div style="font-size:9.5px;color:#a8b8d8;margin:3px 0 6px 0">Rep. Samples breakdown: ${chem.representatives.map(r=>`${esc(r.sku)} (${pmmParseNum(r.chemTestSample)})`).join(" + ")} = ${fmtNum(chem.repSamples)}</div>
+          </li>
+          <li><strong style="color:#fff">Corrosion Testing (metal only):</strong> ${fmtNum(corr.totalSamples)} samples at ${fmtUsd(corr.totalCost)} total → ${corr.representatives.length} representative product${corr.representatives.length!==1?"s":""} cover every unique metal material, needing only ${fmtNum(corr.repSamples)} samples ≈ ${fmtUsd(corr.repCost)}. <strong style="color:#7ee8b8">${fmtNum(corr.samplesSaved)} samples saved (${corr.pctSaved}%), ${fmtUsd(corr.costSaved)} saved.</strong>
+            <div style="font-size:9.5px;color:#a8b8d8;margin:3px 0 6px 0">Rep. Samples breakdown: ${corr.representatives.map(r=>`${esc(r.sku)} (${pmmParseNum(r.corrTestSample)})`).join(" + ")} = ${fmtNum(corr.repSamples)}</div>
+          </li>
           <li><strong style="color:#fff">Combined:</strong> <strong style="color:#7ee8b8">${fmtNum(totalSamplesSaved)} total samples saved, ${fmtUsd(totalCostSaved)} in total savings (${totalPctSaved}% overall reduction).</strong></li>
         </ul>
+        <div style="font-size:9.5px;color:#a8b8d8;margin-bottom:10px">All ${totalItems} products' own values: ${entries.map(e=>`${esc(e.sku)} (chem ${pmmParseNum(e.chemTestSample)}, corr ${pmmParseNum(e.corrTestSample)})`).join(", ")}</div>
         <table style="width:100%;border-collapse:collapse;font-size:10.5px">
           <thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">
             <th style="text-align:left;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Testing Type</th>
