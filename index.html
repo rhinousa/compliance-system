@@ -3336,18 +3336,45 @@ function pmmRerenderActiveTab(){
   if(pmmActiveTab==="database") pmmRenderDatabase();
   else pmmRenderCompiled();
 }
+// Replacing innerHTML destroys the old <input> node entirely, so the browser can't
+// keep it focused across a re-render — without this, every keystroke would kick the
+// user out of the field after the first character. Re-find the (new) input by ID
+// and manually restore focus + cursor position right after rendering.
+function pmmRestoreSearchFocus(cursorPos){
+  requestAnimationFrame(()=>{
+    const el=document.getElementById("pmm-search-input");
+    if(!el) return;
+    el.focus();
+    if(typeof cursorPos==="number"){
+      try{ el.setSelectionRange(cursorPos, cursorPos); }catch(e){}
+    }
+  });
+}
 function pmmSelectSearchSuggestion(text){
   pmmSearchSku=text;
   pmmSearchSuggestOpen=false;
   pmmRerenderActiveTab();
 }
-function pmmOnSearchInput(v){
-  pmmSearchSku=v;
-  pmmSearchSuggestOpen=!!v;
+function pmmOnSearchInput(inputEl){
+  const cursorPos=inputEl.selectionStart;
+  pmmSearchSku=inputEl.value;
+  pmmSearchSuggestOpen=!!pmmSearchSku;
   pmmRerenderActiveTab();
+  pmmRestoreSearchFocus(cursorPos);
+}
+function pmmOnSearchFocus(){
+  if(pmmSearchSku){
+    pmmSearchSuggestOpen=true;
+    const el=document.getElementById("pmm-search-input");
+    const cursorPos=el?el.selectionStart:null;
+    pmmRerenderActiveTab();
+    pmmRestoreSearchFocus(cursorPos);
+  }
 }
 function pmmCloseSearchSuggest(){
   // Small delay so a click on a suggestion registers before the dropdown disappears.
+  // Intentionally does NOT restore focus -- this fires on blur, i.e. the user is
+  // deliberately clicking away, so re-focusing here would trap them in the field.
   setTimeout(()=>{ pmmSearchSuggestOpen=false; pmmRerenderActiveTab(); }, 150);
 }
 
@@ -3691,7 +3718,7 @@ function pmmRenderDatabase(){
   let html=`<div style="max-width:100%;margin:0 auto">`;
   html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-start">
     <div style="position:relative;flex:1;min-width:200px;max-width:320px">
-      <input value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this.value)" onfocus="if(pmmSearchSku){pmmSearchSuggestOpen=true;pmmRenderDatabase()}" onblur="pmmCloseSearchSuggest()" placeholder="Search SKU or Supplier…" class="pmm-input"/>
+      <input id="pmm-search-input" value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this)" onfocus="pmmOnSearchFocus()" onblur="pmmCloseSearchSuggest()" placeholder="Search SKU or Supplier…" class="pmm-input"/>
       ${pmmSearchSuggestOpen?`<div style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto">${pmmSearchSuggestionsHtml(pmmSearchSku)}</div>`:""}
     </div>
     <select onchange="pmmFilterCategory=this.value;pmmRenderDatabase()" class="pmm-input" style="max-width:200px">
@@ -3768,7 +3795,7 @@ function pmmRenderCompiled(){
   let html=`<div style="max-width:100%;margin:0 auto">`;
   html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-start">
     <div style="position:relative;flex:1;min-width:200px;max-width:320px">
-      <input value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this.value)" onfocus="if(pmmSearchSku){pmmSearchSuggestOpen=true;pmmRenderCompiled()}" onblur="pmmCloseSearchSuggest()" placeholder="Search SKU or Supplier…" class="pmm-input"/>
+      <input id="pmm-search-input" value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this)" onfocus="pmmOnSearchFocus()" onblur="pmmCloseSearchSuggest()" placeholder="Search SKU or Supplier…" class="pmm-input"/>
       ${pmmSearchSuggestOpen?`<div style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto">${pmmSearchSuggestionsHtml(pmmSearchSku)}</div>`:""}
     </div>
     <select onchange="pmmFilterCategory=this.value;pmmRenderCompiled()" class="pmm-input" style="max-width:200px">
