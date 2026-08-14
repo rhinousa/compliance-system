@@ -2172,6 +2172,21 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="pmmSaveGate"){
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:420px;background:#141824;border-radius:14px">
+        <div style="padding:22px 24px 18px">
+          <div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:6px">Save Access</div>
+          <div style="color:#8a8f9c;font-size:11.5px;margin-bottom:18px">Enter the password to save this Cost Savings snapshot.</div>
+          <input id="pmm-savegate-input" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')pmmConfirmSaveGate()" style="width:100%;padding:11px 14px;border:1.5px solid #00c853;border-radius:8px;background:#0c0f18;color:#fff;font-size:13px;outline:none;box-sizing:border-box"/>
+          <div id="pmm-savegate-error" style="color:#ff6b6b;font-size:11px;margin-top:6px;min-height:14px"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+            <button onclick="closeModal()" style="padding:9px 18px;font-size:12.5px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Cancel</button>
+            <button onclick="pmmConfirmSaveGate()" style="padding:9px 20px;font-size:12.5px;font-weight:700;color:#0b1f0f;background:#00e05e;border:none;border-radius:8px;cursor:pointer">Confirm</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
   } else if(modal.type==="pmmEditGate"){
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
       <div class="modal-box" style="max-width:420px;background:#141824;border-radius:14px">
@@ -2205,51 +2220,11 @@ function renderModals(){
     const matchedEntries=pmmEntries.filter(e=>snap.skus.includes(e.sku));
     const missingCount=snap.skus.length-matchedEntries.length;
     const cover=matchedEntries.length?pmmComputeSetCover(matchedEntries):null;
+    const metalCover=matchedEntries.length?pmmComputeSetCover(matchedEntries, pmmIsMetalMaterial):null;
     let dateStr=snap.savedDate;
     try{ dateStr=new Date(snap.savedDate).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"}); }catch(e){}
 
-    const entryDetailsHtml=matchedEntries.map(e=>{
-      const normName=pmmNormalizeProductName(e.description)||e.sku;
-      const rows=e.components.map(c=>{
-        const col=pmmMaterialColor(c.material);
-        return `<tr>
-          <td style="padding:5px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;color:#555;width:40px">${esc(c.item)}</td>
-          <td style="padding:5px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;color:#333">${esc(c.component)}</td>
-          <td style="padding:5px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;font-weight:600;background:${col.bg};color:${col.text}"><span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}</td>
-        </tr>`;
-      }).join("");
-      return `<div style="border:1px solid #e0e3ea;border-radius:8px;margin-bottom:14px;overflow:hidden">
-        <div style="background:#f8f9fb;padding:9px 14px;border-bottom:1px solid #e8eaed">
-          <div style="font-size:12.5px;font-weight:700;color:#222">${esc(normName)}</div>
-        </div>
-        <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap">
-          ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:110px;max-width:100%;border-radius:6px;border:1px solid #eee;flex-shrink:0"/>`:""}
-          <div style="flex:0 0 200px;background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:9px 11px;font-size:10.5px;line-height:1.7;color:#333">
-            <div><strong>SKU:</strong> ${esc(e.sku)}</div>
-            <div>${pmmFamilyLineHtml("A SKU Family", e.skuFamily, e.id, "skuFamily")}</div>
-            <div>${pmmFamilyLineHtml("B SKU Family", e.skuFamilyB, e.id, "skuFamilyB")}</div>
-            <div>${pmmFamilyLineHtml("C SKU Family", e.skuFamilyC, e.id, "skuFamilyC")}</div>
-            <div>${pmmFamilyLineHtml("Retail SKU", e.retailSku, e.id, "retailSku")}</div>
-            ${e.parentSku?`<div><strong>Parent SKU:</strong> ${esc(e.parentSku)}</div>`:""}
-            ${e.category?`<div><strong>Category:</strong> ${esc(e.category)}</div>`:""}
-            ${e.supplier?`<div><strong>Supplier:</strong> ${esc(e.supplier)}</div>`:""}
-          </div>
-          <div style="flex:1;min-width:240px">
-            <table style="width:100%;border-collapse:collapse">
-              <thead><tr>
-                <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
-                <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
-                <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
-              </tr></thead>
-              <tbody>${rows}</tbody>
-            </table>
-            <div style="font-size:9.5px;color:#aaa;margin-top:6px">
-              ${e.chemTest?`Chemical: ${esc(e.chemTest)}${e.chemTestCost?` (${esc(e.chemTestCost)})`:""} · `:""}${e.corrTest?`Corrosion: ${esc(e.corrTest)}${e.corrTestCost?` (${esc(e.corrTestCost)})`:""}`:""}
-            </div>
-          </div>
-        </div>
-      </div>`;
-    }).join("");
+    const entryDetailsHtml=matchedEntries.map(e=>pmmAckEntryBlockHtml(e)).join("");
 
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
       <div class="modal-box" style="max-width:1000px;max-height:88vh;display:flex;flex-direction:column">
@@ -2264,9 +2239,15 @@ function renderModals(){
           ${pmmCostSnapshotRowsHtml(snap)}
           ${missingCount>0?`<div style="font-size:10.5px;color:#b07000;margin-top:10px">⚠ ${missingCount} of ${snap.skus.length} products from this snapshot could not be found (likely edited or deleted since it was saved) — showing details for the ${matchedEntries.length} still available.</div>`:""}
 
-          ${cover?`<div style="margin-top:20px">
-            <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:8px">General Material Coverage <span style="color:#aaa;font-weight:400">(recomputed from these ${matchedEntries.length} products as they exist now)</span></div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">${pmmTopNCardsHtml(cover, "#c0d8f8")}</div>
+          ${(cover||metalCover)?`<div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
+            ${cover?`<div>
+              <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:8px">General Material Coverage <span style="color:#aaa;font-weight:400">(recomputed from these ${matchedEntries.length} products as they exist now)</span></div>
+              ${pmmTopNCardsHtml(cover, "#c0d8f8")}
+            </div>`:""}
+            ${metalCover?`<div>
+              <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:8px">Corrosion Coverage <span style="color:#aaa;font-weight:400">(metal materials only)</span></div>
+              ${pmmTopNCardsHtml(metalCover, "#fde0d0")}
+            </div>`:""}
           </div>`:""}
 
           <div style="margin-top:20px">
@@ -3653,7 +3634,7 @@ function pmmInsightsHtml(){
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.15)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
           <div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">💰 Actual Material Consolidation Savings</div>
-          <button onclick="pmmSaveCostSavingsSnapshot()" style="font-size:10.5px;font-weight:700;color:#0e1b3d;background:#7ee8b8;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">💾 Save to Cost Savings</button>
+          <button onclick="pmmRequestSaveCostSavings()" style="font-size:10.5px;font-weight:700;color:#0e1b3d;background:#7ee8b8;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">💾 Save to Cost Savings</button>
         </div>
         <ul style="margin:0 0 4px 0;padding-left:18px;font-size:11px;color:#e8ecf5;line-height:1.7">
           <li><strong style="color:#fff">Chemical Testing:</strong> ${fmtNum(chem.totalSamples)} samples across all ${totalItems} products at ${fmtUsd(chem.totalCost)} total → consolidating to ${chem.representatives.length} representative product${chem.representatives.length!==1?"s":""} needs only ${fmtNum(chem.repSamples)} samples (${fmtUsd(chem.totalSamples>0?chem.totalCost/chem.totalSamples:0)}/sample rate) ≈ ${fmtUsd(chem.repCost)}. <strong style="color:#7ee8b8">${fmtNum(chem.samplesSaved)} samples saved (${chem.pctSaved}%), ${fmtUsd(chem.costSaved)} saved.</strong>
@@ -3880,10 +3861,29 @@ function pmmToggleCardExpand(entryId){
 // comparison logic in dev tools). Hashing at least means the plaintext password
 // itself isn't sitting in readable page source for a casual look.
 const PMM_EDIT_PASSWORD_HASH="fff9dfeaa22b620f2857f6423e7bb1da427f14c3f3a0adcb534f05f2adccfad3";
+const PMM_SAVE_PASSWORD_HASH="7766e5fb306b64fc950d7d91a1830bacd33acf9d8d9e92c5bd4151c0929a244b";
 async function pmmHashText(text){
   const enc=new TextEncoder().encode(text);
   const digest=await crypto.subtle.digest("SHA-256", enc);
   return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+function pmmRequestSaveCostSavings(){
+  openModal({type:"pmmSaveGate"});
+  setTimeout(()=>document.getElementById("pmm-savegate-input")?.focus(), 50);
+}
+async function pmmConfirmSaveGate(){
+  const input=document.getElementById("pmm-savegate-input");
+  const errEl=document.getElementById("pmm-savegate-error");
+  const pwd=(input?.value||"");
+  if(!pwd){ if(errEl) errEl.textContent="Please enter a password."; return; }
+  const hash=await pmmHashText(pwd);
+  if(hash!==PMM_SAVE_PASSWORD_HASH){
+    if(errEl) errEl.textContent="Incorrect password.";
+    if(input){ input.value=""; input.focus(); }
+    return;
+  }
+  closeModal();
+  pmmSaveCostSavingsSnapshot();
 }
 function pmmRequestEdit(entryId){
   openModal({type:"pmmEditGate", entryId});
@@ -3963,15 +3963,35 @@ function pmmDataUrlToUint8Array(dataUrl){
   return bytes;
 }
 
-// Fetches an image URL (e.g. a Drive thumbnail link) and returns raw bytes for
-// embedding via ImageRun. Returns null on failure so the doc can skip that photo
-// gracefully rather than failing the whole export.
-async function pmmFetchImageBytes(url){
+function pmmExtractDriveFileId(url){
+  if(!url) return null;
+  const m=url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return m?m[1]:null;
+}
+
+// The public Drive "thumbnail" URL (used for on-page <img> display) does not send
+// CORS headers, so a fetch() read of it is silently blocked by the browser --
+// that was the actual cause of exported photos never appearing. The authenticated
+// Drive API "alt=media" endpoint DOES support CORS for requests carrying our own
+// OAuth token, so we use that instead specifically for the docx export. Returns
+// {bytes, type} or null on failure so the doc can skip that photo gracefully.
+async function pmmFetchImageBytes(photoUrl){
+  const fileId=pmmExtractDriveFileId(photoUrl);
+  if(!fileId || !accessToken) return null;
   try{
-    const res=await fetch(url);
+    const res=await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,{
+      headers:{ Authorization:"Bearer "+accessToken },
+    });
     if(!res.ok) return null;
+    const contentType=(res.headers.get("content-type")||"").toLowerCase();
+    let type=null;
+    if(contentType.includes("jpeg")||contentType.includes("jpg")) type="jpg";
+    else if(contentType.includes("png")) type="png";
+    else if(contentType.includes("gif")) type="gif";
+    else if(contentType.includes("bmp")) type="bmp";
+    if(!type) return null; // unsupported format for docx embedding -- skip gracefully
     const buf=await res.arrayBuffer();
-    return new Uint8Array(buf);
+    return { bytes:new Uint8Array(buf), type };
   }catch(e){ return null; }
 }
 
@@ -3983,7 +4003,7 @@ async function pmmExportSupplierAckDocx(){
   try{
     const {
       Document, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell,
-      WidthType, BorderStyle, ShadingType, AlignmentType, VerticalAlign
+      WidthType, BorderStyle, ShadingType, AlignmentType, VerticalAlign, PageBreak
     }=window.docx;
 
     const noBorder={ top:{style:BorderStyle.NONE}, bottom:{style:BorderStyle.NONE}, left:{style:BorderStyle.NONE}, right:{style:BorderStyle.NONE} };
@@ -3991,6 +4011,8 @@ async function pmmExportSupplierAckDocx(){
     const cellBorder={ top:thinBorder(), bottom:thinBorder(), left:thinBorder(), right:thinBorder() };
     const dashedBorder=()=>({ style:BorderStyle.DASHED, size:6, color:"AAAAAA" });
     const placeholderBorder={ top:dashedBorder(), bottom:dashedBorder(), left:dashedBorder(), right:dashedBorder() };
+    const highlightBorder=()=>({ style:BorderStyle.SINGLE, size:8, color:"FDE8C0" });
+    const highlightBox={ top:highlightBorder(), bottom:highlightBorder(), left:highlightBorder(), right:highlightBorder() };
 
     // Logo banner, pulled from the already-embedded sidebar logo rather than
     // duplicating that base64 string a third time in the file.
@@ -4014,28 +4036,40 @@ async function pmmExportSupplierAckDocx(){
       return new TableCell({ width:{ size:width, type:WidthType.PERCENTAGE }, borders:cellBorder, shading:opts.shading?{ fill:opts.shading, type:ShadingType.SOLID }:undefined, margins:{ top:80,bottom:80,left:80,right:80 }, children:[ new Paragraph({ children:[ new TextRun({ text:String(text||""), size:16, bold:!!opts.bold, color:opts.color||"333333" }) ] }) ] });
     }
 
-    // Build each product's section: header line, optional photo, and its
-    // Item/Component/Material table -- Testing Information is intentionally
-    // excluded from this document per what it's for.
+    // Build each product's section: title, photo ABOVE the table (bigger, more
+    // visible), a highlighted info box (SKU / A-B-C / Retail Family / Category),
+    // then the Item/Component/Material table. Testing Information is
+    // intentionally excluded from this document per what it's for.
     const entrySections=[];
     for(const e of pmmAckEntries){
       const normName=pmmNormalizeProductName(e.description)||e.sku;
-      const subLineParts=[`SKU: ${e.sku}`];
-      if(e.skuFamily) subLineParts.push(`A SKU Family: ${e.skuFamily}`);
-      if(e.parentSku) subLineParts.push(`Parent SKU: ${e.parentSku}`);
-      if(e.category) subLineParts.push(`Category: ${e.category}`);
-
-      entrySections.push(new Paragraph({ children:[ new TextRun({ text:normName, bold:true, size:22 }) ], spacing:{ before:200, after:40 } }));
-      entrySections.push(new Paragraph({ children:[ new TextRun({ text:subLineParts.join("  ·  "), size:15, color:"888888" }) ], spacing:{ after:120 } }));
+      entrySections.push(new Paragraph({ children:[ new TextRun({ text:normName, bold:true, size:24 }) ], spacing:{ before:300, after:120 } }));
 
       if(e.photoUrl){
-        const imgBytes=await pmmFetchImageBytes(pmmPhotoDisplayUrl(e.photoUrl));
-        if(imgBytes){
+        const img=await pmmFetchImageBytes(e.photoUrl);
+        if(img){
           try{
-            entrySections.push(new Paragraph({ children:[ new ImageRun({ data:imgBytes, type:"png", transformation:{ width:160, height:120 } }) ], spacing:{ after:120 } }));
+            entrySections.push(new Paragraph({ children:[ new ImageRun({ data:img.bytes, type:img.type, transformation:{ width:420, height:300 } }) ], spacing:{ after:150 } }));
           }catch(err){ /* skip this photo if it can't be embedded, keep going */ }
         }
       }
+
+      const infoLines=[`SKU: ${e.sku}`];
+      if(e.skuFamily) infoLines.push(`A SKU Family: ${e.skuFamily}`);
+      if(e.skuFamilyB) infoLines.push(`B SKU Family: ${e.skuFamilyB}`);
+      if(e.skuFamilyC) infoLines.push(`C SKU Family: ${e.skuFamilyC}`);
+      if(e.retailSku) infoLines.push(`Retail SKU: ${e.retailSku}`);
+      if(e.category) infoLines.push(`Category: ${e.category}`);
+      entrySections.push(new Table({
+        width:{ size:100, type:WidthType.PERCENTAGE },
+        rows:[ new TableRow({ children:[ new TableCell({
+          borders:highlightBox,
+          shading:{ fill:"FFF8E0", type:ShadingType.SOLID },
+          margins:{ top:140,bottom:140,left:160,right:160 },
+          children:infoLines.map(line=>new Paragraph({ children:[ new TextRun({ text:line, size:17, color:"333333" }) ], spacing:{ after:40 } })),
+        }) ] }) ],
+      }));
+      entrySections.push(new Paragraph({ text:"", spacing:{ after:120 } }));
 
       const headerRow=new TableRow({ children:[ headerCell("Item",12), headerCell("Component",44), headerCell("Material",44) ] });
       const dataRows=(e.components.length?e.components:[{item:"",component:"",material:""}]).map(c=>{
@@ -4047,7 +4081,9 @@ async function pmmExportSupplierAckDocx(){
 
     // Signature / stamp block -- matches the reference layout: a dashed
     // placeholder box for the company stamp beside underlined signature and
-    // date lines.
+    // date lines. Forced onto its own fresh page (rather than letting Word
+    // decide where to break) so the table never straddles a page boundary,
+    // which is what was causing it to visually appear duplicated.
     const stampCell=new TableCell({
       width:{ size:50, type:WidthType.PERCENTAGE }, borders:placeholderBorder, verticalAlign:VerticalAlign.CENTER, margins:{ top:500, bottom:500 },
       children:[ new Paragraph({ alignment:AlignmentType.CENTER, children:[ new TextRun({ text:"COMPANY STAMP", color:"AAAAAA", size:14 }) ] }) ]
@@ -4073,7 +4109,7 @@ async function pmmExportSupplierAckDocx(){
           new Paragraph({ children:[ new TextRun({ text:`${periodStr}  —  Generated ${generatedStr}  ·  ${pmmAckEntries.length} product${pmmAckEntries.length!==1?"s":""}`, size:18, color:"777777" }) ], spacing:{ after:250 } }),
           new Paragraph({ text:"", border:{ bottom:{ style:BorderStyle.SINGLE, size:12, color:"1A1A1A" } }, spacing:{ after:200 } }),
           ...entrySections,
-          new Paragraph({ text:"", spacing:{ before:300, after:150 } }),
+          new Paragraph({ children:[ new PageBreak() ] }),
           new Paragraph({ children:[ new TextRun({ text:`By signing below, ${pmmAckSupplier} acknowledges that the materials listed above for the products covered in this report have not changed and remain consistent with what has been previously reported.`, size:18 }) ], spacing:{ after:250 } }),
           signOffTable,
         ]
@@ -4205,6 +4241,45 @@ function pmmRenderSupplierAck(){
   body.innerHTML=html;
 }
 
+// Shared entry block for both the Supplier Acknowledgement preview and the Cost
+// Savings snapshot detail popup -- photo sits full-width above the table (bigger,
+// more visible), with SKU/A-B-C/Retail Family/Category wrapped in a highlighted box.
+function pmmAckEntryBlockHtml(e){
+  const normName=pmmNormalizeProductName(e.description)||e.sku;
+  const rows=e.components.map(c=>{
+    const col=pmmMaterialColor(c.material);
+    return `<tr>
+      <td style="padding:6px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;color:#555;width:40px">${esc(c.item)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;color:#333">${esc(c.component)}</td>
+      <td style="padding:6px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;font-weight:600;background:${col.bg};color:${col.text}"><span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}</td>
+    </tr>`;
+  }).join("");
+  return `<div style="border:1px solid #e0e3ea;border-radius:8px;margin-bottom:16px;overflow:hidden;break-inside:avoid">
+    <div style="background:#f8f9fb;padding:10px 14px;border-bottom:1px solid #e8eaed">
+      <div style="font-size:14px;font-weight:700;color:#222">${esc(normName)}</div>
+    </div>
+    <div style="padding:14px">
+      ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:100%;max-height:320px;object-fit:contain;border-radius:6px;border:1px solid #eee;margin-bottom:12px;display:block;background:#fafafa"/>`:""}
+      <div style="background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:10px 12px;font-size:11px;line-height:1.8;color:#333;margin-bottom:12px">
+        <div><strong>SKU:</strong> ${esc(e.sku)}</div>
+        <div>${pmmFamilyLineHtml("A SKU Family", e.skuFamily, e.id, "skuFamily")}</div>
+        <div>${pmmFamilyLineHtml("B SKU Family", e.skuFamilyB, e.id, "skuFamilyB")}</div>
+        <div>${pmmFamilyLineHtml("C SKU Family", e.skuFamilyC, e.id, "skuFamilyC")}</div>
+        <div>${pmmFamilyLineHtml("Retail SKU", e.retailSku, e.id, "retailSku")}</div>
+        ${e.category?`<div><strong>Category:</strong> ${esc(e.category)}</div>`:""}
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>
+          <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
+          <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
+          <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
 function pmmAckPreviewHtml(){
   if(!pmmAckEntries.length){
     return `<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:40px;text-align:center;color:#aaa;margin-top:16px">No entries found for "${esc(pmmAckSupplier)}"${pmmAckYear!=="ALL"?` in ${esc(pmmAckYear)}`:""}.</div>`;
@@ -4213,36 +4288,7 @@ function pmmAckPreviewHtml(){
   const generatedStr=new Date().toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"});
   const periodStr=pmmAckYear==="ALL"?"All available data":`Year: ${pmmAckYear}`;
 
-  const entriesHtml=pmmAckEntries.map(e=>{
-    const normName=pmmNormalizeProductName(e.description)||e.sku;
-    const rows=e.components.map(c=>{
-      const col=pmmMaterialColor(c.material);
-      return `<tr>
-        <td style="padding:6px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;color:#555;width:40px">${esc(c.item)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;color:#333">${esc(c.component)}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;font-weight:600;background:${col.bg};color:${col.text}"><span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}</td>
-      </tr>`;
-    }).join("");
-    return `<div style="border:1px solid #e0e3ea;border-radius:8px;margin-bottom:14px;overflow:hidden;break-inside:avoid">
-      <div style="background:#f8f9fb;padding:10px 14px;border-bottom:1px solid #e8eaed">
-        <div style="font-size:13px;font-weight:700;color:#222">${esc(normName)}</div>
-        <div style="font-size:10px;color:#888">SKU: ${esc(e.sku)}${e.skuFamily?` · A SKU Family: ${esc(e.skuFamily)}`:""}${e.parentSku?` · Parent SKU: ${esc(e.parentSku)}`:""}${e.category?` · Category: ${esc(e.category)}`:""}</div>
-      </div>
-      <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap">
-        ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:110px;max-width:100%;border-radius:6px;border:1px solid #eee;flex-shrink:0"/>`:""}
-        <div style="flex:1;min-width:240px">
-          <table style="width:100%;border-collapse:collapse">
-            <thead><tr>
-              <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
-              <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
-              <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </div>
-      </div>
-    </div>`;
-  }).join("");
+  const entriesHtml=pmmAckEntries.map(e=>pmmAckEntryBlockHtml(e)).join("");
 
   return `<div style="margin-top:16px">
     <div style="text-align:center;font-size:10px;color:#999;margin-bottom:8px">PREVIEW — this is what the exported Word document will contain</div>
