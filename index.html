@@ -140,6 +140,7 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
     </div>
     <button class="nav-btn active" id="nav-compliance" onclick="showSection('compliance')">📋 Compliance Dashboard</button>
     <button class="nav-btn" id="nav-pmm" onclick="showSection('pmm')">🧩 Product Material Matrix</button>
+    <button class="nav-btn" id="nav-pca" onclick="showSection('pca')">🎨 Pantone Color Approval</button>
   </nav>
   <div id="app-main">
 
@@ -280,6 +281,28 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
     <div id="pmm-body" style="background:#fff;border-left:0.5px solid #dde0e7;border-right:0.5px solid #dde0e7;border-bottom:1px solid #e8eaed;padding:22px 4px"></div>
   </div>
 </div><!-- /panel-pmm -->
+
+<div class="app-panel" id="panel-pca">
+  <div style="max-width:1400px;margin:0 auto;padding:0 20px 40px 20px">
+
+    <div style="background:#0e1b3d">
+      <div style="padding:12px 18px 0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:20px">🎨</span>
+          <span style="color:#fff;font-weight:700;font-size:15px">Pantone Color Approval</span>
+          <span style="color:rgba(255,255,255,.5);font-size:11px">Rhino USA</span>
+        </div>
+      </div>
+      <div style="display:flex;margin-top:10px;padding:0 10px;border-top:1px solid rgba(255,255,255,.2)">
+        <button class="pmm-subtab active" id="pca-tab-tracking" onclick="pcaSwitchTab('tracking')">📋 Tracking</button>
+        <button class="pmm-subtab" id="pca-tab-approval" onclick="pcaSwitchTab('approval')">✅ Approval Process <span id="pca-count-badge" style="display:none;background:#0073ea;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px"></span></button>
+      </div>
+    </div>
+
+    <div id="pca-body" style="background:#fff;border-left:0.5px solid #dde0e7;border-right:0.5px solid #dde0e7;border-bottom:1px solid #e8eaed;padding:22px 4px"></div>
+  </div>
+</div><!-- /panel-pca -->
+
 
   </div><!-- /app-main -->
 </div><!-- /app-shell -->
@@ -519,7 +542,7 @@ async function fetchSheetData(){
     if(!GROUPS.length) throw new Error("Sheet returned 0 items.");
 
     pmmEntries=pmmBuildEntriesFromRows(pmmRowsToObjectsWithIndex(pmmRange));
-    pmmCostSavingsSnapshots=pmmBuildCostSnapshotsFromRows(rowsToObjects(costRange));
+    pmmCostSavingsSnapshots=pmmBuildCostSnapshotsFromRows(pmmRowsToObjectsWithIndex(costRange));
     pmmLoadLookupCatalogue(); // fire-and-forget — doesn't block the main sync if it fails
 
     localStorage.setItem(LS_CACHE,JSON.stringify(GROUPS));
@@ -2203,6 +2226,42 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="pcaTicketDetail"){
+    const t=pcaTickets.find(x=>x.id===modal.ticketId);
+    if(!t){ root.innerHTML=""; return; }
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:1000px;max-height:90vh;display:flex;flex-direction:column">
+        <div style="background:#0073ea;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+          <div style="color:#fff;font-weight:800;font-size:15px">${esc(t.poNumber)} — ${esc(t.supplierSku)}</div>
+          <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+        </div>
+        <div style="padding:20px;overflow-y:auto">
+          ${pcaFlowDiagramHtml(t.status)}
+          <div style="margin-top:20px;background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:12px 14px;font-size:11.5px;line-height:1.8;color:#333">
+            <div><strong>PO Number:</strong> ${esc(t.poNumber)}</div>
+            <div><strong>Shipment Number:</strong> ${esc(t.shipmentNumber)}</div>
+            <div><strong>Supplier Name:</strong> ${esc(t.supplierName)}</div>
+            <div><strong>Supplier SKU:</strong> ${esc(t.supplierSku)}</div>
+            <div><strong>Product Description:</strong> ${esc(t.description)}</div>
+            <div><strong>Quantity:</strong> ${esc(t.quantity)}</div>
+            <div><strong>Updated GRD:</strong> ${esc(t.updatedGrd)}</div>
+            ${t.folderLink?`<div><strong>Photo Folder:</strong> <a href="${esc(t.folderLink)}" target="_blank">Open in Drive</a></div>`:""}
+          </div>
+          <div style="margin-top:16px">
+            <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:8px">Components</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">
+              ${t.components.map(c=>`<div style="border:1px solid #e0e3ea;border-radius:8px;padding:8px;text-align:center">
+                ${c.photoUrl?`<img src="${pmmPhotoDisplayUrl(c.photoUrl)}" style="width:100%;height:100px;object-fit:cover;border-radius:6px;margin-bottom:6px"/>`:`<div style="width:100%;height:100px;background:#f7f8fa;border-radius:6px;margin-bottom:6px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:10px">No photo</div>`}
+                <div style="font-size:10.5px;color:#333">${esc(c.component)}</div>
+              </div>`).join("")}
+            </div>
+          </div>
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid #eee">
+            ${pcaActionsHtmlFor(t)}
+          </div>
+        </div>
+      </div>
+    </div>`;
   } else if(modal.type==="pmmSkuFamilyList"){
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
       <div class="modal-box" style="max-width:480px">
@@ -2550,9 +2609,12 @@ function openDetail(sid,iid,gid){
 function showSection(name){
   document.getElementById("panel-compliance").classList.toggle("active", name==="compliance");
   document.getElementById("panel-pmm").classList.toggle("active", name==="pmm");
+  document.getElementById("panel-pca").classList.toggle("active", name==="pca");
   document.getElementById("nav-compliance").classList.toggle("active", name==="compliance");
   document.getElementById("nav-pmm").classList.toggle("active", name==="pmm");
+  document.getElementById("nav-pca").classList.toggle("active", name==="pca");
   if(name==="pmm") pmmRender();
+  if(name==="pca") pcaRender();
 }
 
 // ── SKU lookup catalogue (separate spreadsheet: "Product Master Data Catalogue") ──
@@ -2958,8 +3020,10 @@ function pmmBuildCostSnapshotsFromRows(rows){
         savedDate:pmmPick(row,"Saved Date"),
         filterSummary:pmmPick(row,"Filter Summary"),
         skus:(pmmPick(row,"SKUs Included")||"").split(/,\s*/).filter(Boolean),
+        rowIndexes:[],
       };
     }
+    if(row.__rowIndex) byId[id].rowIndexes.push(row.__rowIndex);
     const type=(pmmPick(row,"Testing Type")||"").toLowerCase();
     const num=(v)=>{ const n=parseFloat(String(v||"").replace(/[^0-9.-]/g,"")); return isNaN(n)?0:n; };
     const rowData={
@@ -3032,9 +3096,11 @@ async function pmmSaveCostSavingsSnapshot(){
       body:JSON.stringify({values:rows}),
     });
     if(!res.ok){ const t=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${t.slice(0,150)}`); }
+    const resJson=await res.json();
+    const rowIndexes=pmmParseRowRange(resJson?.updates?.updatedRange);
 
     pmmCostSavingsSnapshots.unshift({
-      id:snapshotId, savedDate, filterSummary, skus:entries.map(e=>e.sku),
+      id:snapshotId, savedDate, filterSummary, skus:entries.map(e=>e.sku), rowIndexes,
       chemical:chem, corrosion:corr,
       total:{totalSamples:chem.totalSamples+corr.totalSamples,repSamples:chem.repSamples+corr.repSamples,samplesSaved:totalSamplesSaved,totalCost:combinedCostBefore,repCost:combinedCostAfter,costSaved:totalCostSaved,pctSaved:totalPctSaved},
     });
@@ -3055,6 +3121,21 @@ async function pmmEnsureHeaders(){
 }
 
 // Sheets deleteDimension needs the tab's numeric sheetId (not its name) — fetched once and cached.
+const pmmSheetGidCacheByName={};
+async function pmmGetSheetGidFor(sheetName){
+  if(pmmSheetGidCacheByName[sheetName]!==undefined) return pmmSheetGidCacheByName[sheetName];
+  const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
+  if(res.status===401){
+    accessToken=null;
+    throw new Error("Your Google session expired. Go to the Compliance Dashboard tab and click Re-sync, then try saving again.");
+  }
+  if(!res.ok) throw new Error("Could not look up the sheet tab info.");
+  const data=await res.json();
+  const sheet=(data.sheets||[]).find(s=>s.properties.title===sheetName);
+  if(!sheet) throw new Error(`Could not find a tab named "${sheetName}".`);
+  pmmSheetGidCacheByName[sheetName]=sheet.properties.sheetId;
+  return sheet.properties.sheetId;
+}
 async function pmmGetSheetGid(){
   if(pmmSheetGidCache!==null) return pmmSheetGidCache;
   const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
@@ -3135,6 +3216,38 @@ async function pmmSaveEntryDetail(entryId){
   }catch(err){
     alert("Could not save changes: "+err.message);
     if(btn){ btn.disabled=false; btn.textContent="💾 Save Changes"; }
+  }
+}
+
+async function pmmDeleteCostSnapshot(snapshotId){
+  const snap=pmmCostSavingsSnapshots.find(s=>s.id===snapshotId);
+  if(!snap) return;
+  let dateStr=snap.savedDate;
+  try{ dateStr=new Date(snap.savedDate).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"}); }catch(e){}
+  if(!confirm(`Delete the Cost Savings snapshot from ${dateStr}? This removes it from the Google Sheet permanently.`)) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+
+  try{
+    if(snap.rowIndexes && snap.rowIndexes.length){
+      const gid=await pmmGetSheetGidFor(PMM_COST_SHEET);
+      const rowsDesc=[...snap.rowIndexes].sort((a,b)=>b-a); // delete bottom-up so earlier deletes don't shift later ones
+      const requests=rowsDesc.map(r=>({deleteDimension:{range:{sheetId:gid,dimension:"ROWS",startIndex:r-1,endIndex:r}}}));
+      const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{
+        method:"POST",
+        headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
+        body:JSON.stringify({requests}),
+      });
+      if(!res.ok){ const t=await res.text(); throw new Error(`Sheet delete failed (${res.status}): ${t.slice(0,150)}`); }
+    } else {
+      pmmCostSavingsSnapshots=pmmCostSavingsSnapshots.filter(s=>s.id!==snapshotId);
+      pmmRenderCostSavings();
+      return;
+    }
+    // Deleting rows shifts every other snapshot's row numbers, so re-sync to refresh them all correctly.
+    await fetchSheetData();
+    pmmSwitchTab("costsavings");
+  }catch(e){
+    alert("Could not delete: "+e.message);
   }
 }
 
@@ -4054,7 +4167,7 @@ async function pmmExportSupplierAckDocx(){
         const img=await pmmFetchImageBytes(e.photoUrl);
         if(img){
           try{
-            entrySections.push(new Paragraph({ children:[ new ImageRun({ data:img.bytes, type:img.type, transformation:{ width:420, height:300 } }) ], spacing:{ after:150 } }));
+            entrySections.push(new Paragraph({ alignment:AlignmentType.CENTER, children:[ new ImageRun({ data:img.bytes, type:img.type, transformation:{ width:420, height:300 } }) ], spacing:{ after:150 } }));
           }catch(err){ /* skip this photo if it can't be embedded, keep going */ }
         }
       }
@@ -4110,8 +4223,8 @@ async function pmmExportSupplierAckDocx(){
       children:[ new Paragraph({
         alignment:AlignmentType.CENTER,
         children:[ new TextRun({
-          text:"To ensure compliance and manage liability, our compliance advisor recommended requiring suppliers to sign off on documentation confirming that materials used in products have not changed. This provides a formal record of material consistency for future reference.",
-          italics:true, size:13, color:"999999", font:DOC_FONT,
+          text:"To ensure compliance and manage liability, Rhino-USA, Inc. recommends requiring suppliers to sign off on this documentation, confirming that the materials used in their products have not changed. This provides a formal record of material consistency for future reference and compliance verification.",
+          italics:true, size:15, color:"666666", font:DOC_FONT,
         }) ],
       }) ],
     });
@@ -4202,13 +4315,20 @@ function pmmRenderCostSavings(){
     pmmCostSavingsSnapshots.forEach(snap=>{
       let dateStr=snap.savedDate;
       try{ dateStr=new Date(snap.savedDate).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"}); }catch(e){}
+      const matched=pmmEntries.filter(e=>snap.skus.includes(e.sku));
+      const suppliers=[...new Set(matched.map(e=>e.supplier).filter(Boolean))];
+      const testLabs=[...new Set(matched.map(e=>e.testLab).filter(Boolean))];
       html+=`<div class="pmm-entry-card" style="margin-bottom:16px">
-        <div class="pmm-entry-hdr" onclick="pmmOpenCostSnapshotDetail('${snap.id}')" style="cursor:pointer">
-          <div>
+        <div class="pmm-entry-hdr" style="align-items:flex-start">
+          <div style="cursor:pointer" onclick="pmmOpenCostSnapshotDetail('${snap.id}')">
             <div style="font-size:13px;font-weight:700;color:#222">${esc(dateStr)}</div>
             <div style="font-size:10px;color:#888">${esc(snap.filterSummary)} · ${snap.skus.length} product${snap.skus.length!==1?"s":""}</div>
+            <div style="font-size:9.5px;color:#aaa;margin-top:3px">${suppliers.length?`Supplier${suppliers.length!==1?"s":""}: ${esc(suppliers.join(", "))}`:""}${suppliers.length&&testLabs.length?" · ":""}${testLabs.length?`Test Lab${testLabs.length!==1?"s":""}: ${esc(testLabs.join(", "))}`:""}</div>
           </div>
-          <div style="font-size:10.5px;color:#0073ea;font-weight:700;white-space:nowrap">View full details →</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+            <span onclick="pmmOpenCostSnapshotDetail('${snap.id}')" style="font-size:10.5px;color:#0073ea;font-weight:700;white-space:nowrap;cursor:pointer">View full details →</span>
+            <button onclick="pmmDeleteCostSnapshot('${snap.id}')" title="Delete snapshot" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1;flex-shrink:0">✕</button>
+          </div>
         </div>
         <div style="padding:12px 14px">${pmmCostSnapshotRowsHtml(snap)}</div>
       </div>`;
@@ -4306,30 +4426,49 @@ function pmmAckPreviewHtml(){
   const generatedStr=new Date().toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"});
   const periodStr=pmmAckYear==="ALL"?"All available data":`Year: ${pmmAckYear}`;
 
-  const entriesHtml=pmmAckEntries.map(e=>pmmAckEntryBlockHtml(e)).join("");
+  // Mirrors the DOCX pagination exactly: page 1 carries the header + first
+  // entry, every entry after that gets its own page, and the sign-off gets a
+  // final page of its own -- same layout as the "PAGE X OF Y" reference report.
+  const totalPages=pmmAckEntries.length+1;
+  const pageBoxOpen=`<div style="background:#fff;border:1px solid #ddd;box-shadow:0 4px 16px rgba(0,0,0,.1);padding:36px;max-width:800px;margin:0 auto">`;
+  const pageLabel=(n)=>`<div style="text-align:center;font-size:10px;color:#999;letter-spacing:1.5px;margin:28px 0 8px;text-transform:uppercase">Page ${n} of ${totalPages}</div>`;
+  const footerNote=`<div style="margin-top:20px;padding-top:12px;border-top:1px solid #eee;font-size:10.5px;font-style:italic;color:#777;line-height:1.6">To ensure compliance and manage liability, Rhino-USA, Inc. recommends requiring suppliers to sign off on this documentation, confirming that the materials used in their products have not changed. This provides a formal record of material consistency for future reference and compliance verification.</div>`;
 
-  return `<div style="margin-top:16px">
-    <div style="text-align:center;font-size:10px;color:#999;margin-bottom:8px">PREVIEW — this is what the exported Word document will contain</div>
-    <div style="background:#fff;border:1px solid #ddd;box-shadow:0 4px 16px rgba(0,0,0,.1);padding:36px;max-width:800px;margin:0 auto">
+  let html=`<div style="margin-top:16px">
+    <div style="text-align:center;font-size:10px;color:#999;margin-bottom:8px">PREVIEW — this is what the exported Word document will contain</div>`;
+
+  // Page 1: banner, title, and the first entry.
+  html+=pageLabel(1);
+  html+=`${pageBoxOpen}
       <img src="data:image/png;base64,${PMM_ACK_BANNER_B64}" style="width:100%;border-radius:6px;margin-bottom:20px;display:block"/>
       <div style="font-size:19px;font-weight:800;color:#222;margin-bottom:2px">Supplier Material Consistency Acknowledgement</div>
       <div style="font-size:14px;font-weight:700;color:#0a7a46;margin-bottom:4px">${esc(pmmAckSupplier)}</div>
       <div style="font-size:11px;color:#888;margin-bottom:18px">${esc(periodStr)} — Generated ${generatedStr} · ${pmmAckEntries.length} product${pmmAckEntries.length!==1?"s":""}</div>
       <hr style="border:none;border-top:2px solid #222;margin-bottom:18px"/>
-      ${entriesHtml}
-      <div style="margin-top:24px;padding-top:16px;border-top:1px solid #ddd">
-        <div style="font-size:11.5px;color:#333;line-height:1.6;margin-bottom:20px">By signing below, <strong>${esc(pmmAckSupplier)}</strong> acknowledges that the materials listed above for the products covered in this report have not changed and remain consistent with what has been previously reported.</div>
-        <div style="display:flex;gap:24px">
-          <div style="flex:1;border:2px dashed #ccc;border-radius:6px;min-height:90px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:11px;font-weight:600">COMPANY STAMP</div>
-          <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:22px">
-            <div><div style="border-bottom:1.5px solid #999;margin-bottom:4px;height:20px"></div><div style="font-size:9.5px;color:#999">AUTHORIZED SIGNATURE &amp; NAME/TITLE</div></div>
-            <div><div style="border-bottom:1.5px solid #999;margin-bottom:4px;height:20px"></div><div style="font-size:9.5px;color:#999">DATE</div></div>
-          </div>
+      ${pmmAckEntryBlockHtml(pmmAckEntries[0])}
+    </div>`;
+
+  // One page per remaining entry.
+  for(let i=1;i<pmmAckEntries.length;i++){
+    html+=pageLabel(i+1);
+    html+=`${pageBoxOpen}${pmmAckEntryBlockHtml(pmmAckEntries[i])}</div>`;
+  }
+
+  // Final page: signature / stamp block + footer note.
+  html+=pageLabel(totalPages);
+  html+=`${pageBoxOpen}
+      <div style="font-size:11.5px;color:#333;line-height:1.6;margin-bottom:20px">By signing below, <strong>${esc(pmmAckSupplier)}</strong> acknowledges that the materials listed above for the products covered in this report have not changed and remain consistent with what has been previously reported.</div>
+      <div style="display:flex;gap:24px">
+        <div style="flex:1;border:2px dashed #ccc;border-radius:6px;min-height:90px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:11px;font-weight:600">COMPANY STAMP</div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:22px">
+          <div><div style="border-bottom:1.5px solid #999;margin-bottom:4px;height:20px"></div><div style="font-size:9.5px;color:#999">AUTHORIZED SIGNATURE &amp; NAME/TITLE</div></div>
+          <div><div style="border-bottom:1.5px solid #999;margin-bottom:4px;height:20px"></div><div style="font-size:9.5px;color:#999">DATE</div></div>
         </div>
       </div>
-      <div style="margin-top:20px;padding-top:12px;border-top:1px solid #eee;font-size:9.5px;font-style:italic;color:#999;line-height:1.6">To ensure compliance and manage liability, our compliance advisor recommended requiring suppliers to sign off on documentation confirming that materials used in products have not changed. This provides a formal record of material consistency for future reference.</div>
+      ${footerNote}
     </div>
   </div>`;
+  return html;
 }
 
 function pmmRenderDatabase(){
@@ -4446,5 +4585,603 @@ function pmmRenderCompiled(){
   body.innerHTML=html;
 }
 </script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// PANTONE COLOR APPROVAL MODULE
+// Shares the same accessToken/tokenClient from the scripts above — one Google
+// sign-in covers Compliance Dashboard, Product Material Matrix, and this.
+// ══════════════════════════════════════════════════════════════════════════
+
+// ── Config ───────────────────────────────────────────────────────────────
+const PCA_TRACKING_SPREADSHEET_ID = "1X8I3P3goF2whT919bMvfAaRu6a5xXuRdOtMFc6-gMiE"; // Fulfil-linked tracking database — READ ONLY, never written to
+const PCA_TRACKING_GID = "1173080992"; // the specific tab referenced
+const PCA_TICKETS_SHEET = "Pantone Tickets"; // our own tab, in the same spreadsheet as Product Matrix
+const PCA_DRIVE_FOLDER_ID = "1KVHpmpbiUFuYfsBwnxdVOQKmyLEWFHvl";
+const PCA_STATUSES = ["In production", "Pending PP Sample Approval", "Goods Ready Date"]; // column K values to include
+
+// Column layout is a best-effort guess since the tracking sheet couldn't be
+// inspected directly (private, 401) -- matched by fuzzy header-name search so
+// it's resilient to column reordering, with column K hardcoded for Status
+// specifically since that was given as an exact letter, not a name.
+const PCA_COLUMN_HINTS = {
+  poNumber: ["po number","po #","po"],
+  shipmentNumber: ["shipment number","ss number","shipment"],
+  supplierName: ["supplier name","supplier"],
+  supplierSku: ["supplier sku","sku"],
+  description: ["product description","description"],
+  quantity: ["quantity","qty"],
+  updatedGrd: ["updated grd","grd","goods ready date"],
+};
+const PCA_STATUS_COL_INDEX = 10; // column K, 0-indexed
+
+// ── State ────────────────────────────────────────────────────────────────
+let pcaActiveTab = "tracking";
+let pcaTrackingRows = []; // rows from the Fulfil-linked sheet, already filtered to the 3 statuses
+let pcaTrackingSheetTitle = null; // resolved from PCA_TRACKING_GID once
+let pcaTickets = []; // our own submitted tickets, grouped by Ticket ID
+let pcaHiddenKeys = new Set(); // "PO||SKU" combos already ticketed or waived -- hidden from Tracking
+let pcaSearchQuery = "";
+let pcaSearchSuggestOpen = false;
+let pcaContextMenu = null; // {x,y,row}
+let pcaTicketDraftRow = null; // the tracking row a new ticket is being built from
+let pcaTicketDraftComponents = [{component:"",photoUrl:""}];
+let pcaSubmitting = false;
+let pcaDraftFolderId = null; // created lazily on first photo upload for the current ticket draft
+let pcaHasSyncedOnce = false;
+
+// ── Tab switching ────────────────────────────────────────────────────────
+function pcaSwitchTab(t){
+  pcaActiveTab=t;
+  document.getElementById("pca-tab-tracking").className="pmm-subtab"+(t==="tracking"?" active":"");
+  document.getElementById("pca-tab-approval").className="pmm-subtab"+(t==="approval"?" active":"");
+  pcaRender();
+}
+
+function pcaRender(){
+  const badge=document.getElementById("pca-count-badge");
+  const openCount=pcaTickets.filter(t=>t.status!=="waived"&&t.status!=="release_to_production").length;
+  if(badge){ if(openCount){badge.style.display="inline";badge.textContent=openCount;} else badge.style.display="none"; }
+  if(!pcaHasSyncedOnce && accessToken){ pcaHasSyncedOnce=true; pcaSyncTracking(); return; }
+  if(pcaActiveTab==="approval") pcaRenderApproval();
+  else if(pcaActiveTab==="newticket") pcaRenderTicketForm();
+  else pcaRenderTracking();
+}
+
+function pcaKeyFor(po, sku){ return `${(po||"").trim().toUpperCase()}||${(sku||"").trim().toUpperCase()}`; }
+
+// ── Fetching the Fulfil-linked tracking sheet (read-only, never written to) ─
+async function pcaResolveTrackingSheetTitle(){
+  if(pcaTrackingSheetTitle) return pcaTrackingSheetTitle;
+  const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${PCA_TRACKING_SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
+  if(!res.ok) throw new Error(`Could not access the tracking sheet (${res.status}). Confirm your Google account has viewer access to it.`);
+  const data=await res.json();
+  const gidNum=parseInt(PCA_TRACKING_GID,10);
+  const sheet=(data.sheets||[]).find(s=>s.properties.sheetId===gidNum);
+  if(!sheet) throw new Error("Could not find the specified tracking tab (gid mismatch).");
+  pcaTrackingSheetTitle=sheet.properties.title;
+  return pcaTrackingSheetTitle;
+}
+
+// Fuzzy header-name matching, since column order in the source sheet couldn't
+// be confirmed directly (private sheet, 401 on inspection).
+function pcaFindColumnIndex(headers, hints){
+  const lower=headers.map(h=>String(h||"").toLowerCase().trim());
+  for(const hint of hints){ const idx=lower.findIndex(h=>h===hint); if(idx!==-1) return idx; }
+  for(const hint of hints){ const idx=lower.findIndex(h=>h.includes(hint)); if(idx!==-1) return idx; }
+  return -1;
+}
+
+async function pcaSyncTracking(){
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first (top of the Compliance Dashboard tab).'); return; }
+  const body=document.getElementById("pca-body");
+  if(body) body.innerHTML=`<div style="text-align:center;padding:60px;color:#aaa">Loading tracking data…</div>`;
+  try{
+    const title=await pcaResolveTrackingSheetTitle();
+    const range=`${title}!A1:Z5000`;
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${PCA_TRACKING_SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
+    if(res.status===401){ accessToken=null; throw new Error("Your Google session expired. Re-sync from the Compliance Dashboard tab, then try again."); }
+    if(!res.ok) throw new Error(`Could not load the tracking sheet (${res.status}). Confirm your Google account has viewer access to it.`);
+    const data=await res.json();
+    const rows=data.values||[];
+    if(!rows.length) throw new Error("The tracking sheet returned no data.");
+    const headers=rows[0];
+    const colIdx={};
+    Object.keys(PCA_COLUMN_HINTS).forEach(key=>{ colIdx[key]=pcaFindColumnIndex(headers, PCA_COLUMN_HINTS[key]); });
+
+    const parsed=[];
+    for(let r=1;r<rows.length;r++){
+      const row=rows[r];
+      if(!row||!row.length) continue;
+      const status=(row[PCA_STATUS_COL_INDEX]||"").trim();
+      if(!PCA_STATUSES.includes(status)) continue;
+      const get=(key)=>colIdx[key]!==-1?(row[colIdx[key]]||""):"";
+      parsed.push({
+        poNumber:get("poNumber"), shipmentNumber:get("shipmentNumber"), supplierName:get("supplierName"),
+        supplierSku:get("supplierSku"), description:get("description"), quantity:get("quantity"),
+        updatedGrd:get("updatedGrd"), status,
+      });
+    }
+    pcaTrackingRows=parsed;
+    await pcaSyncTickets();
+    pcaRender();
+  }catch(e){
+    if(body) body.innerHTML=`<div style="text-align:center;padding:60px;color:#c0392b;font-size:12px">${esc(e.message)}<div style="margin-top:12px"><button onclick="pcaSyncTracking()" style="font-size:11px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:6px;padding:8px 16px;cursor:pointer">Try Again</button></div></div>`;
+  }
+}
+
+// ── Our own tickets sheet (in the Product Matrix spreadsheet) ──────────────
+async function pcaEnsureTicketsHeaders(){
+  const headers=["Ticket ID","PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status","Created Date","Component","Photo URL","Folder Link"];
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}!A1:M1?valueInputOption=USER_ENTERED`;
+  await fetch(url,{ method:"PUT", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:[headers]}) });
+}
+
+async function pcaSyncTickets(){
+  try{
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}?valueRenderOption=FORMATTED_VALUE`;
+    const res=await fetch(url,{headers:{Authorization:"Bearer "+accessToken}});
+    if(!res.ok){ pcaTickets=[]; pcaHiddenKeys=new Set(); return; } // tab likely doesn't exist yet -- fine, no tickets
+    const data=await res.json();
+    const rows=pmmRowsToObjectsWithIndex(data.values||[]);
+    const byId={};
+    rows.forEach(row=>{
+      const id=pmmPick(row,"Ticket ID");
+      if(!id) return;
+      if(!byId[id]){
+        byId[id]={
+          id, poNumber:pmmPick(row,"PO Number"), shipmentNumber:pmmPick(row,"Shipment Number"),
+          supplierName:pmmPick(row,"Supplier Name"), supplierSku:pmmPick(row,"Supplier SKU"),
+          description:pmmPick(row,"Product Description"), quantity:pmmPick(row,"Quantity"),
+          updatedGrd:pmmPick(row,"Updated GRD"), status:pmmPick(row,"Status")||"approval",
+          createdDate:pmmPick(row,"Created Date"), folderLink:pmmPick(row,"Folder Link"),
+          components:[], rowIndexes:[],
+        };
+      }
+      if(row.__rowIndex) byId[id].rowIndexes.push(row.__rowIndex);
+      const comp=pmmPick(row,"Component"), photo=pmmPick(row,"Photo URL");
+      if(comp||photo) byId[id].components.push({component:comp, photoUrl:photo});
+    });
+    pcaTickets=Object.values(byId).sort((a,b)=>String(b.createdDate||"").localeCompare(String(a.createdDate||"")));
+    pcaHiddenKeys=new Set(pcaTickets.map(t=>pcaKeyFor(t.poNumber,t.supplierSku)));
+  }catch(e){
+    pcaTickets=[]; pcaHiddenKeys=new Set();
+  }
+}
+
+// ── Tracking table: search, suggestions, right-click menu ──────────────────
+function pcaGetFilteredTrackingRows(){
+  let rows=pcaTrackingRows.filter(r=>!pcaHiddenKeys.has(pcaKeyFor(r.poNumber,r.supplierSku)));
+  if(pcaSearchQuery){
+    const q=pcaSearchQuery.toLowerCase();
+    rows=rows.filter(r=>(r.poNumber||"").toLowerCase().includes(q)||(r.shipmentNumber||"").toLowerCase().includes(q)||(r.supplierSku||"").toLowerCase().includes(q));
+  }
+  return rows;
+}
+
+function pcaSearchSuggestionsHtml(query){
+  if(!query) return "";
+  const q=query.toLowerCase();
+  const results=[]; const seen=new Set();
+  pcaTrackingRows.forEach(r=>{
+    [["PO",r.poNumber],["SS",r.shipmentNumber],["SKU",r.supplierSku]].forEach(([tag,val])=>{
+      if(val && val.toLowerCase().includes(q) && !seen.has(tag+":"+val)){ seen.add(tag+":"+val); results.push({tag,text:val}); }
+    });
+  });
+  if(!results.length) return `<div style="padding:10px 14px;font-size:11px;color:#aaa">No matches</div>`;
+  const highlight=(text)=>{
+    const idx=text.toLowerCase().indexOf(q);
+    if(idx===-1) return esc(text);
+    return esc(text.slice(0,idx))+`<mark style="background:#fff3b0;padding:0 1px;border-radius:2px">${esc(text.slice(idx,idx+q.length))}</mark>`+esc(text.slice(idx+q.length));
+  };
+  return results.slice(0,8).map(r=>`
+    <div onclick="pcaSelectSearchSuggestion('${esc(r.text).replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">
+      <span style="font-size:8.5px;font-weight:700;color:#0055bb;border:1px solid #c0d8f8;border-radius:4px;padding:2px 6px;flex-shrink:0">${r.tag}</span>
+      <span style="font-size:12px;color:#333">${highlight(r.text)}</span>
+    </div>`).join("");
+}
+
+function pcaOnSearchInput(inputEl){
+  const cursorPos=inputEl.selectionStart;
+  pcaSearchQuery=inputEl.value;
+  pcaSearchSuggestOpen=!!pcaSearchQuery;
+  pcaRenderTracking();
+  requestAnimationFrame(()=>{
+    const el=document.getElementById("pca-search-input");
+    if(el){ el.focus(); try{ el.setSelectionRange(cursorPos,cursorPos); }catch(e){} }
+  });
+}
+function pcaSelectSearchSuggestion(text){ pcaSearchQuery=text; pcaSearchSuggestOpen=false; pcaRenderTracking(); }
+function pcaCloseSearchSuggest(){ setTimeout(()=>{ pcaSearchSuggestOpen=false; pcaRenderTracking(); }, 150); }
+
+function pcaShowContextMenu(e, rowIndex){
+  e.preventDefault();
+  const rows=pcaGetFilteredTrackingRows();
+  pcaContextMenu={x:e.clientX, y:e.clientY, row:rows[rowIndex]};
+  pcaRenderTracking();
+}
+function pcaCloseContextMenu(){ pcaContextMenu=null; pcaRenderTracking(); }
+function pcaContextMenuHtml(){
+  const m=pcaContextMenu;
+  return `<div onclick="pcaCloseContextMenu()" style="position:fixed;inset:0;z-index:90"></div>
+    <div style="position:fixed;top:${m.y}px;left:${m.x}px;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.18);z-index:91;min-width:170px;overflow:hidden">
+      <div onclick="pcaStartCreateTicket()" style="padding:10px 16px;font-size:12px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">🎫 Create Ticket</div>
+      <div onclick="pcaWaiveRow()" style="padding:10px 16px;font-size:12px;cursor:pointer;color:#e2445c" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">🚫 Waive</div>
+    </div>`;
+}
+
+async function pcaWaiveRow(){
+  const row=pcaContextMenu.row;
+  pcaContextMenu=null;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  if(!confirm(`Waive ${row.poNumber} / ${row.supplierSku}? This hides it from Tracking without creating an approval ticket.`)) return;
+  try{
+    await pcaEnsureTicketsHeaders();
+    const ticketId="waive_"+Date.now();
+    const nowIso=new Date().toISOString();
+    const values=[[ticketId,row.poNumber,row.shipmentNumber,row.supplierName,row.supplierSku,row.description,row.quantity,row.updatedGrd,"waived",nowIso,"","",""]];
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const res=await fetch(url,{ method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values}) });
+    if(!res.ok){ const t=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${t.slice(0,150)}`); }
+    pcaHiddenKeys.add(pcaKeyFor(row.poNumber,row.supplierSku));
+    pcaRenderTracking();
+  }catch(e){
+    alert("Could not waive: "+e.message);
+  }
+}
+
+function pcaStartCreateTicket(){
+  pcaTicketDraftRow=pcaContextMenu.row;
+  pcaContextMenu=null;
+  pcaTicketDraftComponents=[{component:"",photoUrl:""}];
+  pcaDraftFolderId=null;
+  pcaActiveTab="newticket";
+  pcaRender();
+}
+
+function pcaRenderTracking(){
+  const body=document.getElementById("pca-body"); if(!body) return;
+  const rows=pcaGetFilteredTrackingRows();
+  let html=`<div style="max-width:100%;margin:0 auto">`;
+  html+=`<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+    <div style="position:relative;flex:1;min-width:220px;max-width:340px">
+      <input id="pca-search-input" value="${esc(pcaSearchQuery)}" oninput="pcaOnSearchInput(this)" onfocus="if(pcaSearchQuery){pcaSearchSuggestOpen=true;pcaRenderTracking()}" onblur="pcaCloseSearchSuggest()" placeholder="Search PO / SS / SKU…" class="pmm-input"/>
+      ${pcaSearchSuggestOpen?`<div style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto">${pcaSearchSuggestionsHtml(pcaSearchQuery)}</div>`:""}
+    </div>
+    <button onclick="pcaSyncTracking()" style="font-size:11px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:6px;padding:8px 14px;cursor:pointer">🔄 Refresh</button>
+    <span style="font-size:10.5px;color:#888">${rows.length} item${rows.length!==1?"s":""} awaiting action</span>
+  </div>`;
+
+  if(!rows.length){
+    html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">📋</div><div style="font-size:12px">Nothing awaiting action right now, or click Refresh to reload from the tracking sheet.</div></div>`;
+  } else {
+    html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap">
+        <thead><tr style="background:#f2f3f6">
+          ${["PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+        </tr></thead>
+        <tbody>
+          ${rows.map((r,i)=>`<tr oncontextmenu="pcaShowContextMenu(event, ${i})" style="border-bottom:0.5px solid #f0f1f3;cursor:context-menu">
+            <td style="padding:7px 12px;font-weight:600">${esc(r.poNumber)}</td>
+            <td style="padding:7px 12px">${esc(r.shipmentNumber)}</td>
+            <td style="padding:7px 12px">${esc(r.supplierName)}</td>
+            <td style="padding:7px 12px">${esc(r.supplierSku)}</td>
+            <td style="padding:7px 12px;white-space:normal;min-width:200px">${esc(r.description)}</td>
+            <td style="padding:7px 12px">${esc(r.quantity)}</td>
+            <td style="padding:7px 12px">${esc(r.updatedGrd)}</td>
+            <td style="padding:7px 12px"><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fff3cd;color:#856404">${esc(r.status)}</span></td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:10px;color:#aaa;margin-top:6px">Right-click a row for options (Create Ticket / Waive).</div>`;
+  }
+  html+=`</div>`;
+  if(pcaContextMenu) html+=pcaContextMenuHtml();
+  body.innerHTML=html;
+}
+
+// ── Ticket creation form ─────────────────────────────────────────────────
+function pcaComponentRowHtml(c,i){
+  return `<div style="border:1px solid #e0e3ea;border-radius:8px;padding:12px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <label class="pmm-label" style="margin:0">Component ${i+1}</label>
+      ${pcaTicketDraftComponents.length>1?`<button onclick="pcaRemoveComponentRow(${i})" style="background:none;border:none;color:#e2445c;cursor:pointer;font-size:12px">✕ Remove</button>`:""}
+    </div>
+    <input class="pmm-input" placeholder="Component name" value="${esc(c.component)}" oninput="pcaTicketDraftComponents[${i}].component=this.value" style="margin-bottom:10px"/>
+    <div id="pca-photo-wrap-${i}">
+      ${c.photoUrl?`<img src="${pmmPhotoDisplayUrl(c.photoUrl)}" style="max-width:100%;max-height:200px;border-radius:6px;display:block;margin-bottom:8px"/><button onclick="pcaTicketDraftComponents[${i}].photoUrl='';pcaRenderTicketForm()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:6px;padding:5px 12px;cursor:pointer">✕ Remove photo</button>`
+        :`<div class="pmm-photo-drop" onclick="document.getElementById('pca-photo-file-${i}').click()">
+            <div style="font-size:20px;margin-bottom:4px">📷</div>
+            <div style="font-size:11px;color:#555;font-weight:600">Click to upload, or paste an image</div>
+          </div>`}
+      <input type="file" id="pca-photo-file-${i}" accept="image/*" style="display:none" onchange="pcaUploadComponentPhoto(${i}, this.files[0])"/>
+    </div>
+  </div>`;
+}
+function pcaAddComponentRow(){ pcaTicketDraftComponents.push({component:"",photoUrl:""}); pcaRenderTicketForm(); }
+function pcaRemoveComponentRow(i){ pcaTicketDraftComponents.splice(i,1); pcaRenderTicketForm(); }
+
+function pcaRenderTicketForm(){
+  const body=document.getElementById("pca-body"); if(!body) return;
+  const r=pcaTicketDraftRow;
+  if(!r){ pcaActiveTab="tracking"; pcaRenderTracking(); return; }
+  const html=`<div style="max-width:800px;margin:0 auto">
+    <button onclick="pcaActiveTab='tracking';pcaRender()" style="background:none;border:none;color:#0073ea;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:12px">← Back to Tracking</button>
+    <div class="pmm-card">
+      <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">New Pantone Color Ticket</div>
+      <div class="pmm-grid2">
+        <div class="pmm-field"><label class="pmm-label">PO Number</label><input class="pmm-input" value="${esc(r.poNumber)}" disabled/></div>
+        <div class="pmm-field"><label class="pmm-label">Shipment Number</label><input class="pmm-input" value="${esc(r.shipmentNumber)}" disabled/></div>
+      </div>
+      <div class="pmm-grid2">
+        <div class="pmm-field"><label class="pmm-label">Supplier Name</label><input class="pmm-input" value="${esc(r.supplierName)}" disabled/></div>
+        <div class="pmm-field"><label class="pmm-label">Supplier SKU</label><input class="pmm-input" value="${esc(r.supplierSku)}" disabled/></div>
+      </div>
+      <div class="pmm-field"><label class="pmm-label">Product Description</label><input class="pmm-input" value="${esc(r.description)}" disabled/></div>
+      <div class="pmm-grid2">
+        <div class="pmm-field"><label class="pmm-label">Quantity</label><input class="pmm-input" value="${esc(r.quantity)}" disabled/></div>
+        <div class="pmm-field"><label class="pmm-label">Updated GRD</label><input class="pmm-input" value="${esc(r.updatedGrd)}" disabled/></div>
+      </div>
+    </div>
+    <div class="pmm-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:700;color:#333">Components</div>
+        <button onclick="pcaAddComponentRow()" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:5px 12px;cursor:pointer">+ Add Component</button>
+      </div>
+      ${pcaTicketDraftComponents.map((c,i)=>pcaComponentRowHtml(c,i)).join("")}
+    </div>
+    <button id="pca-submit-btn" onclick="pcaSubmitTicket()" style="width:100%;padding:13px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:9px;cursor:pointer">✓ Submit Ticket</button>
+  </div>`;
+  body.innerHTML=html;
+}
+
+async function pcaEnsureTicketFolder(){
+  if(pcaDraftFolderId) return pcaDraftFolderId;
+  const r=pcaTicketDraftRow;
+  const folderName=`${r.poNumber}-${r.shipmentNumber}-${r.supplierSku} ${r.description}`.replace(/[\\\/:*?"<>|]/g,"-").slice(0,120);
+  const metadata={ name:folderName, mimeType:"application/vnd.google-apps.folder", parents:[PCA_DRIVE_FOLDER_ID] };
+  const res=await fetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true",{
+    method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify(metadata),
+  });
+  if(!res.ok){ const t=await res.text(); throw new Error(`Could not create the ticket's Drive folder (${res.status}): ${t.slice(0,150)}`); }
+  const json=await res.json();
+  pcaDraftFolderId=json.id;
+  return pcaDraftFolderId;
+}
+
+async function pcaUploadPhotoToFolder(file, folderId){
+  const metadata={ name:`photo_${Date.now()}_${file.name}`, parents:[folderId] };
+  const boundary="pca_boundary_"+Date.now();
+  const base64=await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result.split(",")[1]);
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+  const body=
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`+
+    `--${boundary}\r\nContent-Type: ${file.type||"image/jpeg"}\r\nContent-Transfer-Encoding: base64\r\n\r\n${base64}\r\n`+
+    `--${boundary}--`;
+  const res=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",{
+    method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":`multipart/related; boundary=${boundary}`}, body,
+  });
+  if(!res.ok){ const t=await res.text(); throw new Error(`Drive upload failed (${res.status}): ${t.slice(0,150)}`); }
+  const json=await res.json();
+  await fetch(`https://www.googleapis.com/drive/v3/files/${json.id}/permissions?supportsAllDrives=true`,{
+    method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({role:"reader",type:"anyone"}),
+  }).catch(()=>{});
+  return `https://drive.google.com/thumbnail?id=${json.id}&sz=w1000`;
+}
+
+async function pcaUploadComponentPhoto(idx, file){
+  if(!file) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  const wrap=document.getElementById(`pca-photo-wrap-${idx}`);
+  if(wrap) wrap.innerHTML=`<div style="font-size:11px;color:#888"><span class="spin"></span> Uploading…</div>`;
+  try{
+    const folderId=await pcaEnsureTicketFolder();
+    pcaTicketDraftComponents[idx].photoUrl=await pcaUploadPhotoToFolder(file, folderId);
+  }catch(e){
+    alert("Photo upload failed: "+e.message);
+  }finally{
+    pcaRenderTicketForm();
+  }
+}
+
+async function pcaSubmitTicket(){
+  if(pcaSubmitting) return;
+  const r=pcaTicketDraftRow;
+  const components=pcaTicketDraftComponents.filter(c=>c.component||c.photoUrl);
+  if(!components.length){ alert("Add at least one component."); return; }
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+
+  pcaSubmitting=true;
+  const btn=document.getElementById("pca-submit-btn");
+  if(btn){ btn.disabled=true; btn.style.opacity=".6"; btn.textContent="Submitting…"; }
+
+  try{
+    await pcaEnsureTicketsHeaders();
+    const ticketId="pca_"+Date.now();
+    const nowIso=new Date().toISOString();
+    const folderLink=pcaDraftFolderId?`https://drive.google.com/drive/folders/${pcaDraftFolderId}`:"";
+    const rows=components.map(c=>[ticketId,r.poNumber,r.shipmentNumber,r.supplierName,r.supplierSku,r.description,r.quantity,r.updatedGrd,"approval",nowIso,c.component,c.photoUrl,folderLink]);
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const res=await fetch(url,{ method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:rows}) });
+    if(!res.ok){ const t=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${t.slice(0,150)}`); }
+
+    pcaHiddenKeys.add(pcaKeyFor(r.poNumber,r.supplierSku));
+    pcaTicketDraftRow=null;
+    pcaTicketDraftComponents=[{component:"",photoUrl:""}];
+    pcaDraftFolderId=null;
+    await pcaSyncTickets();
+    pcaSwitchTab("approval");
+  }catch(e){
+    alert("Could not submit ticket: "+e.message);
+  }finally{
+    pcaSubmitting=false;
+  }
+}
+
+// ── Approval Process tab ────────────────────────────────────────────────
+const PCA_STATUS_LABELS={
+  approval:"Pending Approval", reject:"Rejected", inform_supplier:"Supplier Informed",
+  reproduce_sample:"Reproducing Sample", review:"Under Review", approve:"Approved",
+  release_to_production:"Released to Production", waived:"Waived",
+};
+function pcaStatusBadgeHtml(status){
+  const isGreen=status==="release_to_production";
+  const isRed=status==="reject";
+  const bg=isGreen?"#d4edda":isRed?"#f8d7da":"#fff3cd";
+  const color=isGreen?"#155724":isRed?"#721c24":"#856404";
+  return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${bg};color:${color}">${PCA_STATUS_LABELS[status]||status}</span>`;
+}
+
+function pcaRenderApproval(){
+  const body=document.getElementById("pca-body"); if(!body) return;
+  const openTickets=pcaTickets.filter(t=>t.status!=="waived");
+  let html=`<div style="max-width:1100px;margin:0 auto">`;
+  if(!openTickets.length){
+    html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-size:12px">No tickets yet — create one from the Tracking tab.</div></div>`;
+  } else {
+    html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap">
+        <thead><tr style="background:#f2f3f6">
+          ${["PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Status"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+        </tr></thead>
+        <tbody>
+          ${openTickets.map(t=>`<tr onclick="pcaOpenTicketDetail('${t.id}')" style="border-bottom:0.5px solid #f0f1f3;cursor:pointer">
+            <td style="padding:7px 12px;font-weight:600">${esc(t.poNumber)}</td>
+            <td style="padding:7px 12px">${esc(t.shipmentNumber)}</td>
+            <td style="padding:7px 12px">${esc(t.supplierName)}</td>
+            <td style="padding:7px 12px">${esc(t.supplierSku)}</td>
+            <td style="padding:7px 12px;white-space:normal;min-width:200px">${esc(t.description)}</td>
+            <td style="padding:7px 12px">${esc(t.quantity)}</td>
+            <td style="padding:7px 12px">${pcaStatusBadgeHtml(t.status)}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+  }
+  html+=`</div>`;
+  body.innerHTML=html;
+}
+
+// ── Process flow diagram + ticket detail modal ──────────────────────────
+function pcaFlowNodeHtml(key, label, currentStage){
+  let isActive=(currentStage===key);
+  if(key==="start") isActive=true; // any existing ticket implies Start already happened
+  const isGreen=(key==="release_to_production" && currentStage==="release_to_production");
+  const bg=isGreen?"#d4edda":isActive?"#fff3cd":"#1a1a1a";
+  const color=(isGreen||isActive)?"#1a1a1a":"#fff";
+  const border=isGreen?"2px solid #28a745":isActive?"2px solid #ffc107":"1px solid #444";
+  const rounded=(key==="start"||key==="end")?"999px":"8px";
+  return `<div style="background:${bg};color:${color};border:${border};border-radius:${rounded};padding:10px 14px;font-size:11px;font-weight:600;text-align:center;min-width:110px;flex-shrink:0">${label}</div>`;
+}
+function pcaFlowDiagramHtml(currentStage){
+  const arrow=`<div style="color:#888;font-size:16px;flex-shrink:0">→</div>`;
+  const topRow=[["start","Start"],["approval","Approval"],["reject","Reject"],["inform_supplier","Inform Supplier"],["reproduce_sample","Reproduce Sample"],["review","Review"]];
+  const bottomRow=[["approval","Approval"],["approve","Approve"],["release_to_production","Release to Production"],["end","End"]];
+  return `<div style="background:#0e1b3d;border-radius:10px;padding:20px;overflow-x:auto">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      ${topRow.map(([k,l],i)=>pcaFlowNodeHtml(k,l,currentStage)+(i<topRow.length-1?arrow:"")).join("")}
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      ${bottomRow.map(([k,l],i)=>pcaFlowNodeHtml(k,l,currentStage)+(i<bottomRow.length-1?arrow:"")).join("")}
+    </div>
+    <div style="font-size:9.5px;color:#8ab4f8;margin-top:10px">Review can send the item back to Approval for another pass.</div>
+  </div>`;
+}
+
+function pcaReproducePhotoUploadHtml(t){
+  return `<div style="margin-bottom:14px" id="pca-reproduce-wrap-${t.id}">
+    <input type="file" id="pca-reproduce-file-${t.id}" accept="image/*" style="display:none" onchange="pcaUploadReproducePhoto('${t.id}', this.files[0])"/>
+    <button onclick="document.getElementById('pca-reproduce-file-${t.id}').click()" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:6px 14px;cursor:pointer">📷 Add Reproduced Sample Photo</button>
+  </div>`;
+}
+
+async function pcaUploadReproducePhoto(ticketId, file){
+  if(!file) return;
+  const t=pcaTickets.find(x=>x.id===ticketId);
+  if(!t) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  const wrap=document.getElementById(`pca-reproduce-wrap-${ticketId}`);
+  if(wrap) wrap.innerHTML=`<div style="font-size:11px;color:#888"><span class="spin"></span> Uploading…</div>`;
+  try{
+    let folderId=PCA_DRIVE_FOLDER_ID;
+    if(t.folderLink){ const m=t.folderLink.match(/folders\/([a-zA-Z0-9_-]+)/); if(m) folderId=m[1]; }
+    const photoUrl=await pcaUploadPhotoToFolder(file, folderId);
+
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const row=[[t.id,t.poNumber,t.shipmentNumber,t.supplierName,t.supplierSku,t.description,t.quantity,t.updatedGrd,t.status,t.createdDate,"Reproduced Sample",photoUrl,t.folderLink]];
+    const res=await fetch(url,{ method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:row}) });
+    if(!res.ok){ const tx=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${tx.slice(0,150)}`); }
+    await pcaSyncTickets();
+    pcaOpenTicketDetail(ticketId);
+  }catch(e){
+    alert("Could not upload reproduced sample: "+e.message);
+  }
+}
+
+async function pcaAdvanceStage(ticketId, newStage){
+  const t=pcaTickets.find(x=>x.id===ticketId);
+  if(!t) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  try{
+    if(t.rowIndexes && t.rowIndexes.length){
+      const gid=await pmmGetSheetGidFor(PCA_TICKETS_SHEET);
+      // Status lives in column I (0-indexed column 8).
+      const requests=t.rowIndexes.map(r=>({
+        updateCells:{
+          range:{ sheetId:gid, startRowIndex:r-1, endRowIndex:r, startColumnIndex:8, endColumnIndex:9 },
+          rows:[{ values:[{ userEnteredValue:{ stringValue:newStage } }] }],
+          fields:"userEnteredValue",
+        },
+      }));
+      const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{
+        method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({requests}),
+      });
+      if(!res.ok){ const tx=await res.text(); throw new Error(`Sheet update failed (${res.status}): ${tx.slice(0,150)}`); }
+    }
+    t.status=newStage;
+    pcaOpenTicketDetail(ticketId);
+  }catch(e){
+    alert("Could not update status: "+e.message);
+  }
+}
+
+function pcaActionsHtmlFor(t){
+  const btn=(label,onclick,color)=>`<button onclick="${onclick}" style="padding:10px 20px;font-size:12.5px;font-weight:700;color:#fff;background:${color||"#0073ea"};border:none;border-radius:8px;cursor:pointer;margin-right:10px">${label}</button>`;
+  switch(t.status){
+    case "approval":
+      return `<div style="font-size:11px;color:#888;margin-bottom:10px">Does the actual color match the approved Pantone reference?</div>`
+        +btn("✓ Approve", `pcaAdvanceStage('${t.id}','approve')`, "#0a7a46")
+        +btn("✕ Reject", `pcaAdvanceStage('${t.id}','reject')`, "#e2445c");
+    case "reject":
+      return btn("📣 Inform Supplier", `pcaAdvanceStage('${t.id}','inform_supplier')`);
+    case "inform_supplier":
+      return `<div style="font-size:11px;color:#888;margin-bottom:10px">Once the supplier has reproduced a sample, add its photo below before continuing.</div>`
+        +pcaReproducePhotoUploadHtml(t)
+        +btn("🔁 Reproduce Sample Ready", `pcaAdvanceStage('${t.id}','reproduce_sample')`);
+    case "reproduce_sample":
+      return btn("👁 Send to Review", `pcaAdvanceStage('${t.id}','review')`);
+    case "review":
+      return btn("↩ Back to Approval", `pcaAdvanceStage('${t.id}','approval')`);
+    case "approve":
+      return btn("🚀 Release to Production", `pcaAdvanceStage('${t.id}','release_to_production')`, "#0a7a46");
+    case "release_to_production":
+      return `<div style="font-size:12px;color:#0a7a46;font-weight:700">✓ Released to Production — process complete.</div>`;
+    default:
+      return "";
+  }
+}
+
+function pcaOpenTicketDetail(ticketId){
+  closeModal();
+  openModal({type:"pcaTicketDetail", ticketId});
+}
+</script>
 </body>
 </html>
+
+
