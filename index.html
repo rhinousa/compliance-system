@@ -2227,7 +2227,7 @@ function renderModals(){
     const entryDetailsHtml=matchedEntries.map(e=>pmmAckEntryBlockHtml(e)).join("");
 
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
-      <div class="modal-box" style="max-width:1000px;max-height:88vh;display:flex;flex-direction:column">
+      <div class="modal-box" style="max-width:1400px;max-height:88vh;display:flex;flex-direction:column">
         <div style="background:#0e1b3d;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
           <div>
             <div style="color:#fff;font-weight:800;font-size:15px">Cost Savings Snapshot — ${esc(dateStr)}</div>
@@ -2252,7 +2252,7 @@ function renderModals(){
 
           <div style="margin-top:20px">
             <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:8px">Full Product Details</div>
-            ${entryDetailsHtml||`<div style="color:#aaa;font-size:11px">None of the products from this snapshot could be found.</div>`}
+            ${entryDetailsHtml?`<div class="pmm-compiled-grid">${entryDetailsHtml}</div>`:`<div style="color:#aaa;font-size:11px">None of the products from this snapshot could be found.</div>`}
           </div>
         </div>
       </div>
@@ -4029,11 +4029,11 @@ async function pmmExportSupplierAckDocx(){
     const periodStr=pmmAckYear==="ALL"?"All available data":`Year: ${pmmAckYear}`;
 
     function headerCell(text,width){
-      return new TableCell({ width:{ size:width, type:WidthType.PERCENTAGE }, shading:{ fill:"1A1A1A", type:ShadingType.SOLID }, margins:{ top:60,bottom:60,left:80,right:80 }, children:[ new Paragraph({ children:[ new TextRun({ text, bold:true, color:"FFFFFF", size:15 }) ] }) ] });
+      return new TableCell({ width:{ size:width, type:WidthType.PERCENTAGE }, shading:{ fill:"F2F3F6", type:ShadingType.CLEAR, color:"auto" }, margins:{ top:60,bottom:60,left:80,right:80 }, children:[ new Paragraph({ children:[ new TextRun({ text, bold:true, color:"888888", size:14 }) ] }) ] });
     }
     function bodyCell(text,width,opts){
       opts=opts||{};
-      return new TableCell({ width:{ size:width, type:WidthType.PERCENTAGE }, borders:cellBorder, shading:opts.shading?{ fill:opts.shading, type:ShadingType.SOLID }:undefined, margins:{ top:80,bottom:80,left:80,right:80 }, children:[ new Paragraph({ children:[ new TextRun({ text:String(text||""), size:16, bold:!!opts.bold, color:opts.color||"333333" }) ] }) ] });
+      return new TableCell({ width:{ size:width, type:WidthType.PERCENTAGE }, borders:cellBorder, shading:opts.shading?{ fill:opts.shading, type:ShadingType.CLEAR, color:"auto" }:undefined, margins:{ top:80,bottom:80,left:80,right:80 }, children:[ new Paragraph({ children:[ new TextRun({ text:String(text||""), size:16, bold:!!opts.bold, color:opts.color||"333333" }) ] }) ] });
     }
 
     // Build each product's section: title, photo ABOVE the table (bigger, more
@@ -4064,7 +4064,7 @@ async function pmmExportSupplierAckDocx(){
         width:{ size:100, type:WidthType.PERCENTAGE },
         rows:[ new TableRow({ children:[ new TableCell({
           borders:highlightBox,
-          shading:{ fill:"FFF8E0", type:ShadingType.SOLID },
+          shading:{ fill:"FFF8E0", type:ShadingType.CLEAR, color:"auto" },
           margins:{ top:140,bottom:140,left:160,right:160 },
           children:infoLines.map(line=>new Paragraph({ children:[ new TextRun({ text:line, size:17, color:"333333" }) ], spacing:{ after:40 } })),
         }) ] }) ],
