@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Compliance Dashboard — Rhino USA</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -271,6 +272,8 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
         <button class="pmm-subtab active" id="pmm-tab-new" onclick="pmmSwitchTab('new')">➕ New Entry</button>
         <button class="pmm-subtab" id="pmm-tab-compiled" onclick="pmmSwitchTab('compiled')">📋 Compiled View <span id="pmm-count-badge" style="display:none;background:#0073ea;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px"></span></button>
         <button class="pmm-subtab" id="pmm-tab-database" onclick="pmmSwitchTab('database')">🗄️ Database</button>
+        <button class="pmm-subtab" id="pmm-tab-suppack" onclick="pmmSwitchTab('suppack')">🖊️ Supplier Ack.</button>
+        <button class="pmm-subtab" id="pmm-tab-costsavings" onclick="pmmSwitchTab('costsavings')">💰 Cost Savings</button>
       </div>
     </div>
 
@@ -294,6 +297,7 @@ const ITEMS_SHEET      = "Items";      // tab name for the parent-product rows
 const SUBITEMS_SHEET   = "Subitems";   // tab name for the per-test rows
 const PMM_SHEET        = "Product Matrix"; // tab name for the Product Material Matrix entries
 const PMM_LOOKUP_SPREADSHEET_ID = "1gh3EYD7Sjh-pQ8d6wUMkIeCubmeafLQ4U7aeWH8pC-A"; // "Product Master Data Catalogue" — used to auto-fill fields from SKU
+const PMM_COST_SHEET = "Cost Savings"; // tab name for saved Cost Savings snapshots, in the same spreadsheet as Product Matrix
 const SHEET_EDIT_URL   = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit`;
 // Broadened beyond read-only Sheets: PMM needs to WRITE rows back to the sheet,
 // and upload photos to Drive. drive.file (not full drive scope) means this app
@@ -331,6 +335,14 @@ let pmmMaterialColors = {}; // material text (lowercased) -> hex color, assigned
 let pmmRemarks = localStorage.getItem("rhino_pmm_remarks_v1") || "";
 let pmmInsightDateFrom = "", pmmInsightDateTo = "";
 let pmmExpandedCards = new Set(); // entry ids whose full Item/Component/Material table is expanded
+let pmmAckYear = "ALL";
+let pmmAckSupplier = "";
+let pmmAckSupplierPanelOpen = false;
+let pmmAckSupplierSearch = "";
+let pmmAckGenerated = false; // whether "Generate Report" has been clicked for the current selection
+let pmmAckEntries = []; // entries included in the last generated report
+let pmmAckExporting = false;
+let pmmCostSavingsSnapshots = []; // [{id, savedDate, filterSummary, skus:[...], chemical:{...}, corrosion:{...}, total:{...}}]
 const PMM_CATEGORIES = ["Tie-Down","Recovery Gear","Accessories","Towing","Camping"];
 const PMM_PALETTE = ["#e8f2ff","#e3f9ee","#fff8e0","#fdeaea","#f0efff","#e0f7fa","#fbe9e7","#f1f8e9","#fce4ec","#ede7f6"];
 const PMM_PALETTE_TEXT = ["#0055bb","#0a7a46","#7a5500","#a02020","#5b21b6","#00695c","#a04010","#33691e","#a01050","#4527a0"];
@@ -482,7 +494,7 @@ function triggerSync(){
 async function fetchSheetData(){
   try{
     setSyncUI("loading","Fetching data from Google Sheets…","",45);
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values:batchGet?ranges=${encodeURIComponent(ITEMS_SHEET)}&ranges=${encodeURIComponent(SUBITEMS_SHEET)}&ranges=${encodeURIComponent(PMM_SHEET)}&valueRenderOption=FORMATTED_VALUE`;
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values:batchGet?ranges=${encodeURIComponent(ITEMS_SHEET)}&ranges=${encodeURIComponent(SUBITEMS_SHEET)}&ranges=${encodeURIComponent(PMM_SHEET)}&ranges=${encodeURIComponent(PMM_COST_SHEET)}&valueRenderOption=FORMATTED_VALUE`;
     const res=await fetch(url,{headers:{Authorization:"Bearer "+accessToken}});
     if(res.status===401){
       accessToken=null;
@@ -496,6 +508,7 @@ async function fetchSheetData(){
     const itemsRange=data.valueRanges?.[0]?.values||[];
     const subsRange=data.valueRanges?.[1]?.values||[];
     const pmmRange=data.valueRanges?.[2]?.values||[];
+    const costRange=data.valueRanges?.[3]?.values||[];
     if(!itemsRange.length) throw new Error(`No data found in the "${ITEMS_SHEET}" tab. Check the tab name matches ITEMS_SHEET in the code.`);
 
     setSyncUI("loading","Building dashboard…","",80);
@@ -505,6 +518,7 @@ async function fetchSheetData(){
     if(!GROUPS.length) throw new Error("Sheet returned 0 items.");
 
     pmmEntries=pmmBuildEntriesFromRows(pmmRowsToObjectsWithIndex(pmmRange));
+    pmmCostSavingsSnapshots=pmmBuildCostSnapshotsFromRows(rowsToObjects(costRange));
     pmmLoadLookupCatalogue(); // fire-and-forget — doesn't block the main sync if it fails
 
     localStorage.setItem(LS_CACHE,JSON.stringify(GROUPS));
@@ -2185,6 +2199,83 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="pmmCostSnapshotDetail"){
+    const snap=pmmCostSavingsSnapshots.find(s=>s.id===modal.snapshotId);
+    if(!snap){ root.innerHTML=""; return; }
+    const matchedEntries=pmmEntries.filter(e=>snap.skus.includes(e.sku));
+    const missingCount=snap.skus.length-matchedEntries.length;
+    const cover=matchedEntries.length?pmmComputeSetCover(matchedEntries):null;
+    let dateStr=snap.savedDate;
+    try{ dateStr=new Date(snap.savedDate).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"}); }catch(e){}
+
+    const entryDetailsHtml=matchedEntries.map(e=>{
+      const normName=pmmNormalizeProductName(e.description)||e.sku;
+      const rows=e.components.map(c=>{
+        const col=pmmMaterialColor(c.material);
+        return `<tr>
+          <td style="padding:5px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;color:#555;width:40px">${esc(c.item)}</td>
+          <td style="padding:5px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;color:#333">${esc(c.component)}</td>
+          <td style="padding:5px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;font-weight:600;background:${col.bg};color:${col.text}"><span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}</td>
+        </tr>`;
+      }).join("");
+      return `<div style="border:1px solid #e0e3ea;border-radius:8px;margin-bottom:14px;overflow:hidden">
+        <div style="background:#f8f9fb;padding:9px 14px;border-bottom:1px solid #e8eaed">
+          <div style="font-size:12.5px;font-weight:700;color:#222">${esc(normName)}</div>
+        </div>
+        <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap">
+          ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:110px;max-width:100%;border-radius:6px;border:1px solid #eee;flex-shrink:0"/>`:""}
+          <div style="flex:0 0 200px;background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:9px 11px;font-size:10.5px;line-height:1.7;color:#333">
+            <div><strong>SKU:</strong> ${esc(e.sku)}</div>
+            <div>${pmmFamilyLineHtml("A SKU Family", e.skuFamily, e.id, "skuFamily")}</div>
+            <div>${pmmFamilyLineHtml("B SKU Family", e.skuFamilyB, e.id, "skuFamilyB")}</div>
+            <div>${pmmFamilyLineHtml("C SKU Family", e.skuFamilyC, e.id, "skuFamilyC")}</div>
+            <div>${pmmFamilyLineHtml("Retail SKU", e.retailSku, e.id, "retailSku")}</div>
+            ${e.parentSku?`<div><strong>Parent SKU:</strong> ${esc(e.parentSku)}</div>`:""}
+            ${e.category?`<div><strong>Category:</strong> ${esc(e.category)}</div>`:""}
+            ${e.supplier?`<div><strong>Supplier:</strong> ${esc(e.supplier)}</div>`:""}
+          </div>
+          <div style="flex:1;min-width:240px">
+            <table style="width:100%;border-collapse:collapse">
+              <thead><tr>
+                <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
+                <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
+                <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+            <div style="font-size:9.5px;color:#aaa;margin-top:6px">
+              ${e.chemTest?`Chemical: ${esc(e.chemTest)}${e.chemTestCost?` (${esc(e.chemTestCost)})`:""} · `:""}${e.corrTest?`Corrosion: ${esc(e.corrTest)}${e.corrTestCost?` (${esc(e.corrTestCost)})`:""}`:""}
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }).join("");
+
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:1000px;max-height:88vh;display:flex;flex-direction:column">
+        <div style="background:#0e1b3d;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+          <div>
+            <div style="color:#fff;font-weight:800;font-size:15px">Cost Savings Snapshot — ${esc(dateStr)}</div>
+            <div style="color:#a8b8d8;font-size:10.5px;margin-top:2px">${esc(snap.filterSummary)}</div>
+          </div>
+          <button onclick="closeModal()" style="background:rgba(255,255,255,.15);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px;flex-shrink:0">✕</button>
+        </div>
+        <div style="padding:20px;overflow-y:auto">
+          ${pmmCostSnapshotRowsHtml(snap)}
+          ${missingCount>0?`<div style="font-size:10.5px;color:#b07000;margin-top:10px">⚠ ${missingCount} of ${snap.skus.length} products from this snapshot could not be found (likely edited or deleted since it was saved) — showing details for the ${matchedEntries.length} still available.</div>`:""}
+
+          ${cover?`<div style="margin-top:20px">
+            <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:8px">General Material Coverage <span style="color:#aaa;font-weight:400">(recomputed from these ${matchedEntries.length} products as they exist now)</span></div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">${pmmTopNCardsHtml(cover, "#c0d8f8")}</div>
+          </div>`:""}
+
+          <div style="margin-top:20px">
+            <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:8px">Full Product Details</div>
+            ${entryDetailsHtml||`<div style="color:#aaa;font-size:11px">None of the products from this snapshot could be found.</div>`}
+          </div>
+        </div>
+      </div>
+    </div>`;
   } else if(modal.type==="pmmViewLarge"){
     const e=pmmEntries.find(x=>x.id===modal.entryId);
     if(!e){ root.innerHTML=""; return; }
@@ -2644,6 +2735,8 @@ function pmmSwitchTab(t){
   document.getElementById("pmm-tab-new").className="pmm-subtab"+(t==="new"?" active":"");
   document.getElementById("pmm-tab-compiled").className="pmm-subtab"+(t==="compiled"?" active":"");
   document.getElementById("pmm-tab-database").className="pmm-subtab"+(t==="database"?" active":"");
+  document.getElementById("pmm-tab-suppack").className="pmm-subtab"+(t==="suppack"?" active":"");
+  document.getElementById("pmm-tab-costsavings").className="pmm-subtab"+(t==="costsavings"?" active":"");
   pmmRender();
 }
 
@@ -2652,6 +2745,8 @@ function pmmRender(){
   if(badge){ if(pmmEntries.length){badge.style.display="inline";badge.textContent=pmmEntries.length;} else badge.style.display="none"; }
   if(pmmActiveTab==="new") pmmRenderNewEntry();
   else if(pmmActiveTab==="database") pmmRenderDatabase();
+  else if(pmmActiveTab==="suppack") pmmRenderSupplierAck();
+  else if(pmmActiveTab==="costsavings") pmmRenderCostSavings();
   else pmmRenderCompiled();
 }
 
@@ -2868,6 +2963,103 @@ function pmmImportFile(file){
     }catch(err){ alert("Could not read that file: "+err.message); }
   };
   reader.readAsBinaryString(file);
+}
+
+function pmmBuildCostSnapshotsFromRows(rows){
+  const byId={};
+  rows.forEach(row=>{
+    const id=pmmPick(row,"Snapshot ID");
+    if(!id) return;
+    if(!byId[id]){
+      byId[id]={
+        id,
+        savedDate:pmmPick(row,"Saved Date"),
+        filterSummary:pmmPick(row,"Filter Summary"),
+        skus:(pmmPick(row,"SKUs Included")||"").split(/,\s*/).filter(Boolean),
+      };
+    }
+    const type=(pmmPick(row,"Testing Type")||"").toLowerCase();
+    const num=(v)=>{ const n=parseFloat(String(v||"").replace(/[^0-9.-]/g,"")); return isNaN(n)?0:n; };
+    const rowData={
+      totalSamples:num(pmmPick(row,"Total Samples")),
+      repSamples:num(pmmPick(row,"Rep Samples")),
+      samplesSaved:num(pmmPick(row,"Samples Saved")),
+      totalCost:num(pmmPick(row,"Total Cost")),
+      repCost:num(pmmPick(row,"Cost After")),
+      costSaved:num(pmmPick(row,"Cost Saved")),
+      pctSaved:num(pmmPick(row,"% Saved")),
+    };
+    if(type==="chemical") byId[id].chemical=rowData;
+    else if(type.startsWith("corrosion")) byId[id].corrosion=rowData;
+    else if(type==="total") byId[id].total=rowData;
+  });
+  return Object.values(byId).sort((a,b)=>String(b.savedDate||"").localeCompare(String(a.savedDate||"")));
+}
+
+async function pmmEnsureCostSavingsHeaders(){
+  const headers=["Snapshot ID","Saved Date","Filter Summary","Testing Type","Total Samples","Rep Samples","Samples Saved","Total Cost","Cost After","Cost Saved","% Saved","SKUs Included"];
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_COST_SHEET)}!A1:L1?valueInputOption=USER_ENTERED`;
+  await fetch(url,{
+    method:"PUT",
+    headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
+    body:JSON.stringify({values:[headers]}),
+  });
+}
+
+// The trigger from Compiled View: takes whatever's currently in scope (search,
+// category, supplier, date range all applied) and permanently records that
+// exact Testing Type breakdown as a snapshot, so it can be looked back on later
+// even after the underlying entries change.
+async function pmmSaveCostSavingsSnapshot(){
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first (top of the Compliance Dashboard tab).'); return; }
+  const entries=pmmGetFilteredEntries();
+  if(entries.length<3){ alert("Need at least 3 entries in the current Compiled View filters to save a snapshot."); return; }
+
+  const generalCover=pmmComputeSetCover(entries);
+  const metalCover=pmmComputeSetCover(entries, pmmIsMetalMaterial);
+  const chem=pmmComputeTestingSavings(entries,"chemTestCost","chemTestSample",generalCover);
+  const corr=pmmComputeTestingSavings(entries,"corrTestCost","corrTestSample",metalCover);
+  const totalSamplesSaved=chem.samplesSaved+corr.samplesSaved;
+  const totalCostSaved=Math.round((chem.costSaved+corr.costSaved)*100)/100;
+  const combinedCostBefore=chem.totalCost+corr.totalCost;
+  const combinedCostAfter=Math.round((chem.repCost+corr.repCost)*100)/100;
+  const totalPctSaved=combinedCostBefore>0?Math.round((totalCostSaved/combinedCostBefore)*1000)/10:0;
+
+  const snapshotId="cs_"+Date.now();
+  const savedDate=new Date().toISOString();
+  const filterParts=[];
+  if(pmmFilterCategory!=="ALL") filterParts.push("Category: "+pmmFilterCategory);
+  if(pmmFilterSupplier!=="ALL") filterParts.push("Supplier: "+pmmFilterSupplier);
+  if(pmmSearchSku) filterParts.push("Search: "+pmmSearchSku);
+  if(pmmInsightDateFrom||pmmInsightDateTo) filterParts.push(`Quotation Date: ${pmmInsightDateFrom||"…"} to ${pmmInsightDateTo||"…"}`);
+  const filterSummary=filterParts.length?filterParts.join(" · "):"All entries";
+  const skusIncluded=entries.map(e=>e.sku).join(", ");
+
+  const rows=[
+    [snapshotId,savedDate,filterSummary,"Chemical",chem.totalSamples,chem.repSamples,chem.samplesSaved,chem.totalCost,chem.repCost,chem.costSaved,chem.pctSaved,skusIncluded],
+    [snapshotId,savedDate,filterSummary,"Corrosion (metal)",corr.totalSamples,corr.repSamples,corr.samplesSaved,corr.totalCost,corr.repCost,corr.costSaved,corr.pctSaved,skusIncluded],
+    [snapshotId,savedDate,filterSummary,"Total",chem.totalSamples+corr.totalSamples,chem.repSamples+corr.repSamples,totalSamplesSaved,combinedCostBefore,combinedCostAfter,totalCostSaved,totalPctSaved,skusIncluded],
+  ];
+
+  try{
+    await pmmEnsureCostSavingsHeaders();
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_COST_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const res=await fetch(url,{
+      method:"POST",
+      headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
+      body:JSON.stringify({values:rows}),
+    });
+    if(!res.ok){ const t=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${t.slice(0,150)}`); }
+
+    pmmCostSavingsSnapshots.unshift({
+      id:snapshotId, savedDate, filterSummary, skus:entries.map(e=>e.sku),
+      chemical:chem, corrosion:corr,
+      total:{totalSamples:chem.totalSamples+corr.totalSamples,repSamples:chem.repSamples+corr.repSamples,samplesSaved:totalSamplesSaved,totalCost:combinedCostBefore,repCost:combinedCostAfter,costSaved:totalCostSaved,pctSaved:totalPctSaved},
+    });
+    pmmSwitchTab("costsavings");
+  }catch(e){
+    alert("Could not save snapshot: "+e.message);
+  }
 }
 
 async function pmmEnsureHeaders(){
@@ -3459,7 +3651,10 @@ function pmmInsightsHtml(){
       <div style="font-size:10px;color:#a8b8d8;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.15)">Testing ${totalSamples} representative product${totalSamples!==1?"s":""} instead of all ${totalItems} covers 100% of unique materials.</div>
 
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.15)">
-        <div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">💰 Actual Material Consolidation Savings</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+          <div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">💰 Actual Material Consolidation Savings</div>
+          <button onclick="pmmSaveCostSavingsSnapshot()" style="font-size:10.5px;font-weight:700;color:#0e1b3d;background:#7ee8b8;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">💾 Save to Cost Savings</button>
+        </div>
         <ul style="margin:0 0 4px 0;padding-left:18px;font-size:11px;color:#e8ecf5;line-height:1.7">
           <li><strong style="color:#fff">Chemical Testing:</strong> ${fmtNum(chem.totalSamples)} samples across all ${totalItems} products at ${fmtUsd(chem.totalCost)} total → consolidating to ${chem.representatives.length} representative product${chem.representatives.length!==1?"s":""} needs only ${fmtNum(chem.repSamples)} samples (${fmtUsd(chem.totalSamples>0?chem.totalCost/chem.totalSamples:0)}/sample rate) ≈ ${fmtUsd(chem.repCost)}. <strong style="color:#7ee8b8">${fmtNum(chem.samplesSaved)} samples saved (${chem.pctSaved}%), ${fmtUsd(chem.costSaved)} saved.</strong>
             <div style="font-size:9.5px;color:#a8b8d8;margin:3px 0 6px 0">Rep. Samples breakdown: ${chem.representatives.map(r=>esc(r.sku)).join(", ")} — ${chem.representatives.length} representative${chem.representatives.length!==1?"s":""} × 1 confirmatory sample each = ${fmtNum(chem.repSamples)}</div>
@@ -3710,6 +3905,368 @@ async function pmmConfirmEditGate(entryId){
 }
 
 // ── Database (flat, mirrors the Product Matrix sheet exactly) ─────────────
+// ── Supplier Acknowledgement ────────────────────────────────────────────────
+function pmmGetAckYears(){
+  const years=new Set();
+  pmmEntries.forEach(e=>{ if(e.quotationDate){ const y=e.quotationDate.slice(0,4); if(y) years.add(y); } });
+  return [...years].sort().reverse();
+}
+
+function pmmToggleSupplierPanel(){
+  pmmAckSupplierPanelOpen=!pmmAckSupplierPanelOpen;
+  pmmAckSupplierSearch="";
+  pmmRenderSupplierAck();
+}
+function pmmSearchSupplierPanel(inputEl){
+  const cursorPos=inputEl.selectionStart;
+  pmmAckSupplierSearch=inputEl.value;
+  pmmRenderSupplierAck();
+  requestAnimationFrame(()=>{
+    const el=document.getElementById("pmm-ack-supplier-search");
+    if(el){ el.focus(); try{ el.setSelectionRange(cursorPos,cursorPos); }catch(e){} }
+  });
+}
+function pmmSelectAckSupplier(name){
+  pmmAckSupplier=name;
+  pmmAckSupplierPanelOpen=false;
+  pmmAckGenerated=false; // must click Generate again after changing supplier
+  pmmRenderSupplierAck();
+}
+function pmmAckSupplierOptionsHtml(){
+  const q=pmmAckSupplierSearch.toLowerCase();
+  const list=pmmGetSupplierList().filter(s=>s.toLowerCase().includes(q));
+  if(!list.length) return `<div style="padding:10px 14px;font-size:11px;color:#aaa">No matches</div>`;
+  return list.map(s=>`<div onclick="pmmSelectAckSupplier('${esc(s).replace(/'/g,"\\'")}')" style="padding:9px 14px;font-size:12px;cursor:pointer;border-bottom:1px solid #f5f5f5" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">${esc(s)}</div>`).join("");
+}
+
+function pmmGenerateSupplierAck(){
+  if(!pmmAckSupplier){ alert("Please select a supplier first."); return; }
+  let entries=pmmEntries.filter(e=>e.supplier===pmmAckSupplier);
+  if(pmmAckYear!=="ALL"){
+    entries=entries.filter(e=>e.quotationDate && e.quotationDate.slice(0,4)===pmmAckYear);
+  }
+  pmmAckEntries=entries;
+  pmmAckGenerated=true;
+  pmmRenderSupplierAck();
+}
+function pmmResetSupplierAck(){
+  pmmAckYear="ALL"; pmmAckSupplier=""; pmmAckSupplierSearch=""; pmmAckSupplierPanelOpen=false;
+  pmmAckGenerated=false; pmmAckEntries=[];
+  pmmRenderSupplierAck();
+}
+
+function pmmDataUrlToUint8Array(dataUrl){
+  const base64=dataUrl.split(",")[1];
+  const binary=atob(base64);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+  return bytes;
+}
+
+// Fetches an image URL (e.g. a Drive thumbnail link) and returns raw bytes for
+// embedding via ImageRun. Returns null on failure so the doc can skip that photo
+// gracefully rather than failing the whole export.
+async function pmmFetchImageBytes(url){
+  try{
+    const res=await fetch(url);
+    if(!res.ok) return null;
+    const buf=await res.arrayBuffer();
+    return new Uint8Array(buf);
+  }catch(e){ return null; }
+}
+
+async function pmmExportSupplierAckDocx(){
+  if(!pmmAckEntries.length) return;
+  if(typeof window.docx==="undefined"){ alert("The document export library hasn't finished loading yet — please wait a moment and try again."); return; }
+  pmmAckExporting=true;
+  pmmRenderSupplierAck();
+  try{
+    const {
+      Document, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell,
+      WidthType, BorderStyle, ShadingType, AlignmentType, VerticalAlign
+    }=window.docx;
+
+    const noBorder={ top:{style:BorderStyle.NONE}, bottom:{style:BorderStyle.NONE}, left:{style:BorderStyle.NONE}, right:{style:BorderStyle.NONE} };
+    const thinBorder=()=>({ style:BorderStyle.SINGLE, size:4, color:"CCCCCC" });
+    const cellBorder={ top:thinBorder(), bottom:thinBorder(), left:thinBorder(), right:thinBorder() };
+    const dashedBorder=()=>({ style:BorderStyle.DASHED, size:6, color:"AAAAAA" });
+    const placeholderBorder={ top:dashedBorder(), bottom:dashedBorder(), left:dashedBorder(), right:dashedBorder() };
+
+    // Logo banner, pulled from the already-embedded sidebar logo rather than
+    // duplicating that base64 string a third time in the file.
+    const logoDataUri=document.querySelector("#app-sidebar .brand img")?.src||"";
+    let bannerParagraphs=[];
+    if(logoDataUri){
+      try{
+        const logoBytes=pmmDataUrlToUint8Array(logoDataUri);
+        bannerParagraphs.push(new Paragraph({ children:[ new ImageRun({ data:logoBytes, type:"png", transformation:{ width:180, height:90 } }) ], spacing:{ after:200 } }));
+      }catch(e){ /* skip logo if it can't be decoded */ }
+    }
+
+    const generatedStr=new Date().toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"});
+    const periodStr=pmmAckYear==="ALL"?"All available data":`Year: ${pmmAckYear}`;
+
+    function headerCell(text,width){
+      return new TableCell({ width:{ size:width, type:WidthType.PERCENTAGE }, shading:{ fill:"1A1A1A", type:ShadingType.SOLID }, margins:{ top:60,bottom:60,left:80,right:80 }, children:[ new Paragraph({ children:[ new TextRun({ text, bold:true, color:"FFFFFF", size:15 }) ] }) ] });
+    }
+    function bodyCell(text,width,opts){
+      opts=opts||{};
+      return new TableCell({ width:{ size:width, type:WidthType.PERCENTAGE }, borders:cellBorder, shading:opts.shading?{ fill:opts.shading, type:ShadingType.SOLID }:undefined, margins:{ top:80,bottom:80,left:80,right:80 }, children:[ new Paragraph({ children:[ new TextRun({ text:String(text||""), size:16, bold:!!opts.bold, color:opts.color||"333333" }) ] }) ] });
+    }
+
+    // Build each product's section: header line, optional photo, and its
+    // Item/Component/Material table -- Testing Information is intentionally
+    // excluded from this document per what it's for.
+    const entrySections=[];
+    for(const e of pmmAckEntries){
+      const normName=pmmNormalizeProductName(e.description)||e.sku;
+      const subLineParts=[`SKU: ${e.sku}`];
+      if(e.skuFamily) subLineParts.push(`A SKU Family: ${e.skuFamily}`);
+      if(e.parentSku) subLineParts.push(`Parent SKU: ${e.parentSku}`);
+      if(e.category) subLineParts.push(`Category: ${e.category}`);
+
+      entrySections.push(new Paragraph({ children:[ new TextRun({ text:normName, bold:true, size:22 }) ], spacing:{ before:200, after:40 } }));
+      entrySections.push(new Paragraph({ children:[ new TextRun({ text:subLineParts.join("  ·  "), size:15, color:"888888" }) ], spacing:{ after:120 } }));
+
+      if(e.photoUrl){
+        const imgBytes=await pmmFetchImageBytes(pmmPhotoDisplayUrl(e.photoUrl));
+        if(imgBytes){
+          try{
+            entrySections.push(new Paragraph({ children:[ new ImageRun({ data:imgBytes, type:"png", transformation:{ width:160, height:120 } }) ], spacing:{ after:120 } }));
+          }catch(err){ /* skip this photo if it can't be embedded, keep going */ }
+        }
+      }
+
+      const headerRow=new TableRow({ children:[ headerCell("Item",12), headerCell("Component",44), headerCell("Material",44) ] });
+      const dataRows=(e.components.length?e.components:[{item:"",component:"",material:""}]).map(c=>{
+        const col=pmmMaterialColor(c.material);
+        return new TableRow({ children:[ bodyCell(c.item,12), bodyCell(c.component,44), bodyCell(c.material,44,{ shading:col.bg.replace("#","").toUpperCase(), color:col.text.replace("#","").toUpperCase(), bold:true }) ] });
+      });
+      entrySections.push(new Table({ width:{ size:100, type:WidthType.PERCENTAGE }, rows:[headerRow, ...dataRows] }));
+    }
+
+    // Signature / stamp block -- matches the reference layout: a dashed
+    // placeholder box for the company stamp beside underlined signature and
+    // date lines.
+    const stampCell=new TableCell({
+      width:{ size:50, type:WidthType.PERCENTAGE }, borders:placeholderBorder, verticalAlign:VerticalAlign.CENTER, margins:{ top:500, bottom:500 },
+      children:[ new Paragraph({ alignment:AlignmentType.CENTER, children:[ new TextRun({ text:"COMPANY STAMP", color:"AAAAAA", size:14 }) ] }) ]
+    });
+    const signCell=new TableCell({
+      width:{ size:50, type:WidthType.PERCENTAGE }, borders:noBorder, margins:{ left:200 },
+      children:[
+        new Paragraph({ text:"", border:{ bottom:{ style:BorderStyle.SINGLE, size:6, color:"999999" } }, spacing:{ after:40 } }),
+        new Paragraph({ children:[ new TextRun({ text:"AUTHORIZED SIGNATURE & NAME/TITLE", size:13, color:"999999" }) ], spacing:{ after:300 } }),
+        new Paragraph({ text:"", border:{ bottom:{ style:BorderStyle.SINGLE, size:6, color:"999999" } }, spacing:{ after:40 } }),
+        new Paragraph({ children:[ new TextRun({ text:"DATE", size:13, color:"999999" }) ] }),
+      ]
+    });
+    const signOffTable=new Table({ width:{ size:100, type:WidthType.PERCENTAGE }, rows:[ new TableRow({ children:[stampCell, signCell] }) ] });
+
+    const doc=new Document({
+      sections:[{
+        properties:{ page:{ margin:{ top:720, bottom:720, left:1440, right:1440 } } },
+        children:[
+          ...bannerParagraphs,
+          new Paragraph({ children:[ new TextRun({ text:"Supplier Material Consistency Acknowledgement", bold:true, size:30 }) ] }),
+          new Paragraph({ children:[ new TextRun({ text:pmmAckSupplier, bold:true, size:24, color:"218C21" }) ] }),
+          new Paragraph({ children:[ new TextRun({ text:`${periodStr}  —  Generated ${generatedStr}  ·  ${pmmAckEntries.length} product${pmmAckEntries.length!==1?"s":""}`, size:18, color:"777777" }) ], spacing:{ after:250 } }),
+          new Paragraph({ text:"", border:{ bottom:{ style:BorderStyle.SINGLE, size:12, color:"1A1A1A" } }, spacing:{ after:200 } }),
+          ...entrySections,
+          new Paragraph({ text:"", spacing:{ before:300, after:150 } }),
+          new Paragraph({ children:[ new TextRun({ text:`By signing below, ${pmmAckSupplier} acknowledges that the materials listed above for the products covered in this report have not changed and remain consistent with what has been previously reported.`, size:18 }) ], spacing:{ after:250 } }),
+          signOffTable,
+        ]
+      }]
+    });
+
+    const { Packer }=window.docx;
+    const blob=await Packer.toBlob(doc);
+    const supplierSlug=(pmmAckSupplier||"supplier").replace(/[^a-z0-9]+/gi,"_").slice(0,40);
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=`Supplier_Acknowledgement_${supplierSlug}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  }catch(err){
+    console.error(err);
+    alert("Export failed: "+(err&&err.message?err.message:"please try again."));
+  }finally{
+    pmmAckExporting=false;
+    pmmRenderSupplierAck();
+  }
+}
+
+// ── Cost Savings ─────────────────────────────────────────────────────────
+function pmmOpenCostSnapshotDetail(snapshotId){
+  openModal({type:"pmmCostSnapshotDetail", snapshotId});
+}
+
+function pmmCostSnapshotRowsHtml(snap){
+  const fmtUsd=n=>"$"+Number(n||0).toLocaleString("en-US",{maximumFractionDigits:2});
+  const rows=[["chemical","Chemical"],["corrosion","Corrosion (metal)"],["total","Total"]];
+  return `<table style="width:100%;border-collapse:collapse;font-size:11px">
+    <thead><tr style="background:#f2f3f6">
+      <th style="text-align:left;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Testing Type</th>
+      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Samples</th>
+      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Rep.</th>
+      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Saved</th>
+      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Cost</th>
+      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">After</th>
+      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Saved Cost</th>
+      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">% Reduction</th>
+    </tr></thead>
+    <tbody>
+      ${rows.map(([key,label])=>{
+        const d=snap[key]; if(!d) return "";
+        const isTotal=key==="total";
+        return `<tr style="${isTotal?"background:#f0fff8;font-weight:700":""};border-bottom:1px solid #f0f1f3">
+          <td style="padding:7px 10px">${label}</td>
+          <td style="padding:7px 10px;text-align:right">${d.totalSamples}</td>
+          <td style="padding:7px 10px;text-align:right">${d.repSamples}</td>
+          <td style="padding:7px 10px;text-align:right;color:#0a7a46">${d.samplesSaved}</td>
+          <td style="padding:7px 10px;text-align:right">${fmtUsd(d.totalCost)}</td>
+          <td style="padding:7px 10px;text-align:right">${fmtUsd(d.repCost)}</td>
+          <td style="padding:7px 10px;text-align:right;color:#0a7a46">${fmtUsd(d.costSaved)}</td>
+          <td style="padding:7px 10px;text-align:right;color:#0a7a46">${d.pctSaved}%</td>
+        </tr>`;
+      }).join("")}
+    </tbody>
+  </table>`;
+}
+
+function pmmRenderCostSavings(){
+  const body=document.getElementById("pmm-body"); if(!body) return;
+  let html=`<div style="max-width:1100px;margin:0 auto">`;
+  if(!pmmCostSavingsSnapshots.length){
+    html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">💰</div><div style="font-size:12px">No saved snapshots yet — go to <strong>Compiled View</strong>, review the insights for whatever search/category/date filters you want, then click <strong>"💾 Save to Cost Savings"</strong>.</div></div>`;
+  } else {
+    pmmCostSavingsSnapshots.forEach(snap=>{
+      let dateStr=snap.savedDate;
+      try{ dateStr=new Date(snap.savedDate).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"}); }catch(e){}
+      html+=`<div class="pmm-entry-card" style="margin-bottom:16px">
+        <div class="pmm-entry-hdr" onclick="pmmOpenCostSnapshotDetail('${snap.id}')" style="cursor:pointer">
+          <div>
+            <div style="font-size:13px;font-weight:700;color:#222">${esc(dateStr)}</div>
+            <div style="font-size:10px;color:#888">${esc(snap.filterSummary)} · ${snap.skus.length} product${snap.skus.length!==1?"s":""}</div>
+          </div>
+          <div style="font-size:10.5px;color:#0073ea;font-weight:700;white-space:nowrap">View full details →</div>
+        </div>
+        <div style="padding:12px 14px">${pmmCostSnapshotRowsHtml(snap)}</div>
+      </div>`;
+    });
+  }
+  html+=`</div>`;
+  body.innerHTML=html;
+}
+
+function pmmRenderSupplierAck(){
+  const body=document.getElementById("pmm-body"); if(!body) return;
+  const years=pmmGetAckYears();
+  const canExport=pmmAckGenerated && pmmAckEntries.length>0 && !pmmAckExporting;
+
+  let html=`<div style="max-width:900px;margin:0 auto">`;
+  html+=`<div class="pmm-card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-size:13px;font-weight:700;color:#333">Generate Supplier Acknowledgement</div>
+      <button onclick="pmmResetSupplierAck()" style="font-size:10.5px;font-weight:600;color:#888;background:none;border:1px solid #ddd;border-radius:6px;padding:5px 10px;cursor:pointer">Reset</button>
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field">
+        <label class="pmm-label">Year</label>
+        <select class="pmm-input" onchange="pmmAckYear=this.value;pmmAckGenerated=false;pmmRenderSupplierAck()">
+          <option value="ALL" ${pmmAckYear==="ALL"?"selected":""}>All Years</option>
+          ${years.map(y=>`<option value="${y}" ${pmmAckYear===y?"selected":""}>${y}</option>`).join("")}
+        </select>
+      </div>
+      <div class="pmm-field" style="position:relative">
+        <label class="pmm-label">Supplier</label>
+        <button type="button" onclick="pmmToggleSupplierPanel()" class="pmm-input" style="text-align:left;background:#fff;cursor:pointer;display:flex;justify-content:space-between;align-items:center">
+          <span style="${pmmAckSupplier?"":"color:#999"}">${pmmAckSupplier?esc(pmmAckSupplier):"Select a supplier…"}</span>
+          <span style="color:#aaa">▾</span>
+        </button>
+        ${pmmAckSupplierPanelOpen?`<div style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:60;max-height:280px;overflow-y:auto">
+          <input id="pmm-ack-supplier-search" value="${esc(pmmAckSupplierSearch)}" oninput="pmmSearchSupplierPanel(this)" placeholder="Search…" style="width:100%;padding:9px 12px;border:none;border-bottom:1px solid #eee;font-size:12px;outline:none;box-sizing:border-box"/>
+          ${pmmAckSupplierOptionsHtml()}
+        </div>`:""}
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:6px">
+      <button onclick="pmmGenerateSupplierAck()" style="flex:1;padding:11px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:8px;cursor:pointer">Generate Report</button>
+      <button onclick="pmmExportSupplierAckDocx()" ${canExport?"":"disabled"} style="padding:11px 18px;font-size:13px;font-weight:700;color:${canExport?"#fff":"#aaa"};background:${canExport?"#0a7a46":"#eee"};border:none;border-radius:8px;cursor:${canExport?"pointer":"default"}">${pmmAckExporting?"Exporting…":"⬇ Export DOCX"}</button>
+    </div>
+  </div>`;
+
+  if(pmmAckGenerated) html+=pmmAckPreviewHtml();
+  html+=`</div>`;
+  body.innerHTML=html;
+}
+
+function pmmAckPreviewHtml(){
+  if(!pmmAckEntries.length){
+    return `<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:40px;text-align:center;color:#aaa;margin-top:16px">No entries found for "${esc(pmmAckSupplier)}"${pmmAckYear!=="ALL"?` in ${esc(pmmAckYear)}`:""}.</div>`;
+  }
+  const logoUri=document.querySelector("#app-sidebar .brand img")?.src||"";
+  const generatedStr=new Date().toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"});
+  const periodStr=pmmAckYear==="ALL"?"All available data":`Year: ${pmmAckYear}`;
+
+  const entriesHtml=pmmAckEntries.map(e=>{
+    const normName=pmmNormalizeProductName(e.description)||e.sku;
+    const rows=e.components.map(c=>{
+      const col=pmmMaterialColor(c.material);
+      return `<tr>
+        <td style="padding:6px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;color:#555;width:40px">${esc(c.item)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;color:#333">${esc(c.component)}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #f0f1f3;font-size:11px;font-weight:600;background:${col.bg};color:${col.text}"><span class="pmm-mat-swatch" style="background:${col.text}"></span>${esc(c.material)}</td>
+      </tr>`;
+    }).join("");
+    return `<div style="border:1px solid #e0e3ea;border-radius:8px;margin-bottom:14px;overflow:hidden;break-inside:avoid">
+      <div style="background:#f8f9fb;padding:10px 14px;border-bottom:1px solid #e8eaed">
+        <div style="font-size:13px;font-weight:700;color:#222">${esc(normName)}</div>
+        <div style="font-size:10px;color:#888">SKU: ${esc(e.sku)}${e.skuFamily?` · A SKU Family: ${esc(e.skuFamily)}`:""}${e.parentSku?` · Parent SKU: ${esc(e.parentSku)}`:""}${e.category?` · Category: ${esc(e.category)}`:""}</div>
+      </div>
+      <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap">
+        ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="width:110px;max-width:100%;border-radius:6px;border:1px solid #eee;flex-shrink:0"/>`:""}
+        <div style="flex:1;min-width:240px">
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
+              <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
+              <th style="text-align:left;padding:4px 10px;font-size:9px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+
+  return `<div style="margin-top:16px">
+    <div style="text-align:center;font-size:10px;color:#999;margin-bottom:8px">PREVIEW — this is what the exported Word document will contain</div>
+    <div style="background:#fff;border:1px solid #ddd;box-shadow:0 4px 16px rgba(0,0,0,.1);padding:36px;max-width:800px;margin:0 auto">
+      ${logoUri?`<img src="${logoUri}" style="max-width:200px;margin-bottom:18px;display:block"/>`:""}
+      <div style="font-size:19px;font-weight:800;color:#222;margin-bottom:2px">Supplier Material Consistency Acknowledgement</div>
+      <div style="font-size:14px;font-weight:700;color:#0a7a46;margin-bottom:4px">${esc(pmmAckSupplier)}</div>
+      <div style="font-size:11px;color:#888;margin-bottom:18px">${esc(periodStr)} — Generated ${generatedStr} · ${pmmAckEntries.length} product${pmmAckEntries.length!==1?"s":""}</div>
+      <hr style="border:none;border-top:2px solid #222;margin-bottom:18px"/>
+      ${entriesHtml}
+      <div style="margin-top:24px;padding-top:16px;border-top:1px solid #ddd">
+        <div style="font-size:11.5px;color:#333;line-height:1.6;margin-bottom:20px">By signing below, <strong>${esc(pmmAckSupplier)}</strong> acknowledges that the materials listed above for the products covered in this report have not changed and remain consistent with what has been previously reported.</div>
+        <div style="display:flex;gap:24px">
+          <div style="flex:1;border:2px dashed #ccc;border-radius:6px;min-height:90px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:11px;font-weight:600">COMPANY STAMP</div>
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:22px">
+            <div><div style="border-bottom:1.5px solid #999;margin-bottom:4px;height:20px"></div><div style="font-size:9.5px;color:#999">AUTHORIZED SIGNATURE &amp; NAME/TITLE</div></div>
+            <div><div style="border-bottom:1.5px solid #999;margin-bottom:4px;height:20px"></div><div style="font-size:9.5px;color:#999">DATE</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
 function pmmRenderDatabase(){
   const body=document.getElementById("pmm-body"); if(!body) return;
   const entries=pmmGetFilteredEntries();
