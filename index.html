@@ -4640,7 +4640,8 @@ function pcaSwitchTab(t){
 
 function pcaRender(){
   const badge=document.getElementById("pca-count-badge");
-  const openCount=pcaTickets.filter(t=>t.status!=="waived"&&t.status!=="release_to_production").length;
+  const PCA_CLOSED_STATUSES=["waived","qc_approve","management_decision"];
+  const openCount=pcaTickets.filter(t=>!PCA_CLOSED_STATUSES.includes(t.status)).length;
   if(badge){ if(openCount){badge.style.display="inline";badge.textContent=openCount;} else badge.style.display="none"; }
   if(!pcaHasSyncedOnce && accessToken){ pcaHasSyncedOnce=true; pcaSyncTracking(); return; }
   if(pcaActiveTab==="approval") pcaRenderApproval();
@@ -4711,10 +4712,34 @@ async function pcaSyncTracking(){
 }
 
 // ── Our own tickets sheet (in the Product Matrix spreadsheet) ──────────────
+// The "Pantone Tickets" tab doesn't exist in the spreadsheet by default -- the
+// Sheets API can't write to a range on a tab that isn't there yet, which is
+// what produced the "Unable to parse range: Pantone Tickets" 400 error. So we
+// check for the tab first and create it (via batchUpdate/addSheet) before any
+// header write or row append is attempted.
+let pcaTicketsSheetEnsured = false;
+async function pcaEnsureTicketsSheetExists(){
+  if(pcaTicketsSheetEnsured) return;
+  const metaRes=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
+  if(!metaRes.ok) throw new Error(`Could not read the spreadsheet's tab list (${metaRes.status}).`);
+  const meta=await metaRes.json();
+  const exists=(meta.sheets||[]).some(s=>s.properties.title===PCA_TICKETS_SHEET);
+  if(!exists){
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{
+      method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
+      body:JSON.stringify({requests:[{addSheet:{properties:{title:PCA_TICKETS_SHEET}}}]}),
+    });
+    if(!res.ok){ const t=await res.text(); throw new Error(`Could not create the "${PCA_TICKETS_SHEET}" tab (${res.status}): ${t.slice(0,150)}`); }
+  }
+  pcaTicketsSheetEnsured=true;
+}
+
 async function pcaEnsureTicketsHeaders(){
+  await pcaEnsureTicketsSheetExists();
   const headers=["Ticket ID","PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status","Created Date","Component","Photo URL","Folder Link"];
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}!A1:M1?valueInputOption=USER_ENTERED`;
-  await fetch(url,{ method:"PUT", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:[headers]}) });
+  const res=await fetch(url,{ method:"PUT", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:[headers]}) });
+  if(!res.ok){ const t=await res.text(); throw new Error(`Could not write headers to "${PCA_TICKETS_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
 }
 
 async function pcaSyncTickets(){
@@ -5028,10 +5053,12 @@ const PCA_STATUS_LABELS={
   approval:"Pending Approval", reject:"Rejected", inform_supplier:"Supplier Informed",
   reproduce_sample:"Reproducing Sample", review:"Under Review", approve:"Approved",
   release_to_production:"Released to Production", waived:"Waived",
+  qc_inspection:"For QC Inspection", qc_approve:"QC Approved", qc_reject:"QC Rejected",
+  management_decision:"Management Decision",
 };
 function pcaStatusBadgeHtml(status){
-  const isGreen=status==="release_to_production";
-  const isRed=status==="reject";
+  const isGreen=status==="release_to_production"||status==="qc_approve";
+  const isRed=status==="reject"||status==="qc_reject";
   const bg=isGreen?"#d4edda":isRed?"#f8d7da":"#fff3cd";
   const color=isGreen?"#155724":isRed?"#721c24":"#856404";
   return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${bg};color:${color}">${PCA_STATUS_LABELS[status]||status}</span>`;
@@ -5071,7 +5098,8 @@ function pcaRenderApproval(){
 function pcaFlowNodeHtml(key, label, currentStage){
   let isActive=(currentStage===key);
   if(key==="start") isActive=true; // any existing ticket implies Start already happened
-  const isGreen=(key==="release_to_production" && currentStage==="release_to_production");
+  const isGreen=(key==="qc_approve" && currentStage==="qc_approve")
+    || (key==="end" && (currentStage==="qc_approve"||currentStage==="management_decision"));
   const bg=isGreen?"#d4edda":isActive?"#fff3cd":"#1a1a1a";
   const color=(isGreen||isActive)?"#1a1a1a":"#fff";
   const border=isGreen?"2px solid #28a745":isActive?"2px solid #ffc107":"1px solid #444";
@@ -5081,15 +5109,21 @@ function pcaFlowNodeHtml(key, label, currentStage){
 function pcaFlowDiagramHtml(currentStage){
   const arrow=`<div style="color:#888;font-size:16px;flex-shrink:0">→</div>`;
   const topRow=[["start","Start"],["approval","Approval"],["reject","Reject"],["inform_supplier","Inform Supplier"],["reproduce_sample","Reproduce Sample"],["review","Review"]];
-  const bottomRow=[["approval","Approval"],["approve","Approve"],["release_to_production","Release to Production"],["end","End"]];
+  const midRow=[["approval","Approval"],["approve","Approve"],["release_to_production","Release to Production"],["qc_inspection","For QC Inspection"],["qc_approve","Approve"]];
+  const lastRow=[["qc_inspection","For QC Inspection"],["qc_reject","Reject"],["management_decision","Management Decision"],["end","End"]];
   return `<div style="background:#0e1b3d;border-radius:10px;padding:20px;overflow-x:auto">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
       ${topRow.map(([k,l],i)=>pcaFlowNodeHtml(k,l,currentStage)+(i<topRow.length-1?arrow:"")).join("")}
     </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      ${bottomRow.map(([k,l],i)=>pcaFlowNodeHtml(k,l,currentStage)+(i<bottomRow.length-1?arrow:"")).join("")}
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      ${midRow.map(([k,l],i)=>pcaFlowNodeHtml(k,l,currentStage)+(i<midRow.length-1?arrow:"")).join("")}
+      <div style="color:#888;font-size:16px;flex-shrink:0">↘</div>
+      ${pcaFlowNodeHtml("end","End",currentStage)}
     </div>
-    <div style="font-size:9.5px;color:#8ab4f8;margin-top:10px">Review can send the item back to Approval for another pass.</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      ${lastRow.map(([k,l],i)=>pcaFlowNodeHtml(k,l,currentStage)+(i<lastRow.length-1?arrow:"")).join("")}
+    </div>
+    <div style="font-size:9.5px;color:#8ab4f8;margin-top:10px">Review can send the item back to Approval for another pass. After Release to Production, the shipment goes through QC Inspection — an approve there ends the process, a reject escalates to Management Decision.</div>
   </div>`;
 }
 
@@ -5112,6 +5146,7 @@ async function pcaUploadReproducePhoto(ticketId, file){
     if(t.folderLink){ const m=t.folderLink.match(/folders\/([a-zA-Z0-9_-]+)/); if(m) folderId=m[1]; }
     const photoUrl=await pcaUploadPhotoToFolder(file, folderId);
 
+    await pcaEnsureTicketsSheetExists();
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const row=[[t.id,t.poNumber,t.shipmentNumber,t.supplierName,t.supplierSku,t.description,t.quantity,t.updatedGrd,t.status,t.createdDate,"Reproduced Sample",photoUrl,t.folderLink]];
     const res=await fetch(url,{ method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:row}) });
@@ -5170,7 +5205,18 @@ function pcaActionsHtmlFor(t){
     case "approve":
       return btn("🚀 Release to Production", `pcaAdvanceStage('${t.id}','release_to_production')`, "#0a7a46");
     case "release_to_production":
-      return `<div style="font-size:12px;color:#0a7a46;font-weight:700">✓ Released to Production — process complete.</div>`;
+      return `<div style="font-size:11px;color:#888;margin-bottom:10px">✓ Released to Production. Trigger QC Inspection once the shipment is ready to be checked.</div>`
+        +btn("🔬 Send to QC Inspection", `pcaAdvanceStage('${t.id}','qc_inspection')`);
+    case "qc_inspection":
+      return `<div style="font-size:11px;color:#888;margin-bottom:10px">Does the shipment pass QC inspection?</div>`
+        +btn("✓ Approve", `pcaAdvanceStage('${t.id}','qc_approve')`, "#0a7a46")
+        +btn("✕ Reject", `pcaAdvanceStage('${t.id}','qc_reject')`, "#e2445c");
+    case "qc_approve":
+      return `<div style="font-size:12px;color:#0a7a46;font-weight:700">✓ QC Approved — process complete.</div>`;
+    case "qc_reject":
+      return btn("⚠ Escalate to Management Decision", `pcaAdvanceStage('${t.id}','management_decision')`, "#b07000");
+    case "management_decision":
+      return `<div style="font-size:12px;color:#7a5500;font-weight:700">⚠ Awaiting/recorded Management Decision — process complete.</div>`;
     default:
       return "";
   }
