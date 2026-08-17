@@ -2290,10 +2290,22 @@ function renderModals(){
           <div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:6px">Exit without submitting?</div>
           <div style="color:#8a8f9c;font-size:11.5px;margin-bottom:18px">You have an unsaved Pantone ticket. Submit it now, or discard your changes and exit?</div>
           <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-            <button onclick="closeModal()" style="padding:9px 16px;font-size:12px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Keep Editing</button>
+            <button onclick="openModal({type:'pcaTicketForm'})" style="padding:9px 16px;font-size:12px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Keep Editing</button>
             <button onclick="pcaDiscardTicketForm()" style="padding:9px 16px;font-size:12px;font-weight:700;color:#fff;background:#e2445c;border:none;border-radius:8px;cursor:pointer">Discard &amp; Exit</button>
-            <button onclick="closeModal();pcaSubmitTicket()" style="padding:9px 16px;font-size:12px;font-weight:700;color:#0b1f0f;background:#00e05e;border:none;border-radius:8px;cursor:pointer">Submit Ticket</button>
+            <button onclick="pcaConfirmSubmitTicket()" style="padding:9px 16px;font-size:12px;font-weight:700;color:#0b1f0f;background:#00e05e;border:none;border-radius:8px;cursor:pointer">Submit Ticket</button>
           </div>
+        </div>
+      </div>
+    </div>`;
+  } else if(modal.type==="pcaTicketForm"){
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)pcaConfirmExitTicketForm()">
+      <div class="modal-box" style="max-width:800px;max-height:90vh;display:flex;flex-direction:column">
+        <div style="background:#0073ea;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+          <div style="color:#fff;font-weight:800;font-size:15px">🎫 New Pantone Color Ticket</div>
+          <button onclick="pcaConfirmExitTicketForm()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+        </div>
+        <div style="padding:20px;overflow-y:auto">
+          ${pcaTicketFormHtml()}
         </div>
       </div>
     </div>`;
@@ -2301,6 +2313,8 @@ function renderModals(){
     const t=pcaTickets.find(x=>x.id===modal.ticketId);
     if(!t){ root.innerHTML=""; return; }
     const stageLabel = t.status==="reject" ? "First Approval" : "QC Inspection";
+    const to=modal.to||"";
+    const message=modal.message||"";
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
       <div class="modal-box" style="max-width:640px;max-height:88vh;display:flex;flex-direction:column">
         <div style="background:#5b21b6;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
@@ -2308,10 +2322,15 @@ function renderModals(){
           <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
         </div>
         <div style="padding:20px;overflow-y:auto">
+          ${modal.error?`<div style="background:${modal.apiDisabled?"#fff8e0":"#f8d7da"};border:1.5px solid ${modal.apiDisabled?"#fde8c0":"#f5c2c7"};border-radius:8px;padding:12px 14px;font-size:11.5px;color:${modal.apiDisabled?"#7a5500":"#721c24"};margin-bottom:14px;line-height:1.6">
+              ${esc(modal.error)}
+              ${modal.apiDisabled?`<div style="margin-top:8px"><a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" style="color:#0055bb;font-weight:700">Open Google Cloud Console to enable the Gmail API →</a></div>
+                <div style="margin-top:10px"><a href="mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(pcaRejectEmailSubject(t))}&body=${encodeURIComponent(pcaRejectEmailPlainText(t,message))}" style="display:inline-block;padding:8px 16px;font-size:11.5px;font-weight:700;color:#fff;background:#5b21b6;border-radius:6px;text-decoration:none">📤 Open in Mail App Instead</a></div>`:""}
+            </div>`:""}
           <label class="pmm-label">To (comma-separated emails)</label>
-          <input id="pca-email-to" class="pmm-input" value="${esc(modal.to||"")}" placeholder="e.g. team@rhinousa.com, qc@rhinousa.com" style="margin-bottom:14px"/>
+          <input id="pca-email-to" class="pmm-input" value="${esc(to)}" placeholder="e.g. team@rhinousa.com, qc@rhinousa.com" style="margin-bottom:14px"/>
           <label class="pmm-label">Message</label>
-          <textarea id="pca-email-message" class="pmm-input" style="min-height:70px;margin-bottom:14px">${esc(modal.message||"")}</textarea>
+          <textarea id="pca-email-message" class="pmm-input" style="min-height:70px;margin-bottom:14px">${esc(message)}</textarea>
           <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Preview — Ticket Details &amp; Photos</div>
           <div style="background:#f7f8fa;border:1px solid #e0e3ea;border-radius:8px;padding:14px;font-size:12px;line-height:1.8">
             ${pcaRejectEmailDetailsHtml(t)}
@@ -4705,7 +4724,7 @@ document.addEventListener("paste", function(e){
   let file=null;
   for(const item of items){ if(item.type && item.type.indexOf("image")===0){ file=item.getAsFile(); break; } }
   if(!file) return;
-  if(pcaActiveTab==="newticket" && pcaTicketDraftRow){
+  if(typeof modal!=="undefined" && modal && modal.type==="pcaTicketForm" && pcaTicketDraftRow){
     e.preventDefault();
     const idx=pcaTicketDraftComponents.findIndex(c=>!c.photoUrl);
     pcaUploadComponentPhoto(idx===-1?pcaTicketDraftComponents.length-1:idx, file);
@@ -4719,7 +4738,7 @@ document.addEventListener("paste", function(e){
 
 // ── Tab switching ────────────────────────────────────────────────────────
 function pcaHasUnsavedTicketDraft(){
-  return pcaActiveTab==="newticket" && pcaTicketDraftComponents.some(c=>c.component||c.photoUrl);
+  return !!(typeof modal!=="undefined" && modal && modal.type==="pcaTicketForm") && pcaTicketDraftComponents.some(c=>c.component||c.photoUrl);
 }
 function pcaDoSwitchTab(t){
   pcaActiveTab=t;
@@ -4730,7 +4749,7 @@ function pcaDoSwitchTab(t){
   pcaRender();
 }
 function pcaSwitchTab(t){
-  if(t!=="newticket" && pcaHasUnsavedTicketDraft()){ openModal({type:"pcaExitConfirm", target:t}); return; }
+  if(pcaHasUnsavedTicketDraft()){ openModal({type:"pcaExitConfirm", target:t}); return; }
   pcaDoSwitchTab(t);
 }
 window.addEventListener("beforeunload", function(e){
@@ -4747,7 +4766,6 @@ function pcaRender(){
   if(!pcaHasSyncedOnce && accessToken){ pcaHasSyncedOnce=true; pcaSyncTracking(); return; }
   if(pcaActiveTab==="approval") pcaRenderApproval();
   else if(pcaActiveTab==="completed") pcaRenderCompleted();
-  else if(pcaActiveTab==="newticket") pcaRenderTicketForm();
   else pcaRenderTracking();
 }
 
@@ -4966,8 +4984,7 @@ function pcaStartCreateTicket(){
   pcaContextMenu=null;
   pcaTicketDraftComponents=[{component:"",photoUrl:""}];
   pcaDraftFolderId=null;
-  pcaActiveTab="newticket";
-  pcaRender();
+  openModal({type:"pcaTicketForm"});
 }
 
 function pcaSetTrackingFilter(s){ pcaTrackingStatusFilter=s; pcaRenderTracking(); }
@@ -5027,7 +5044,7 @@ function pcaComponentRowHtml(c,i){
     </div>
     <input class="pmm-input" placeholder="Component name" value="${esc(c.component)}" oninput="pcaTicketDraftComponents[${i}].component=this.value" style="margin-bottom:10px"/>
     <div id="pca-photo-wrap-${i}">
-      ${c.photoUrl?`<img src="${pmmPhotoDisplayUrl(c.photoUrl)}" style="max-width:100%;max-height:200px;border-radius:6px;display:block;margin-bottom:8px"/><button onclick="pcaTicketDraftComponents[${i}].photoUrl='';pcaRenderTicketForm()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:6px;padding:5px 12px;cursor:pointer">✕ Remove photo</button>`
+      ${c.photoUrl?`<img src="${pmmPhotoDisplayUrl(c.photoUrl)}" style="max-width:100%;max-height:200px;border-radius:6px;display:block;margin-bottom:8px"/><button onclick="pcaTicketDraftComponents[${i}].photoUrl='';renderModals()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:6px;padding:5px 12px;cursor:pointer">✕ Remove photo</button>`
         :`<div class="pmm-photo-drop" onclick="document.getElementById('pca-photo-file-${i}').click()">
             <div style="font-size:20px;margin-bottom:4px">📷</div>
             <div style="font-size:11px;color:#555;font-weight:600">Click to upload, or paste an image</div>
@@ -5036,15 +5053,14 @@ function pcaComponentRowHtml(c,i){
     </div>
   </div>`;
 }
-function pcaAddComponentRow(){ pcaTicketDraftComponents.push({component:"",photoUrl:""}); pcaRenderTicketForm(); }
-function pcaRemoveComponentRow(i){ pcaTicketDraftComponents.splice(i,1); pcaRenderTicketForm(); }
+function pcaAddComponentRow(){ pcaTicketDraftComponents.push({component:"",photoUrl:""}); renderModals(); }
+function pcaRemoveComponentRow(i){ pcaTicketDraftComponents.splice(i,1); renderModals(); }
 
-function pcaRenderTicketForm(){
-  const body=document.getElementById("pca-body"); if(!body) return;
+// Returns the inner content of the New Ticket modal (used by renderModals).
+function pcaTicketFormHtml(){
   const r=pcaTicketDraftRow;
-  if(!r){ pcaActiveTab="tracking"; pcaRenderTracking(); return; }
-  const html=`<div style="max-width:800px;margin:0 auto">
-    <button onclick="pcaConfirmExitTicketForm()" style="background:none;border:none;color:#0073ea;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:12px">← Back to Tracking</button>
+  if(!r) return `<div style="padding:40px;text-align:center;color:#aaa">No draft ticket selected.</div>`;
+  return `
     <div class="pmm-card">
       <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">New Pantone Color Ticket</div>
       <div class="pmm-grid2">
@@ -5068,9 +5084,8 @@ function pcaRenderTicketForm(){
       </div>
       ${pcaTicketDraftComponents.map((c,i)=>pcaComponentRowHtml(c,i)).join("")}
     </div>
-    <button id="pca-submit-btn" onclick="pcaSubmitTicket()" style="width:100%;padding:13px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:9px;cursor:pointer">✓ Submit Ticket</button>
-  </div>`;
-  body.innerHTML=html;
+    <button id="pca-submit-btn" onclick="pcaConfirmSubmitTicket()" style="width:100%;padding:13px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:9px;cursor:pointer">✓ Submit Ticket</button>
+  `;
 }
 
 async function pcaEnsureTicketFolder(){
@@ -5122,8 +5137,14 @@ async function pcaUploadComponentPhoto(idx, file){
   }catch(e){
     alert("Photo upload failed: "+e.message);
   }finally{
-    pcaRenderTicketForm();
+    renderModals();
   }
+}
+
+function pcaConfirmSubmitTicket(){
+  const components=pcaTicketDraftComponents.filter(c=>c.component||c.photoUrl);
+  if(!components.length){ alert("Add at least one component."); return; }
+  if(confirm("Are you sure you want to submit this Pantone ticket?")) pcaSubmitTicket();
 }
 
 async function pcaSubmitTicket(){
@@ -5151,6 +5172,7 @@ async function pcaSubmitTicket(){
     pcaTicketDraftRow=null;
     pcaTicketDraftComponents=[{component:"",photoUrl:""}];
     pcaDraftFolderId=null;
+    closeModal();
     await pcaSyncTickets();
     pcaSwitchTab("approval");
   }catch(e){
@@ -5253,30 +5275,30 @@ function pcaNodeStyle(key, currentStage){
 function pcaSvgNode(key, lines, currentStage, shape, cx, cy){
   const st=pcaNodeStyle(key, currentStage);
   const textLines=Array.isArray(lines)?lines:[lines];
-  const lineH=15, startDy = -(((textLines.length-1)*lineH)/2);
-  const text=`<text x="${cx}" y="${cy}" text-anchor="middle" font-size="12.5" font-weight="700" fill="${st.text}" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
+  const lineH=20, startDy = -(((textLines.length-1)*lineH)/2);
+  const text=`<text x="${cx}" y="${cy}" text-anchor="middle" font-size="17" font-weight="700" fill="${st.text}" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
     ${textLines.map((l,i)=>`<tspan x="${cx}" dy="${i===0?startDy:lineH}">${esc(l)}</tspan>`).join("")}
   </text>`;
   if(shape==="diamond"){
-    const w=170,h=120;
+    const w=220,h=150;
     const points=`${cx},${cy-h/2} ${cx+w/2},${cy} ${cx},${cy+h/2} ${cx-w/2},${cy}`;
     return `<polygon points="${points}" fill="${st.fill}" stroke="${st.stroke}" stroke-width="${st.strokeWidth}"/>${text}`;
   }
-  const w=160, h=70, rx=shape==="pill"?35:10;
+  const w=200, h=90, rx=shape==="pill"?38:12;
   return `<rect x="${cx-w/2}" y="${cy-h/2}" width="${w}" height="${h}" rx="${rx}" fill="${st.fill}" stroke="${st.stroke}" stroke-width="${st.strokeWidth}"/>${text}`;
 }
 function pcaFlowDiagramHtml(currentStage){
-  const A="marker-end=\"url(#pca-arrowhead)\" stroke=\"#7c8aa0\" stroke-width=\"2.5\" fill=\"none\"";
+  const A="marker-end=\"url(#pca-arrowhead)\" stroke=\"#7c8aa0\" stroke-width=\"3\" fill=\"none\"";
   const line=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${A}/>`;
   const path=(d)=>`<path d="${d}" ${A}/>`;
 
-  const r1=100, r2=240, r3=360; // row center-Y
+  const r1=130, r2=310, r3=470; // row center-Y
   // Row 1
-  const cStart=100, cApproval=300, cReject=500, cInform=700, cReproduce=900, cReview=1100;
+  const cStart=140, cApproval=420, cReject=700, cInform=980, cReproduce=1260, cReview=1540;
   // Row 2
-  const cApprove=300, cRelease=500, cQcBox=700, cQcDiamond=900, cQcApprove=1100;
+  const cApprove=420, cRelease=700, cQcBox=980, cQcDiamond=1260, cQcApprove=1540;
   // Row 3
-  const cQcReject=900, cMgmt=1100, cEnd=1300;
+  const cQcReject=1260, cMgmt=1540, cEnd=1820;
 
   const nodes=[
     pcaSvgNode("start",["Start"],currentStage,"pill",cStart,r1),
@@ -5299,40 +5321,40 @@ function pcaFlowDiagramHtml(currentStage){
 
   const arrows=[
     // Row 1 horizontal
-    line(cStart+75, r1, cApproval-85, r1),
-    line(cApproval+85, r1, cReject-80, r1),
-    line(cReject+80, r1, cInform-80, r1),
-    line(cInform+80, r1, cReproduce-80, r1),
-    line(cReproduce+80, r1, cReview-80, r1),
+    line(cStart+90, r1, cApproval-110, r1),
+    line(cApproval+110, r1, cReject-100, r1),
+    line(cReject+100, r1, cInform-100, r1),
+    line(cInform+100, r1, cReproduce-100, r1),
+    line(cReproduce+100, r1, cReview-100, r1),
     // Loop-back: Review top -> up -> left -> down into Approval diamond top
-    path(`M ${cReview} ${r1-35} L ${cReview} 25 L ${cApproval} 25 L ${cApproval} ${r1-62}`),
+    path(`M ${cReview} ${r1-45} L ${cReview} 35 L ${cApproval} 35 L ${cApproval} ${r1-75}`),
     // Approval diamond bottom -> Approve (row2) top
-    line(cApproval, r1+62, cApprove, r2-37),
+    line(cApproval, r1+75, cApprove, r2-45),
     // Row 2 horizontal
-    line(cApprove+80, r2, cRelease-80, r2),
-    line(cRelease+80, r2, cQcBox-80, r2),
-    line(cQcBox+80, r2, cQcDiamond-87, r2),
-    line(cQcDiamond+87, r2, cQcApprove-80, r2),
+    line(cApprove+100, r2, cRelease-100, r2),
+    line(cRelease+100, r2, cQcBox-100, r2),
+    line(cQcBox+100, r2, cQcDiamond-110, r2),
+    line(cQcDiamond+110, r2, cQcApprove-100, r2),
     // QC diamond bottom -> Reject (row3) top
-    line(cQcDiamond, r2+62, cQcReject, r3-37),
+    line(cQcDiamond, r2+75, cQcReject, r3-45),
     // Elbow: last Approve (row2) -> right -> down -> End (row3) top
-    path(`M ${cQcApprove+80} ${r2} L ${cEnd} ${r2} L ${cEnd} ${r3-32}`),
+    path(`M ${cQcApprove+100} ${r2} L ${cEnd} ${r2} L ${cEnd} ${r3-38}`),
     // Row 3 horizontal
-    line(cQcReject+80, r3, cMgmt-80, r3),
-    line(cMgmt+80, r3, cEnd-77, r3),
+    line(cQcReject+100, r3, cMgmt-100, r3),
+    line(cMgmt+100, r3, cEnd-90, r3),
   ].join("");
 
   return `<div style="background:#0e1b3d;border-radius:10px;padding:16px;overflow-x:auto">
-    <svg viewBox="0 0 1400 430" style="width:100%;min-width:900px;height:auto;display:block">
+    <svg viewBox="0 0 1900 540" style="width:100%;min-width:1100px;height:auto;display:block">
       <defs>
-        <marker id="pca-arrowhead" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto" markerUnits="userSpaceOnUse">
-          <path d="M0,0 L7,3.5 L0,7 Z" fill="#7c8aa0"/>
+        <marker id="pca-arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+          <path d="M0,0 L8,4 L0,8 Z" fill="#7c8aa0"/>
         </marker>
       </defs>
       ${arrows}
       ${nodes}
     </svg>
-    <div style="font-size:9.5px;color:#8ab4f8;margin-top:10px">Review sends the item back to the Approval decision for another pass. After Release to Production, the shipment goes through QC Inspection — Approve there ends the process, Reject escalates to Management Decision.</div>
+    <div style="font-size:12px;color:#8ab4f8;margin-top:10px">Review sends the item back to the Approval decision for another pass. After Release to Production, the shipment goes through QC Inspection — Approve there ends the process, Reject escalates to Management Decision.</div>
   </div>`;
 }
 
@@ -5547,8 +5569,27 @@ function pcaRejectEmailDetailsHtml(t){
     ${photosHtml}
   `;
 }
+function pcaRejectEmailPlainText(t, message){
+  const stageLabel = t.status==="reject" ? "First Approval" : "QC Inspection";
+  const photosText = t.components.filter(c=>c.photoUrl).map(c=>`- ${c.component||"Photo"}: ${c.photoUrl}`).join("\n") || "No photos attached.";
+  const lines=[
+    message||"",
+    "",
+    `Outcome: Rejected at ${stageLabel}`,
+    `PO Number: ${t.poNumber}`,
+    `Shipment Number: ${t.shipmentNumber}`,
+    `Supplier Name: ${t.supplierName}`,
+    `Supplier SKU: ${t.supplierSku}`,
+    `Product Description: ${t.description}`,
+    `Quantity: ${t.quantity}`,
+    `Updated GRD: ${t.updatedGrd}`,
+  ];
+  if(t.rejectReason) lines.push(`Rejection Reason: ${t.rejectReason}`);
+  lines.push(`Reviewer Note: ${t.reviewerNote||"—"}`, "", "Photos:", photosText);
+  return lines.join("\n");
+}
 function pcaOpenEmailPreview(ticketId){
-  openModal({type:"pcaEmailPreview", ticketId, to:"", message:"This Pantone color ticket has been rejected. Please review the details below."});
+  openModal({type:"pcaEmailPreview", ticketId, to:"", message:"This Pantone color ticket has been rejected. Please review the details below.", error:null, apiDisabled:false});
 }
 async function pcaSendRejectEmail(ticketId){
   const t=pcaTickets.find(x=>x.id===ticketId);
@@ -5559,6 +5600,7 @@ async function pcaSendRejectEmail(ticketId){
   const message=(msgEl?msgEl.value:"").trim();
   if(!to){ alert("Please enter at least one recipient email."); return; }
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  if(modal){ modal.to=to; modal.message=message; modal.error=null; modal.apiDisabled=false; }
   const btn=document.getElementById("pca-email-send-btn");
   if(btn){ btn.disabled=true; btn.textContent="Sending…"; btn.style.opacity=".6"; }
   try{
@@ -5574,19 +5616,28 @@ async function pcaSendRejectEmail(ticketId){
     const res=await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send",{
       method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({raw}),
     });
-    if(!res.ok){ const tx=await res.text(); throw new Error(`Gmail send failed (${res.status}): ${tx.slice(0,200)}`); }
+    if(!res.ok){ const tx=await res.text(); throw new Error(tx); }
     closeModal();
     alert("Email sent to the team.");
   }catch(e){
-    alert("Could not send email: "+e.message+"\n\nIf this looks like a permissions error, you may need to reconnect Google to grant email-sending access (the Pantone tool now also requests the gmail.send scope).");
-    if(btn){ btn.disabled=false; btn.textContent="Send Email"; btn.style.opacity="1"; }
+    const raw=String((e&&e.message)||e);
+    const apiDisabled = /gmail api has not been used|service_disabled|access_not_configured/i.test(raw);
+    if(modal){
+      modal.apiDisabled=apiDisabled;
+      modal.error = apiDisabled
+        ? "The Gmail API isn't turned on yet for this Google Cloud project, so it can't send mail directly from here."
+        : "Could not send the email: "+raw.slice(0,200);
+      renderModals();
+    } else {
+      alert("Could not send email: "+raw.slice(0,200));
+    }
   }
 }
 
 // ── New ticket form: confirm before discarding an in-progress draft ────────
 function pcaConfirmExitTicketForm(){
   if(pcaHasUnsavedTicketDraft()){ openModal({type:"pcaExitConfirm", target:"tracking"}); }
-  else { pcaTicketDraftRow=null; pcaDoSwitchTab("tracking"); }
+  else { pcaTicketDraftRow=null; closeModal(); pcaDoSwitchTab("tracking"); }
 }
 function pcaDiscardTicketForm(){
   const target=(modal && modal.target) || "tracking";
