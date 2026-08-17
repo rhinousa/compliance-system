@@ -402,19 +402,38 @@ function getRetestDecision(itemId, subId){
 // ── GOOGLE OAUTH (Google Identity Services) ──────────────────────────────────
 let accessToken = null;
 let tokenClient = null;
-let pcaCurrentUserEmail = null; // cached once fetched, used to stamp "QE In Charge" on new tickets
+let pcaCurrentUserEmail = null; // cached once fetched
+let pcaCurrentUserName = null;  // cached "First Last" display name, used to stamp "QE In Charge" on new tickets
 
-async function pcaGetCurrentUserEmail(){
-  if(pcaCurrentUserEmail) return pcaCurrentUserEmail;
-  if(!accessToken) return "";
+// Turns "aivan.tioco@rhinousa.com" into "Aivan Tioco" -- used as a fallback
+// when the Google account has no display name set, and also to reformat
+// older ticket rows that stored a raw email before this formatting existed.
+function pcaFormatNameFromEmail(email){
+  if(!email) return "";
+  const local=String(email).split("@")[0];
+  return local.split(/[._-]+/).filter(Boolean)
+    .map(p=>p.charAt(0).toUpperCase()+p.slice(1).toLowerCase())
+    .join(" ");
+}
+// Display helper: shows a stored QE In Charge value as "First Last" whether
+// it was saved as a full name (current behavior) or a raw email (older rows).
+function pcaDisplayQeName(value){
+  if(!value) return "—";
+  return value.includes("@") ? (pcaFormatNameFromEmail(value)||value) : value;
+}
+
+async function pcaGetCurrentUserIdentity(){
+  if(pcaCurrentUserName) return {email:pcaCurrentUserEmail, name:pcaCurrentUserName};
+  if(!accessToken) return {email:"", name:""};
   try{
     const res=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{headers:{Authorization:"Bearer "+accessToken}});
-    if(!res.ok) return "";
+    if(!res.ok) return {email:"", name:""};
     const data=await res.json();
     pcaCurrentUserEmail=data.email||"";
-    return pcaCurrentUserEmail;
+    pcaCurrentUserName=data.name || pcaFormatNameFromEmail(pcaCurrentUserEmail);
+    return {email:pcaCurrentUserEmail, name:pcaCurrentUserName};
   }catch(e){
-    return "";
+    return {email:"", name:""};
   }
 }
 
@@ -2243,6 +2262,21 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="pwGate"){
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:420px;background:#141824;border-radius:14px">
+        <div style="padding:22px 24px 18px">
+          <div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:6px">${esc(modal.title||"Password Required")}</div>
+          <div style="color:#8a8f9c;font-size:11.5px;margin-bottom:18px">${esc(modal.message||"Enter the password to continue.")}</div>
+          <input id="pwgate-input" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')confirmPwGate()" style="width:100%;padding:11px 14px;border:1.5px solid #00c853;border-radius:8px;background:#0c0f18;color:#fff;font-size:13px;outline:none;box-sizing:border-box"/>
+          <div id="pwgate-error" style="color:#ff6b6b;font-size:11px;margin-top:6px;min-height:14px"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+            <button onclick="closeModal()" style="padding:9px 18px;font-size:12.5px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Cancel</button>
+            <button onclick="confirmPwGate()" style="padding:9px 20px;font-size:12.5px;font-weight:700;color:#0b1f0f;background:#00e05e;border:none;border-radius:8px;cursor:pointer">Confirm</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
   } else if(modal.type==="pcaTicketDetail"){
     const t=pcaTickets.find(x=>x.id===modal.ticketId);
     if(!t){ root.innerHTML=""; return; }
@@ -2262,7 +2296,7 @@ function renderModals(){
             <div><strong>Product Description:</strong> ${esc(t.description)}</div>
             <div><strong>Quantity:</strong> ${esc(t.quantity)}</div>
             <div><strong>Updated GRD:</strong> ${esc(t.updatedGrd)}</div>
-            ${t.qeInCharge?`<div><strong>QE In Charge:</strong> ${esc(t.qeInCharge)}</div>`:""}
+            ${t.qeInCharge?`<div><strong>QE In Charge:</strong> ${esc(pcaDisplayQeName(t.qeInCharge))}</div>`:""}
             ${t.folderLink?`<div><strong>Photo Folder:</strong> <a href="${esc(t.folderLink)}" target="_blank">Open in Drive</a></div>`:""}
             ${t.rejectReason?`<div><strong>Rejection Reason:</strong> ${esc(t.rejectReason)}</div>`:""}
             ${t.reviewerNote?`<div><strong>Reviewer Note:</strong> ${esc(t.reviewerNote)}</div>`:""}
@@ -3307,14 +3341,21 @@ async function pmmSaveEntryDetail(entryId){
   }
 }
 
-async function pmmDeleteCostSnapshot(snapshotId){
+function pmmDeleteCostSnapshot(snapshotId){
   const snap=pmmCostSavingsSnapshots.find(s=>s.id===snapshotId);
   if(!snap) return;
   let dateStr=snap.savedDate;
   try{ dateStr=new Date(snap.savedDate).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"}); }catch(e){}
-  const pw=prompt(`Enter password to delete the Cost Savings snapshot from ${dateStr} (removes it from the Google Sheet permanently):`);
-  if(pw===null) return;
-  if(pw!=="deleteme"){ alert("Incorrect password."); return; }
+  openPwGate({
+    title:"Delete Access",
+    message:`Enter the password to delete the Cost Savings snapshot from ${dateStr} (removes it from the Google Sheet permanently).`,
+    hash:PW_DELETE_HASH,
+    onSuccess:()=>pmmDeleteCostSnapshotConfirmed(snapshotId),
+  });
+}
+async function pmmDeleteCostSnapshotConfirmed(snapshotId){
+  const snap=pmmCostSavingsSnapshots.find(s=>s.id===snapshotId);
+  if(!snap) return;
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
 
   try{
@@ -3341,12 +3382,19 @@ async function pmmDeleteCostSnapshot(snapshotId){
   }
 }
 
-async function pmmDeleteEntry(entryId){
+function pmmDeleteEntry(entryId){
   const entry=pmmEntries.find(e=>e.id===entryId);
   if(!entry) return;
-  const pw=prompt(`Enter password to delete "${entry.sku||"this entry"}" (removes it from the Google Sheet permanently):`);
-  if(pw===null) return;
-  if(pw!=="deleteme"){ alert("Incorrect password."); return; }
+  openPwGate({
+    title:"Delete Access",
+    message:`Enter the password to delete "${entry.sku||"this entry"}" (removes it from the Google Sheet permanently).`,
+    hash:PW_DELETE_HASH,
+    onSuccess:()=>pmmDeleteEntryConfirmed(entryId),
+  });
+}
+async function pmmDeleteEntryConfirmed(entryId){
+  const entry=pmmEntries.find(e=>e.id===entryId);
+  if(!entry) return;
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
 
   try{
@@ -4068,11 +4116,43 @@ function pmmToggleCardExpand(entryId){
 // itself isn't sitting in readable page source for a casual look.
 const PMM_EDIT_PASSWORD_HASH="fff9dfeaa22b620f2857f6423e7bb1da427f14c3f3a0adcb534f05f2adccfad3";
 const PMM_SAVE_PASSWORD_HASH="7766e5fb306b64fc950d7d91a1830bacd33acf9d8d9e92c5bd4151c0929a244b";
+// Same soft-deterrent approach as above: hashed rather than plaintext, but
+// still just a casual-use gate since everything runs client-side.
+const PW_REVERT_HASH="fabd394dedec75d4ff61208ce65659bc10b7efdf3918a1027170ad47404d9d51"; // "revertme"
+const PW_DELETE_HASH="f9d6cec6deabf54691804bb7c1bf02ad7f461ab07f31a18398495b9de1cabf28"; // "deleteme"
+const PW_ADD_HASH="32fd47c32fbc0602301ec8282c80b7f6f586f97a102916a9e866b5293e535326"; // "addme"
 async function pmmHashText(text){
   const enc=new TextEncoder().encode(text);
   const digest=await crypto.subtle.digest("SHA-256", enc);
   return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,"0")).join("");
 }
+
+// Generic hashed password gate -- same look/behavior as the Cost Savings
+// "Save Access" gate above, reused for every other password-protected action
+// (revert ticket, delete photo, add component, delete PMM entry/snapshot)
+// so all password prompts in the app look and behave identically.
+function openPwGate({title, message, hash, onSuccess}){
+  openModal({type:"pwGate", title, message, hash, onSuccess});
+  setTimeout(()=>document.getElementById("pwgate-input")?.focus(), 50);
+}
+async function confirmPwGate(){
+  const m=modal;
+  if(!m || m.type!=="pwGate") return;
+  const input=document.getElementById("pwgate-input");
+  const errEl=document.getElementById("pwgate-error");
+  const pwd=(input?.value||"");
+  if(!pwd){ if(errEl) errEl.textContent="Please enter a password."; return; }
+  const hash=await pmmHashText(pwd);
+  if(hash!==m.hash){
+    if(errEl) errEl.textContent="Incorrect password.";
+    if(input){ input.value=""; input.focus(); }
+    return;
+  }
+  const onSuccess=m.onSuccess;
+  closeModal();
+  if(onSuccess) onSuccess();
+}
+
 function pmmRequestSaveCostSavings(){
   openModal({type:"pmmSaveGate"});
   setTimeout(()=>document.getElementById("pmm-savegate-input")?.focus(), 50);
@@ -4796,10 +4876,13 @@ function pcaResetToTracking(){
 }
 
 function pcaPromptRevertTicket(ticketId){
-  const pw=prompt("Enter password to revert this ticket back to Tracking:");
-  if(pw===null) return;
-  if(pw!=="revertme"){ alert("Incorrect password."); return; }
-  pcaRevertTicketToTracking(ticketId);
+  const t=pcaTickets.find(x=>x.id===ticketId);
+  openPwGate({
+    title:"Revert Access",
+    message:`Enter the password to revert ${t?`${t.poNumber} / ${t.supplierSku}`:"this ticket"} back to Tracking. This permanently deletes its Pantone ticket rows.`,
+    hash:PW_REVERT_HASH,
+    onSuccess:()=>pcaRevertTicketToTracking(ticketId),
+  });
 }
 
 async function pcaRevertTicketToTracking(ticketId){
@@ -4807,7 +4890,6 @@ async function pcaRevertTicketToTracking(ticketId){
   if(!t) return;
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
   if(!t.rowIndexes || !t.rowIndexes.length){ alert("Could not find this ticket's rows to revert."); return; }
-  if(!confirm(`Revert ${t.poNumber} / ${t.supplierSku} back to Tracking? This permanently deletes this Pantone ticket's rows.`)) return;
   try{
     const gid=await pmmGetSheetGidFor(PCA_TICKETS_SHEET);
     // Delete rows highest-index-first within one batch, so earlier deletes in
@@ -5239,11 +5321,11 @@ async function pcaSubmitTicket(){
 
   try{
     await pcaEnsureTicketsHeaders();
-    const qeEmail=await pcaGetCurrentUserEmail();
+    const qeName=(await pcaGetCurrentUserIdentity()).name;
     const ticketId="pca_"+Date.now();
     const nowIso=new Date().toISOString();
     const folderLink=pcaDraftFolderId?`https://drive.google.com/drive/folders/${pcaDraftFolderId}`:"";
-    const rows=components.map(c=>[ticketId,r.poNumber,r.shipmentNumber,r.supplierName,r.supplierSku,r.description,r.quantity,r.updatedGrd,"approval",nowIso,c.component,c.photoUrl,folderLink,"","","","",qeEmail]);
+    const rows=components.map(c=>[ticketId,r.poNumber,r.shipmentNumber,r.supplierName,r.supplierSku,r.description,r.quantity,r.updatedGrd,"approval",nowIso,c.component,c.photoUrl,folderLink,"","","","",qeName]);
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const res=await fetch(url,{ method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:rows}) });
     if(!res.ok){ const t=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${t.slice(0,150)}`); }
@@ -5320,7 +5402,7 @@ function pcaRenderApproval(){
             <td style="padding:7px 12px">${esc(t.supplierSku)}</td>
             <td style="padding:7px 12px;white-space:normal;min-width:200px">${esc(t.description)}</td>
             <td style="padding:7px 12px">${esc(t.quantity)}</td>
-            <td style="padding:7px 12px">${esc(t.qeInCharge)||"—"}</td>
+            <td style="padding:7px 12px">${esc(pcaDisplayQeName(t.qeInCharge))}</td>
             <td style="padding:7px 12px">${pcaStatusCellHtml(t)}</td>
           </tr>`).join("")}
         </tbody>
@@ -5342,7 +5424,7 @@ function pcaRenderCompleted(){
     html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap">
         <thead><tr style="background:#f2f3f6">
-          ${["PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Outcome"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+          ${["PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","QE In Charge","Outcome"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
         </tr></thead>
         <tbody>
           ${doneTickets.map(t=>`<tr ${t.status==="waived"?"":`onclick="pcaOpenTicketDetail('${t.id}')" style="cursor:pointer"`} style="border-bottom:0.5px solid #f0f1f3">
@@ -5352,6 +5434,7 @@ function pcaRenderCompleted(){
             <td style="padding:7px 12px">${esc(t.supplierSku)}</td>
             <td style="padding:7px 12px;white-space:normal;min-width:200px">${esc(t.description)}</td>
             <td style="padding:7px 12px">${esc(t.quantity)}</td>
+            <td style="padding:7px 12px">${esc(pcaDisplayQeName(t.qeInCharge))}</td>
             <td style="padding:7px 12px">${pcaStatusCellHtml(t)}</td>
           </tr>`).join("")}
         </tbody>
@@ -5669,14 +5752,23 @@ function pcaComponentsGridHtml(t){
 }
 
 // ── Delete / replace a photo already on a submitted ticket (wrong photo fix)
-async function pcaClearComponentPhoto(ticketId, compIndex){
+function pcaClearComponentPhoto(ticketId, compIndex){
   const t=pcaTickets.find(x=>x.id===ticketId);
   if(!t) return;
   const c=t.components[compIndex];
   if(!c || !c.photoUrl) return;
-  const pw=prompt("Enter password to delete this photo:");
-  if(pw===null) return;
-  if(pw!=="deleteme"){ alert("Incorrect password."); return; }
+  openPwGate({
+    title:"Delete Access",
+    message:"Enter the password to delete this photo.",
+    hash:PW_DELETE_HASH,
+    onSuccess:()=>pcaClearComponentPhotoConfirmed(ticketId, compIndex),
+  });
+}
+async function pcaClearComponentPhotoConfirmed(ticketId, compIndex){
+  const t=pcaTickets.find(x=>x.id===ticketId);
+  if(!t) return;
+  const c=t.components[compIndex];
+  if(!c) return;
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
   if(!c.rowIndex){ alert("Could not locate this photo's row in the sheet -- try reopening the ticket from the Approval Process tab (this refreshes row data), then try again."); return; }
   try{
@@ -5734,12 +5826,16 @@ async function pcaReplaceComponentPhoto(ticketId, compIndex, file){
 // ── Add a component the ticket was missing (password-gated, since it edits
 // a submitted ticket) ───────────────────────────────────────────────────
 function pcaPromptAddComponent(ticketId){
-  const pw=prompt("Enter password to add a new component to this ticket:");
-  if(pw===null) return;
-  if(pw!=="addme"){ alert("Incorrect password."); return; }
-  const name=prompt("Component name (e.g. buckle, strap, hardware):", "");
-  if(name===null) return;
-  pcaAddComponentToTicket(ticketId, name.trim());
+  openPwGate({
+    title:"Add Component Access",
+    message:"Enter the password to add a new component to this ticket.",
+    hash:PW_ADD_HASH,
+    onSuccess:()=>{
+      const name=prompt("Component name (e.g. buckle, strap, hardware):", "");
+      if(name===null) return;
+      pcaAddComponentToTicket(ticketId, name.trim());
+    },
+  });
 }
 async function pcaAddComponentToTicket(ticketId, componentName){
   const t=pcaTickets.find(x=>x.id===ticketId);
