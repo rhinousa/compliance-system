@@ -293,10 +293,11 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
           <span style="color:rgba(255,255,255,.5);font-size:11px">Rhino USA</span>
         </div>
       </div>
-      <div style="display:flex;margin-top:10px;padding:0 10px;border-top:1px solid rgba(255,255,255,.2)">
+      <div style="display:flex;align-items:center;margin-top:10px;padding:0 10px;border-top:1px solid rgba(255,255,255,.2)">
         <button class="pmm-subtab active" id="pca-tab-tracking" onclick="pcaSwitchTab('tracking')">📋 Tracking</button>
         <button class="pmm-subtab" id="pca-tab-approval" onclick="pcaSwitchTab('approval')">✅ Approval Process <span id="pca-count-badge" style="display:none;background:#0073ea;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px"></span></button>
         <button class="pmm-subtab" id="pca-tab-completed" onclick="pcaSwitchTab('completed')">🏁 Ticket Completed <span id="pca-completed-badge" style="display:none;background:#0a7a46;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px"></span></button>
+        <button onclick="pcaResetToTracking()" title="Clear any draft/open ticket and jump back to Tracking" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,.3);border-radius:6px;color:rgba(255,255,255,.75);font-size:11px;font-weight:600;padding:6px 12px;cursor:pointer">↺ Reset to Tracking</button>
       </div>
     </div>
 
@@ -2231,7 +2232,7 @@ function renderModals(){
     const t=pcaTickets.find(x=>x.id===modal.ticketId);
     if(!t){ root.innerHTML=""; return; }
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
-      <div class="modal-box" style="max-width:1000px;max-height:90vh;display:flex;flex-direction:column">
+      <div class="modal-box" style="width:96vw;max-width:1700px;max-height:92vh;display:flex;flex-direction:column">
         <div style="background:#0073ea;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
           <div style="color:#fff;font-weight:800;font-size:15px">${esc(t.poNumber)} — ${esc(t.supplierSku)}</div>
           <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
@@ -2290,22 +2291,10 @@ function renderModals(){
           <div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:6px">Exit without submitting?</div>
           <div style="color:#8a8f9c;font-size:11.5px;margin-bottom:18px">You have an unsaved Pantone ticket. Submit it now, or discard your changes and exit?</div>
           <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
-            <button onclick="openModal({type:'pcaTicketForm'})" style="padding:9px 16px;font-size:12px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Keep Editing</button>
+            <button onclick="closeModal()" style="padding:9px 16px;font-size:12px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Keep Editing</button>
             <button onclick="pcaDiscardTicketForm()" style="padding:9px 16px;font-size:12px;font-weight:700;color:#fff;background:#e2445c;border:none;border-radius:8px;cursor:pointer">Discard &amp; Exit</button>
-            <button onclick="pcaConfirmSubmitTicket()" style="padding:9px 16px;font-size:12px;font-weight:700;color:#0b1f0f;background:#00e05e;border:none;border-radius:8px;cursor:pointer">Submit Ticket</button>
+            <button onclick="closeModal();pcaSubmitTicket()" style="padding:9px 16px;font-size:12px;font-weight:700;color:#0b1f0f;background:#00e05e;border:none;border-radius:8px;cursor:pointer">Submit Ticket</button>
           </div>
-        </div>
-      </div>
-    </div>`;
-  } else if(modal.type==="pcaTicketForm"){
-    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)pcaConfirmExitTicketForm()">
-      <div class="modal-box" style="max-width:800px;max-height:90vh;display:flex;flex-direction:column">
-        <div style="background:#0073ea;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-          <div style="color:#fff;font-weight:800;font-size:15px">🎫 New Pantone Color Ticket</div>
-          <button onclick="pcaConfirmExitTicketForm()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
-        </div>
-        <div style="padding:20px;overflow-y:auto">
-          ${pcaTicketFormHtml()}
         </div>
       </div>
     </div>`;
@@ -4724,7 +4713,7 @@ document.addEventListener("paste", function(e){
   let file=null;
   for(const item of items){ if(item.type && item.type.indexOf("image")===0){ file=item.getAsFile(); break; } }
   if(!file) return;
-  if(typeof modal!=="undefined" && modal && modal.type==="pcaTicketForm" && pcaTicketDraftRow){
+  if(pcaActiveTab==="newticket" && pcaTicketDraftRow){
     e.preventDefault();
     const idx=pcaTicketDraftComponents.findIndex(c=>!c.photoUrl);
     pcaUploadComponentPhoto(idx===-1?pcaTicketDraftComponents.length-1:idx, file);
@@ -4738,7 +4727,7 @@ document.addEventListener("paste", function(e){
 
 // ── Tab switching ────────────────────────────────────────────────────────
 function pcaHasUnsavedTicketDraft(){
-  return !!(typeof modal!=="undefined" && modal && modal.type==="pcaTicketForm") && pcaTicketDraftComponents.some(c=>c.component||c.photoUrl);
+  return pcaActiveTab==="newticket" && pcaTicketDraftComponents.some(c=>c.component||c.photoUrl);
 }
 function pcaDoSwitchTab(t){
   pcaActiveTab=t;
@@ -4749,12 +4738,26 @@ function pcaDoSwitchTab(t){
   pcaRender();
 }
 function pcaSwitchTab(t){
-  if(pcaHasUnsavedTicketDraft()){ openModal({type:"pcaExitConfirm", target:t}); return; }
+  if(t!=="newticket" && pcaHasUnsavedTicketDraft()){ openModal({type:"pcaExitConfirm", target:t}); return; }
   pcaDoSwitchTab(t);
 }
 window.addEventListener("beforeunload", function(e){
   if(pcaHasUnsavedTicketDraft()){ e.preventDefault(); e.returnValue=""; }
 });
+
+// Hard reset for testing: clears any in-progress ticket draft, context menu,
+// or open modal, and jumps straight back to Tracking -- no confirmation, since
+// this button exists specifically to bail out quickly during testing.
+function pcaResetToTracking(){
+  closeModal();
+  pcaContextMenu=null;
+  pcaTicketDraftRow=null;
+  pcaTicketDraftComponents=[{component:"",photoUrl:""}];
+  pcaDraftFolderId=null;
+  pcaSearchQuery="";
+  pcaSearchSuggestOpen=false;
+  pcaDoSwitchTab("tracking");
+}
 
 function pcaRender(){
   const badge=document.getElementById("pca-count-badge");
@@ -4766,6 +4769,7 @@ function pcaRender(){
   if(!pcaHasSyncedOnce && accessToken){ pcaHasSyncedOnce=true; pcaSyncTracking(); return; }
   if(pcaActiveTab==="approval") pcaRenderApproval();
   else if(pcaActiveTab==="completed") pcaRenderCompleted();
+  else if(pcaActiveTab==="newticket") pcaRenderTicketForm();
   else pcaRenderTracking();
 }
 
@@ -4887,7 +4891,7 @@ async function pcaSyncTickets(){
       }
       if(row.__rowIndex) byId[id].rowIndexes.push(row.__rowIndex);
       const comp=pmmPick(row,"Component"), photo=pmmPick(row,"Photo URL");
-      if(comp||photo) byId[id].components.push({component:comp, photoUrl:photo});
+      if(comp||photo) byId[id].components.push({component:comp, photoUrl:photo, rowIndex:row.__rowIndex});
     });
     pcaTickets=Object.values(byId).sort((a,b)=>String(b.createdDate||"").localeCompare(String(a.createdDate||"")));
     pcaHiddenKeys=new Set(pcaTickets.map(t=>pcaKeyFor(t.poNumber,t.supplierSku)));
@@ -4984,7 +4988,8 @@ function pcaStartCreateTicket(){
   pcaContextMenu=null;
   pcaTicketDraftComponents=[{component:"",photoUrl:""}];
   pcaDraftFolderId=null;
-  openModal({type:"pcaTicketForm"});
+  pcaActiveTab="newticket";
+  pcaRender();
 }
 
 function pcaSetTrackingFilter(s){ pcaTrackingStatusFilter=s; pcaRenderTracking(); }
@@ -5044,7 +5049,7 @@ function pcaComponentRowHtml(c,i){
     </div>
     <input class="pmm-input" placeholder="Component name" value="${esc(c.component)}" oninput="pcaTicketDraftComponents[${i}].component=this.value" style="margin-bottom:10px"/>
     <div id="pca-photo-wrap-${i}">
-      ${c.photoUrl?`<img src="${pmmPhotoDisplayUrl(c.photoUrl)}" style="max-width:100%;max-height:200px;border-radius:6px;display:block;margin-bottom:8px"/><button onclick="pcaTicketDraftComponents[${i}].photoUrl='';renderModals()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:6px;padding:5px 12px;cursor:pointer">✕ Remove photo</button>`
+      ${c.photoUrl?`<img src="${pmmPhotoDisplayUrl(c.photoUrl)}" style="max-width:100%;max-height:200px;border-radius:6px;display:block;margin-bottom:8px"/><button onclick="pcaTicketDraftComponents[${i}].photoUrl='';pcaRenderTicketForm()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:6px;padding:5px 12px;cursor:pointer">✕ Remove photo</button>`
         :`<div class="pmm-photo-drop" onclick="document.getElementById('pca-photo-file-${i}').click()">
             <div style="font-size:20px;margin-bottom:4px">📷</div>
             <div style="font-size:11px;color:#555;font-weight:600">Click to upload, or paste an image</div>
@@ -5053,14 +5058,15 @@ function pcaComponentRowHtml(c,i){
     </div>
   </div>`;
 }
-function pcaAddComponentRow(){ pcaTicketDraftComponents.push({component:"",photoUrl:""}); renderModals(); }
-function pcaRemoveComponentRow(i){ pcaTicketDraftComponents.splice(i,1); renderModals(); }
+function pcaAddComponentRow(){ pcaTicketDraftComponents.push({component:"",photoUrl:""}); pcaRenderTicketForm(); }
+function pcaRemoveComponentRow(i){ pcaTicketDraftComponents.splice(i,1); pcaRenderTicketForm(); }
 
-// Returns the inner content of the New Ticket modal (used by renderModals).
-function pcaTicketFormHtml(){
+function pcaRenderTicketForm(){
+  const body=document.getElementById("pca-body"); if(!body) return;
   const r=pcaTicketDraftRow;
-  if(!r) return `<div style="padding:40px;text-align:center;color:#aaa">No draft ticket selected.</div>`;
-  return `
+  if(!r){ pcaActiveTab="tracking"; pcaRenderTracking(); return; }
+  const html=`<div style="max-width:800px;margin:0 auto">
+    <button onclick="pcaConfirmExitTicketForm()" style="background:none;border:none;color:#0073ea;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:12px">← Back to Tracking</button>
     <div class="pmm-card">
       <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">New Pantone Color Ticket</div>
       <div class="pmm-grid2">
@@ -5085,7 +5091,8 @@ function pcaTicketFormHtml(){
       ${pcaTicketDraftComponents.map((c,i)=>pcaComponentRowHtml(c,i)).join("")}
     </div>
     <button id="pca-submit-btn" onclick="pcaConfirmSubmitTicket()" style="width:100%;padding:13px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:9px;cursor:pointer">✓ Submit Ticket</button>
-  `;
+  </div>`;
+  body.innerHTML=html;
 }
 
 async function pcaEnsureTicketFolder(){
@@ -5137,7 +5144,7 @@ async function pcaUploadComponentPhoto(idx, file){
   }catch(e){
     alert("Photo upload failed: "+e.message);
   }finally{
-    renderModals();
+    pcaRenderTicketForm();
   }
 }
 
@@ -5172,7 +5179,6 @@ async function pcaSubmitTicket(){
     pcaTicketDraftRow=null;
     pcaTicketDraftComponents=[{component:"",photoUrl:""}];
     pcaDraftFolderId=null;
-    closeModal();
     await pcaSyncTickets();
     pcaSwitchTab("approval");
   }catch(e){
@@ -5344,8 +5350,8 @@ function pcaFlowDiagramHtml(currentStage){
     line(cMgmt+100, r3, cEnd-90, r3),
   ].join("");
 
-  return `<div style="background:#0e1b3d;border-radius:10px;padding:16px;overflow-x:auto">
-    <svg viewBox="0 0 1900 540" style="width:100%;min-width:1100px;height:auto;display:block">
+  return `<div style="background:#0e1b3d;border-radius:10px;padding:16px">
+    <svg viewBox="0 0 1900 540" style="width:100%;height:auto;display:block">
       <defs>
         <marker id="pca-arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse">
           <path d="M0,0 L8,4 L0,8 Z" fill="#7c8aa0"/>
@@ -5382,9 +5388,9 @@ async function pcaUploadReproducePhoto(ticketId, file){
     const row=[[t.id,t.poNumber,t.shipmentNumber,t.supplierName,t.supplierSku,t.description,t.quantity,t.updatedGrd,t.status,t.createdDate,"Reproduced Sample",photoUrl,t.folderLink]];
     const res=await fetch(url,{ method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:row}) });
     if(!res.ok){ const tx=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${tx.slice(0,150)}`); }
-    // Reflect the new photo locally, then auto-advance straight to Review --
-    // no manual "send to review" click needed once a photo is attached.
-    t.components.push({component:"Reproduced Sample", photoUrl});
+    // Resync (rather than pushing in-memory) so the new row's real sheet row
+    // number is captured -- needed later for delete/replace-photo actions.
+    await pcaSyncTickets();
     await pcaAdvanceStage(ticketId, "review");
   }catch(e){
     alert("Could not upload reproduced sample: "+e.message);
@@ -5528,17 +5534,86 @@ function pcaLightboxNav(delta){
 }
 function pcaComponentsGridHtml(t){
   let photoIdx=0;
-  const cards=t.components.map(c=>{
+  const cards=t.components.map((c,idx)=>{
     let img;
     if(c.photoUrl){
-      img=`<img onclick="pcaOpenLightbox('${t.id}', ${photoIdx})" src="${pmmPhotoDisplayUrl(c.photoUrl)}" style="width:100%;height:100px;object-fit:cover;border-radius:6px;margin-bottom:6px;cursor:zoom-in"/>`;
+      img=`<div style="position:relative">
+        <img onclick="pcaOpenLightbox('${t.id}', ${photoIdx})" src="${pmmPhotoDisplayUrl(c.photoUrl)}" style="width:100%;height:100px;object-fit:cover;border-radius:6px;margin-bottom:6px;cursor:zoom-in"/>
+        <button onclick="event.stopPropagation();pcaClearComponentPhoto('${t.id}', ${idx})" title="Delete this photo" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;border:none;cursor:pointer;font-size:11px;line-height:22px;padding:0">🗑️</button>
+      </div>`;
       photoIdx++;
     } else {
-      img=`<div style="width:100%;height:100px;background:#f7f8fa;border-radius:6px;margin-bottom:6px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:10px">No photo</div>`;
+      img=`<div id="pca-comp-photo-${idx}">
+        <div onclick="document.getElementById('pca-comp-photo-input-${idx}').click()" style="width:100%;height:100px;background:#f7f8fa;border:1.5px dashed #dde0e7;border-radius:6px;margin-bottom:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#999;font-size:10px;cursor:pointer">
+          <div style="font-size:16px;margin-bottom:2px">📷</div>Click to upload
+        </div>
+        <input type="file" id="pca-comp-photo-input-${idx}" accept="image/*" style="display:none" onchange="pcaReplaceComponentPhoto('${t.id}', ${idx}, this.files[0])"/>
+      </div>`;
     }
     return `<div style="border:1px solid #e0e3ea;border-radius:8px;padding:8px;text-align:center">${img}<div style="font-size:10.5px;color:#333">${esc(c.component)}</div></div>`;
   });
   return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px">${cards.join("")}</div>`;
+}
+
+// ── Delete / replace a photo already on a submitted ticket (wrong photo fix)
+async function pcaClearComponentPhoto(ticketId, compIndex){
+  const t=pcaTickets.find(x=>x.id===ticketId);
+  if(!t) return;
+  const c=t.components[compIndex];
+  if(!c || !c.photoUrl) return;
+  if(!confirm("Remove this photo? You can upload a replacement right after.")) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  if(!c.rowIndex){ alert("Could not locate this photo's row in the sheet -- try reopening the ticket from the Approval Process tab (this refreshes row data), then try again."); return; }
+  try{
+    const gid=await pmmGetSheetGidFor(PCA_TICKETS_SHEET);
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{
+      method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
+      body:JSON.stringify({requests:[{
+        updateCells:{
+          range:{ sheetId:gid, startRowIndex:c.rowIndex-1, endRowIndex:c.rowIndex, startColumnIndex:11, endColumnIndex:12 },
+          rows:[{ values:[{ userEnteredValue:{ stringValue:"" } }] }],
+          fields:"userEnteredValue",
+        },
+      }]}),
+    });
+    if(!res.ok){ const tx=await res.text(); throw new Error(`Sheet update failed (${res.status}): ${tx.slice(0,150)}`); }
+    c.photoUrl="";
+    pcaOpenTicketDetail(ticketId);
+  }catch(e){
+    alert("Could not remove photo: "+e.message);
+  }
+}
+async function pcaReplaceComponentPhoto(ticketId, compIndex, file){
+  if(!file) return;
+  const t=pcaTickets.find(x=>x.id===ticketId);
+  if(!t) return;
+  const c=t.components[compIndex];
+  if(!c) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  if(!c.rowIndex){ alert("Could not locate this photo's row in the sheet -- try reopening the ticket from the Approval Process tab (this refreshes row data), then try again."); return; }
+  const wrap=document.getElementById(`pca-comp-photo-${compIndex}`);
+  if(wrap) wrap.innerHTML=`<div style="font-size:11px;color:#888"><span class="spin"></span> Uploading…</div>`;
+  try{
+    let folderId=PCA_DRIVE_FOLDER_ID;
+    if(t.folderLink){ const m=t.folderLink.match(/folders\/([a-zA-Z0-9_-]+)/); if(m) folderId=m[1]; }
+    const photoUrl=await pcaUploadPhotoToFolder(file, folderId);
+    const gid=await pmmGetSheetGidFor(PCA_TICKETS_SHEET);
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{
+      method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
+      body:JSON.stringify({requests:[{
+        updateCells:{
+          range:{ sheetId:gid, startRowIndex:c.rowIndex-1, endRowIndex:c.rowIndex, startColumnIndex:11, endColumnIndex:12 },
+          rows:[{ values:[{ userEnteredValue:{ stringValue:photoUrl } }] }],
+          fields:"userEnteredValue",
+        },
+      }]}),
+    });
+    if(!res.ok){ const tx=await res.text(); throw new Error(`Sheet update failed (${res.status}): ${tx.slice(0,150)}`); }
+    c.photoUrl=photoUrl;
+    pcaOpenTicketDetail(ticketId);
+  }catch(e){
+    alert("Could not upload replacement photo: "+e.message);
+  }
 }
 
 function pcaOpenTicketDetail(ticketId){
@@ -5637,7 +5712,7 @@ async function pcaSendRejectEmail(ticketId){
 // ── New ticket form: confirm before discarding an in-progress draft ────────
 function pcaConfirmExitTicketForm(){
   if(pcaHasUnsavedTicketDraft()){ openModal({type:"pcaExitConfirm", target:"tracking"}); }
-  else { pcaTicketDraftRow=null; closeModal(); pcaDoSwitchTab("tracking"); }
+  else { pcaTicketDraftRow=null; pcaDoSwitchTab("tracking"); }
 }
 function pcaDiscardTicketForm(){
   const target=(modal && modal.target) || "tracking";
