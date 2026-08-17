@@ -2253,7 +2253,10 @@ function renderModals(){
             ${t.managementReason?`<div><strong>Management Decision:</strong> ${esc(t.managementReason)}</div>`:""}
           </div>
           <div style="margin-top:16px">
-            <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:8px">Components <span style="font-weight:400;color:#999">(click a photo to enlarge)</span></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="font-size:11px;font-weight:700;color:#333">Components <span style="font-weight:400;color:#999">(click a photo to enlarge, or paste an image to fill the next empty one)</span></div>
+              <button onclick="pcaPromptAddComponent('${t.id}')" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:5px 12px;cursor:pointer">+ Add Component</button>
+            </div>
             ${pcaComponentsGridHtml(t)}
           </div>
           <div style="margin-top:20px;padding-top:16px;border-top:1px solid #eee">
@@ -4721,7 +4724,11 @@ document.addEventListener("paste", function(e){
   }
   if(typeof modal!=="undefined" && modal && modal.type==="pcaTicketDetail"){
     const t=pcaTickets.find(x=>x.id===modal.ticketId);
-    if(t && t.status==="reproduce_sample"){ e.preventDefault(); pcaUploadReproducePhoto(t.id, file); }
+    if(t){
+      if(t.status==="reproduce_sample"){ e.preventDefault(); pcaUploadReproducePhoto(t.id, file); return; }
+      const idx=t.components.findIndex(c=>!c.photoUrl);
+      if(idx!==-1){ e.preventDefault(); pcaReplaceComponentPhoto(t.id, idx, file); }
+    }
   }
 });
 
@@ -4746,11 +4753,13 @@ window.addEventListener("beforeunload", function(e){
 });
 
 // Hard reset for testing: clears any in-progress ticket draft, context menu,
-// or open modal, and jumps straight back to Tracking -- no confirmation, since
-// this button exists specifically to bail out quickly during testing. It also
-// toggles "revert mode", which reveals a per-row ↩️ button (next to PO Number)
-// in Approval Process / Ticket Completed that lets a ticket be fully reverted
-// back to Tracking -- gated behind a password since it's a destructive action.
+// or open modal -- no confirmation, since this button exists specifically to
+// bail out quickly during testing. Stays on whatever tab it was clicked from
+// (Tracking, Approval Process, or Ticket Completed) rather than navigating
+// away. It also toggles "revert mode", which reveals a per-row ↩️ button
+// (next to PO Number) in Approval Process / Ticket Completed that lets a
+// ticket be fully reverted back to Tracking -- gated behind a password since
+// it's a destructive action.
 let pcaRevertModeEnabled = false;
 function pcaResetToTracking(){
   closeModal();
@@ -4763,7 +4772,7 @@ function pcaResetToTracking(){
   pcaRevertModeEnabled=!pcaRevertModeEnabled;
   const resetBtn=document.getElementById("pca-reset-btn");
   if(resetBtn) resetBtn.textContent = pcaRevertModeEnabled ? "↺ Reset to Tracking (Revert: ON)" : "↺ Reset to Tracking";
-  pcaDoSwitchTab("tracking");
+  pcaRender();
 }
 
 function pcaPromptRevertTicket(ticketId){
@@ -5254,8 +5263,12 @@ function pcaStatusCellHtml(t){
   if(t.status==="reject" && t.rejectReason) remark=t.rejectReason;
   else if(t.status==="qc_reject" && t.qcRejectReason) remark=t.qcRejectReason;
   else if(t.status==="management_decision" && t.managementReason) remark=t.managementReason;
-  if(!remark) return badge;
-  return `${badge}<div style="font-size:10px;color:#666;margin-top:4px;white-space:normal;max-width:220px">${esc(remark)}</div>`;
+  if(!remark) return `<div>${badge}</div>`;
+  const isRed = t.status==="reject" || t.status==="qc_reject";
+  const border = isRed ? "#e2445c" : "#dab000";
+  const bg = isRed ? "#fdf2f3" : "#fffaeb";
+  const text = isRed ? "#8a1f2d" : "#7a5500";
+  return `<div>${badge}<div style="font-size:10.5px;font-weight:500;color:${text};background:${bg};border-left:3px solid ${border};padding:5px 9px;margin-top:6px;border-radius:0 5px 5px 0;text-align:left;white-space:normal;max-width:230px;line-height:1.45">${esc(remark)}</div></div>`;
 }
 
 function pcaPoCellHtml(t){
@@ -5638,7 +5651,9 @@ async function pcaClearComponentPhoto(ticketId, compIndex){
   if(!t) return;
   const c=t.components[compIndex];
   if(!c || !c.photoUrl) return;
-  if(!confirm("Remove this photo? You can upload a replacement right after.")) return;
+  const pw=prompt("Enter password to delete this photo:");
+  if(pw===null) return;
+  if(pw!=="deleteme"){ alert("Incorrect password."); return; }
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
   if(!c.rowIndex){ alert("Could not locate this photo's row in the sheet -- try reopening the ticket from the Approval Process tab (this refreshes row data), then try again."); return; }
   try{
@@ -5690,6 +5705,35 @@ async function pcaReplaceComponentPhoto(ticketId, compIndex, file){
     pcaOpenTicketDetail(ticketId);
   }catch(e){
     alert("Could not upload replacement photo: "+e.message);
+  }
+}
+
+// ── Add a component the ticket was missing (password-gated, since it edits
+// a submitted ticket) ───────────────────────────────────────────────────
+function pcaPromptAddComponent(ticketId){
+  const pw=prompt("Enter password to add a new component to this ticket:");
+  if(pw===null) return;
+  if(pw!=="addme"){ alert("Incorrect password."); return; }
+  const name=prompt("Component name (e.g. buckle, strap, hardware):", "");
+  if(name===null) return;
+  pcaAddComponentToTicket(ticketId, name.trim());
+}
+async function pcaAddComponentToTicket(ticketId, componentName){
+  const t=pcaTickets.find(x=>x.id===ticketId);
+  if(!t) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  try{
+    await pcaEnsureTicketsSheetExists();
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const row=[[t.id,t.poNumber,t.shipmentNumber,t.supplierName,t.supplierSku,t.description,t.quantity,t.updatedGrd,t.status,t.createdDate,componentName||"Component","",t.folderLink]];
+    const res=await fetch(url,{ method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:row}) });
+    if(!res.ok){ const tx=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${tx.slice(0,150)}`); }
+    // Resync so the new row gets a real sheet row number (rowIndex), needed
+    // for the delete/replace-photo actions to work on this new component.
+    await pcaSyncTickets();
+    pcaOpenTicketDetail(ticketId);
+  }catch(e){
+    alert("Could not add component: "+e.message);
   }
 }
 
