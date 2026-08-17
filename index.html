@@ -297,7 +297,7 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
         <button class="pmm-subtab active" id="pca-tab-tracking" onclick="pcaSwitchTab('tracking')">📋 Tracking</button>
         <button class="pmm-subtab" id="pca-tab-approval" onclick="pcaSwitchTab('approval')">✅ Approval Process <span id="pca-count-badge" style="display:none;background:#0073ea;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px"></span></button>
         <button class="pmm-subtab" id="pca-tab-completed" onclick="pcaSwitchTab('completed')">🏁 Ticket Completed <span id="pca-completed-badge" style="display:none;background:#0a7a46;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px"></span></button>
-        <button onclick="pcaResetToTracking()" title="Clear any draft/open ticket and jump back to Tracking" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,.3);border-radius:6px;color:rgba(255,255,255,.75);font-size:11px;font-weight:600;padding:6px 12px;cursor:pointer">↺ Reset to Tracking</button>
+        <button id="pca-reset-btn" onclick="pcaResetToTracking()" title="Clear any draft/open ticket, jump back to Tracking, and toggle per-ticket Revert buttons" style="margin-left:auto;background:none;border:1px solid rgba(255,255,255,.3);border-radius:6px;color:rgba(255,255,255,.75);font-size:11px;font-weight:600;padding:6px 12px;cursor:pointer">↺ Reset to Tracking</button>
       </div>
     </div>
 
@@ -2232,7 +2232,7 @@ function renderModals(){
     const t=pcaTickets.find(x=>x.id===modal.ticketId);
     if(!t){ root.innerHTML=""; return; }
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
-      <div class="modal-box" style="width:96vw;max-width:1700px;max-height:92vh;display:flex;flex-direction:column">
+      <div class="modal-box" style="max-width:1180px;width:94vw;max-height:90vh;display:flex;flex-direction:column">
         <div style="background:#0073ea;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
           <div style="color:#fff;font-weight:800;font-size:15px">${esc(t.poNumber)} — ${esc(t.supplierSku)}</div>
           <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
@@ -4685,7 +4685,7 @@ const PCA_COLUMN_HINTS = {
   updatedGrd: ["updated grd","grd","goods ready date"],
 };
 const PCA_STATUS_COL_INDEX = 10; // column K, 0-indexed
-const PCA_EXTRA_COLS = { rejectReason: 13, reviewerNote: 14, managementReason: 15 }; // extra columns N,O,P
+const PCA_EXTRA_COLS = { rejectReason: 13, reviewerNote: 14, managementReason: 15, qcRejectReason: 16 }; // extra columns N,O,P,Q
 const PCA_CLOSED_STATUSES = ["waived", "qc_approve"]; // "management_decision" only counts as closed once managementReason is filled -- see pcaIsClosed()
 function pcaIsClosed(t){ return t.status==="waived" || t.status==="qc_approve" || (t.status==="management_decision" && !!t.managementReason); }
 
@@ -4747,7 +4747,11 @@ window.addEventListener("beforeunload", function(e){
 
 // Hard reset for testing: clears any in-progress ticket draft, context menu,
 // or open modal, and jumps straight back to Tracking -- no confirmation, since
-// this button exists specifically to bail out quickly during testing.
+// this button exists specifically to bail out quickly during testing. It also
+// toggles "revert mode", which reveals a per-row ↩️ button (next to PO Number)
+// in Approval Process / Ticket Completed that lets a ticket be fully reverted
+// back to Tracking -- gated behind a password since it's a destructive action.
+let pcaRevertModeEnabled = false;
 function pcaResetToTracking(){
   closeModal();
   pcaContextMenu=null;
@@ -4756,7 +4760,44 @@ function pcaResetToTracking(){
   pcaDraftFolderId=null;
   pcaSearchQuery="";
   pcaSearchSuggestOpen=false;
+  pcaRevertModeEnabled=!pcaRevertModeEnabled;
+  const resetBtn=document.getElementById("pca-reset-btn");
+  if(resetBtn) resetBtn.textContent = pcaRevertModeEnabled ? "↺ Reset to Tracking (Revert: ON)" : "↺ Reset to Tracking";
   pcaDoSwitchTab("tracking");
+}
+
+function pcaPromptRevertTicket(ticketId){
+  const pw=prompt("Enter password to revert this ticket back to Tracking:");
+  if(pw===null) return;
+  if(pw!=="revertme"){ alert("Incorrect password."); return; }
+  pcaRevertTicketToTracking(ticketId);
+}
+
+async function pcaRevertTicketToTracking(ticketId){
+  const t=pcaTickets.find(x=>x.id===ticketId);
+  if(!t) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  if(!t.rowIndexes || !t.rowIndexes.length){ alert("Could not find this ticket's rows to revert."); return; }
+  if(!confirm(`Revert ${t.poNumber} / ${t.supplierSku} back to Tracking? This permanently deletes this Pantone ticket's rows.`)) return;
+  try{
+    const gid=await pmmGetSheetGidFor(PCA_TICKETS_SHEET);
+    // Delete rows highest-index-first within one batch, so earlier deletes in
+    // the same request don't shift the row numbers the later deletes target.
+    const sortedRows=[...t.rowIndexes].sort((a,b)=>b-a);
+    const requests=sortedRows.map(r=>({
+      deleteDimension:{ range:{ sheetId:gid, dimension:"ROWS", startIndex:r-1, endIndex:r } },
+    }));
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{
+      method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({requests}),
+    });
+    if(!res.ok){ const tx=await res.text(); throw new Error(`Could not delete ticket rows (${res.status}): ${tx.slice(0,150)}`); }
+    closeModal();
+    await pcaSyncTickets();
+    pcaDoSwitchTab("tracking");
+    alert(`${t.poNumber} / ${t.supplierSku} has been reverted back to Tracking.`);
+  }catch(e){
+    alert("Could not revert ticket: "+e.message);
+  }
 }
 
 function pcaRender(){
@@ -4860,8 +4901,8 @@ async function pcaEnsureTicketsSheetExists(){
 
 async function pcaEnsureTicketsHeaders(){
   await pcaEnsureTicketsSheetExists();
-  const headers=["Ticket ID","PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status","Created Date","Component","Photo URL","Folder Link","Reject Reason","Reviewer Note","Management Decision Reason"];
-  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}!A1:P1?valueInputOption=USER_ENTERED`;
+  const headers=["Ticket ID","PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status","Created Date","Component","Photo URL","Folder Link","Reject Reason","Reviewer Note","Management Decision Reason","QC Reject Reason"];
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}!A1:Q1?valueInputOption=USER_ENTERED`;
   const res=await fetch(url,{ method:"PUT", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:[headers]}) });
   if(!res.ok){ const t=await res.text(); throw new Error(`Could not write headers to "${PCA_TICKETS_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
 }
@@ -4886,6 +4927,7 @@ async function pcaSyncTickets(){
           createdDate:pmmPick(row,"Created Date"), folderLink:pmmPick(row,"Folder Link"),
           rejectReason:pmmPick(row,"Reject Reason"), reviewerNote:pmmPick(row,"Reviewer Note"),
           managementReason:pmmPick(row,"Management Decision Reason"),
+          qcRejectReason:pmmPick(row,"QC Reject Reason"),
           components:[], rowIndexes:[],
         };
       }
@@ -5204,6 +5246,25 @@ function pcaStatusBadgeHtml(status){
   return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${bg};color:${color}">${PCA_STATUS_LABELS[status]||status}</span>`;
 }
 
+// Status cell = badge, plus any remark tied to that status (e.g. a rejection
+// or management-decision reason), shown as a line underneath the badge.
+function pcaStatusCellHtml(t){
+  const badge=pcaStatusBadgeHtml(t.status);
+  let remark="";
+  if(t.status==="reject" && t.rejectReason) remark=t.rejectReason;
+  else if(t.status==="qc_reject" && t.qcRejectReason) remark=t.qcRejectReason;
+  else if(t.status==="management_decision" && t.managementReason) remark=t.managementReason;
+  if(!remark) return badge;
+  return `${badge}<div style="font-size:10px;color:#666;margin-top:4px;white-space:normal;max-width:220px">${esc(remark)}</div>`;
+}
+
+function pcaPoCellHtml(t){
+  const revertBtn = pcaRevertModeEnabled
+    ? `<button onclick="event.stopPropagation();pcaPromptRevertTicket('${t.id}')" title="Revert to Tracking" style="background:none;border:none;cursor:pointer;font-size:13px;margin-right:5px;vertical-align:middle;padding:0">↩️</button>`
+    : "";
+  return `${revertBtn}${esc(t.poNumber)}`;
+}
+
 function pcaRenderApproval(){
   const body=document.getElementById("pca-body"); if(!body) return;
   const openTickets=pcaTickets.filter(t=>!pcaIsClosed(t));
@@ -5218,13 +5279,13 @@ function pcaRenderApproval(){
         </tr></thead>
         <tbody>
           ${openTickets.map(t=>`<tr onclick="pcaOpenTicketDetail('${t.id}')" style="border-bottom:0.5px solid #f0f1f3;cursor:pointer">
-            <td style="padding:7px 12px;font-weight:600">${esc(t.poNumber)}</td>
+            <td style="padding:7px 12px;font-weight:600">${pcaPoCellHtml(t)}</td>
             <td style="padding:7px 12px">${esc(t.shipmentNumber)}</td>
             <td style="padding:7px 12px">${esc(t.supplierName)}</td>
             <td style="padding:7px 12px">${esc(t.supplierSku)}</td>
             <td style="padding:7px 12px;white-space:normal;min-width:200px">${esc(t.description)}</td>
             <td style="padding:7px 12px">${esc(t.quantity)}</td>
-            <td style="padding:7px 12px">${pcaStatusBadgeHtml(t.status)}</td>
+            <td style="padding:7px 12px">${pcaStatusCellHtml(t)}</td>
           </tr>`).join("")}
         </tbody>
       </table>
@@ -5249,13 +5310,13 @@ function pcaRenderCompleted(){
         </tr></thead>
         <tbody>
           ${doneTickets.map(t=>`<tr ${t.status==="waived"?"":`onclick="pcaOpenTicketDetail('${t.id}')" style="cursor:pointer"`} style="border-bottom:0.5px solid #f0f1f3">
-            <td style="padding:7px 12px;font-weight:600">${esc(t.poNumber)}</td>
+            <td style="padding:7px 12px;font-weight:600">${pcaPoCellHtml(t)}</td>
             <td style="padding:7px 12px">${esc(t.shipmentNumber)}</td>
             <td style="padding:7px 12px">${esc(t.supplierName)}</td>
             <td style="padding:7px 12px">${esc(t.supplierSku)}</td>
             <td style="padding:7px 12px;white-space:normal;min-width:200px">${esc(t.description)}</td>
             <td style="padding:7px 12px">${esc(t.quantity)}</td>
-            <td style="padding:7px 12px">${pcaStatusBadgeHtml(t.status)}</td>
+            <td style="padding:7px 12px">${pcaStatusCellHtml(t)}</td>
           </tr>`).join("")}
         </tbody>
       </table>
@@ -5281,30 +5342,30 @@ function pcaNodeStyle(key, currentStage){
 function pcaSvgNode(key, lines, currentStage, shape, cx, cy){
   const st=pcaNodeStyle(key, currentStage);
   const textLines=Array.isArray(lines)?lines:[lines];
-  const lineH=20, startDy = -(((textLines.length-1)*lineH)/2);
-  const text=`<text x="${cx}" y="${cy}" text-anchor="middle" font-size="17" font-weight="700" fill="${st.text}" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
+  const lineH=16, startDy = -(((textLines.length-1)*lineH)/2);
+  const text=`<text x="${cx}" y="${cy}" text-anchor="middle" font-size="14" font-weight="700" fill="${st.text}" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif">
     ${textLines.map((l,i)=>`<tspan x="${cx}" dy="${i===0?startDy:lineH}">${esc(l)}</tspan>`).join("")}
   </text>`;
   if(shape==="diamond"){
-    const w=220,h=150;
+    const w=150,h=100;
     const points=`${cx},${cy-h/2} ${cx+w/2},${cy} ${cx},${cy+h/2} ${cx-w/2},${cy}`;
     return `<polygon points="${points}" fill="${st.fill}" stroke="${st.stroke}" stroke-width="${st.strokeWidth}"/>${text}`;
   }
-  const w=200, h=90, rx=shape==="pill"?38:12;
+  const w=135, h=62, rx=shape==="pill"?26:10;
   return `<rect x="${cx-w/2}" y="${cy-h/2}" width="${w}" height="${h}" rx="${rx}" fill="${st.fill}" stroke="${st.stroke}" stroke-width="${st.strokeWidth}"/>${text}`;
 }
 function pcaFlowDiagramHtml(currentStage){
-  const A="marker-end=\"url(#pca-arrowhead)\" stroke=\"#7c8aa0\" stroke-width=\"3\" fill=\"none\"";
+  const A="marker-end=\"url(#pca-arrowhead)\" stroke=\"#7c8aa0\" stroke-width=\"2.5\" fill=\"none\"";
   const line=(x1,y1,x2,y2)=>`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${A}/>`;
   const path=(d)=>`<path d="${d}" ${A}/>`;
 
-  const r1=130, r2=310, r3=470; // row center-Y
+  const r1=90, r2=220, r3=340; // row center-Y
   // Row 1
-  const cStart=140, cApproval=420, cReject=700, cInform=980, cReproduce=1260, cReview=1540;
+  const cStart=85, cApproval=255, cReject=425, cInform=595, cReproduce=765, cReview=935;
   // Row 2
-  const cApprove=420, cRelease=700, cQcBox=980, cQcDiamond=1260, cQcApprove=1540;
+  const cApprove=255, cRelease=425, cQcBox=595, cQcDiamond=765, cQcApprove=935;
   // Row 3
-  const cQcReject=1260, cMgmt=1540, cEnd=1820;
+  const cQcReject=765, cMgmt=935, cEnd=1105;
 
   const nodes=[
     pcaSvgNode("start",["Start"],currentStage,"pill",cStart,r1),
@@ -5327,31 +5388,31 @@ function pcaFlowDiagramHtml(currentStage){
 
   const arrows=[
     // Row 1 horizontal
-    line(cStart+90, r1, cApproval-110, r1),
-    line(cApproval+110, r1, cReject-100, r1),
-    line(cReject+100, r1, cInform-100, r1),
-    line(cInform+100, r1, cReproduce-100, r1),
-    line(cReproduce+100, r1, cReview-100, r1),
+    line(cStart+60, r1, cApproval-75, r1),
+    line(cApproval+75, r1, cReject-67, r1),
+    line(cReject+67, r1, cInform-67, r1),
+    line(cInform+67, r1, cReproduce-67, r1),
+    line(cReproduce+67, r1, cReview-67, r1),
     // Loop-back: Review top -> up -> left -> down into Approval diamond top
-    path(`M ${cReview} ${r1-45} L ${cReview} 35 L ${cApproval} 35 L ${cApproval} ${r1-75}`),
+    path(`M ${cReview} ${r1-31} L ${cReview} 20 L ${cApproval} 20 L ${cApproval} ${r1-50}`),
     // Approval diamond bottom -> Approve (row2) top
-    line(cApproval, r1+75, cApprove, r2-45),
+    line(cApproval, r1+50, cApprove, r2-31),
     // Row 2 horizontal
-    line(cApprove+100, r2, cRelease-100, r2),
-    line(cRelease+100, r2, cQcBox-100, r2),
-    line(cQcBox+100, r2, cQcDiamond-110, r2),
-    line(cQcDiamond+110, r2, cQcApprove-100, r2),
+    line(cApprove+67, r2, cRelease-67, r2),
+    line(cRelease+67, r2, cQcBox-67, r2),
+    line(cQcBox+67, r2, cQcDiamond-75, r2),
+    line(cQcDiamond+75, r2, cQcApprove-67, r2),
     // QC diamond bottom -> Reject (row3) top
-    line(cQcDiamond, r2+75, cQcReject, r3-45),
+    line(cQcDiamond, r2+50, cQcReject, r3-31),
     // Elbow: last Approve (row2) -> right -> down -> End (row3) top
-    path(`M ${cQcApprove+100} ${r2} L ${cEnd} ${r2} L ${cEnd} ${r3-38}`),
+    path(`M ${cQcApprove+67} ${r2} L ${cEnd} ${r2} L ${cEnd} ${r3-26}`),
     // Row 3 horizontal
-    line(cQcReject+100, r3, cMgmt-100, r3),
-    line(cMgmt+100, r3, cEnd-90, r3),
+    line(cQcReject+67, r3, cMgmt-67, r3),
+    line(cMgmt+67, r3, cEnd-60, r3),
   ].join("");
 
   return `<div style="background:#0e1b3d;border-radius:10px;padding:16px">
-    <svg viewBox="0 0 1900 540" style="width:100%;height:auto;display:block">
+    <svg viewBox="0 0 1180 400" style="width:100%;height:auto;display:block">
       <defs>
         <marker id="pca-arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse">
           <path d="M0,0 L8,4 L0,8 Z" fill="#7c8aa0"/>
@@ -5469,6 +5530,16 @@ function pcaSubmitManagementDecision(ticketId){
   if(!reason){ alert("Please enter a reason before closing the ticket."); return; }
   pcaAdvanceStage(ticketId, "management_decision", {managementReason:reason});
 }
+function pcaShowQcRejectReason(ticketId){
+  const el=document.getElementById(`pca-qc-reject-reason-${ticketId}`);
+  if(el) el.style.display = el.style.display==="none" ? "block" : "none";
+}
+function pcaSubmitQcReject(ticketId){
+  const el=document.getElementById(`pca-qc-reject-reason-input-${ticketId}`);
+  const reason=(el?el.value:"").trim();
+  if(!reason){ alert("Please provide a reason for rejecting."); return; }
+  pcaAdvanceStage(ticketId, "qc_reject", {qcRejectReason:reason});
+}
 
 function pcaActionsHtmlFor(t){
   const btn=(label,onclick,color)=>`<button onclick="${onclick}" style="padding:10px 20px;font-size:12.5px;font-weight:700;color:#fff;background:${color||"#0073ea"};border:none;border-radius:8px;cursor:pointer;margin-right:10px">${label}</button>`;
@@ -5505,11 +5576,17 @@ function pcaActionsHtmlFor(t){
     case "qc_inspection":
       return `<div style="font-size:11px;color:#888;margin-bottom:10px">Does the shipment pass QC inspection?</div>`
         +btn("✓ Approve", `pcaAdvanceStage('${t.id}','qc_approve')`, "#0a7a46")
-        +btn("✕ Reject", `pcaAdvanceStage('${t.id}','qc_reject')`, "#e2445c");
+        +btn("✕ Reject", `pcaShowQcRejectReason('${t.id}')`, "#e2445c")
+        +`<div id="pca-qc-reject-reason-${t.id}" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid #eee">
+            <div style="font-size:11px;color:#888;margin-bottom:6px">Reason for QC rejection (required):</div>
+            <textarea id="pca-qc-reject-reason-input-${t.id}" class="pmm-input" placeholder="e.g. Mismatch color" style="min-height:70px;margin-bottom:10px"></textarea>
+            <button onclick="pcaSubmitQcReject('${t.id}')" style="padding:9px 18px;font-size:12px;font-weight:700;color:#fff;background:#e2445c;border:none;border-radius:8px;cursor:pointer">Submit Rejection</button>
+          </div>`;
     case "qc_approve":
       return `<div style="font-size:12px;color:#0a7a46;font-weight:700">✓ QC Approved — process complete.</div>`;
     case "qc_reject":
-      return btn("⚠ Escalate to Management Decision", `pcaAdvanceStage('${t.id}','management_decision')`, "#b07000")
+      return (t.qcRejectReason?`<div style="font-size:11px;color:#721c24;background:#f8d7da;border-radius:6px;padding:8px 12px;margin-bottom:12px"><strong>QC rejection reason:</strong> ${esc(t.qcRejectReason)}</div>`:"")
+        +btn("⚠ Escalate to Management Decision", `pcaAdvanceStage('${t.id}','management_decision')`, "#b07000")
         +btn("📧 Notify Team by Email", `pcaOpenEmailPreview('${t.id}')`, "#5b21b6");
     case "management_decision":
       if(!t.managementReason){
