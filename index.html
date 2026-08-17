@@ -332,7 +332,7 @@ const SHEET_EDIT_URL   = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_I
 // into a folder that already existed before the app touched it (causes "File not
 // found" 404s even for a real, correct folder ID). Full "drive" scope is required
 // to upload directly into a pre-existing folder you specify.
-const SCOPES           = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/gmail.send";
+const SCOPES           = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email";
 const LS_CACHE         = "rhino_compliance_gsheets_v1";
 const LS_SYNCED        = "rhino_compliance_gsheets_synced_v1";
 const DUE_SOON_DAYS    = 180; // 6 months
@@ -402,6 +402,21 @@ function getRetestDecision(itemId, subId){
 // ── GOOGLE OAUTH (Google Identity Services) ──────────────────────────────────
 let accessToken = null;
 let tokenClient = null;
+let pcaCurrentUserEmail = null; // cached once fetched, used to stamp "QE In Charge" on new tickets
+
+async function pcaGetCurrentUserEmail(){
+  if(pcaCurrentUserEmail) return pcaCurrentUserEmail;
+  if(!accessToken) return "";
+  try{
+    const res=await fetch("https://www.googleapis.com/oauth2/v3/userinfo",{headers:{Authorization:"Bearer "+accessToken}});
+    if(!res.ok) return "";
+    const data=await res.json();
+    pcaCurrentUserEmail=data.email||"";
+    return pcaCurrentUserEmail;
+  }catch(e){
+    return "";
+  }
+}
 
 function initGis(){
   if(tokenClient) return;
@@ -2247,6 +2262,7 @@ function renderModals(){
             <div><strong>Product Description:</strong> ${esc(t.description)}</div>
             <div><strong>Quantity:</strong> ${esc(t.quantity)}</div>
             <div><strong>Updated GRD:</strong> ${esc(t.updatedGrd)}</div>
+            ${t.qeInCharge?`<div><strong>QE In Charge:</strong> ${esc(t.qeInCharge)}</div>`:""}
             ${t.folderLink?`<div><strong>Photo Folder:</strong> <a href="${esc(t.folderLink)}" target="_blank">Open in Drive</a></div>`:""}
             ${t.rejectReason?`<div><strong>Rejection Reason:</strong> ${esc(t.rejectReason)}</div>`:""}
             ${t.reviewerNote?`<div><strong>Reviewer Note:</strong> ${esc(t.reviewerNote)}</div>`:""}
@@ -3296,7 +3312,9 @@ async function pmmDeleteCostSnapshot(snapshotId){
   if(!snap) return;
   let dateStr=snap.savedDate;
   try{ dateStr=new Date(snap.savedDate).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"}); }catch(e){}
-  if(!confirm(`Delete the Cost Savings snapshot from ${dateStr}? This removes it from the Google Sheet permanently.`)) return;
+  const pw=prompt(`Enter password to delete the Cost Savings snapshot from ${dateStr} (removes it from the Google Sheet permanently):`);
+  if(pw===null) return;
+  if(pw!=="deleteme"){ alert("Incorrect password."); return; }
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
 
   try{
@@ -3326,7 +3344,9 @@ async function pmmDeleteCostSnapshot(snapshotId){
 async function pmmDeleteEntry(entryId){
   const entry=pmmEntries.find(e=>e.id===entryId);
   if(!entry) return;
-  if(!confirm(`Delete "${entry.sku||"this entry"}"? This removes it from the Google Sheet permanently.`)) return;
+  const pw=prompt(`Enter password to delete "${entry.sku||"this entry"}" (removes it from the Google Sheet permanently):`);
+  if(pw===null) return;
+  if(pw!=="deleteme"){ alert("Incorrect password."); return; }
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
 
   try{
@@ -4688,7 +4708,7 @@ const PCA_COLUMN_HINTS = {
   updatedGrd: ["updated grd","grd","goods ready date"],
 };
 const PCA_STATUS_COL_INDEX = 10; // column K, 0-indexed
-const PCA_EXTRA_COLS = { rejectReason: 13, reviewerNote: 14, managementReason: 15, qcRejectReason: 16 }; // extra columns N,O,P,Q
+const PCA_EXTRA_COLS = { rejectReason: 13, reviewerNote: 14, managementReason: 15, qcRejectReason: 16, qeInCharge: 17 }; // extra columns N,O,P,Q,R
 const PCA_CLOSED_STATUSES = ["waived", "qc_approve"]; // "management_decision" only counts as closed once managementReason is filled -- see pcaIsClosed()
 function pcaIsClosed(t){ return t.status==="waived" || t.status==="qc_approve" || (t.status==="management_decision" && !!t.managementReason); }
 
@@ -4910,8 +4930,8 @@ async function pcaEnsureTicketsSheetExists(){
 
 async function pcaEnsureTicketsHeaders(){
   await pcaEnsureTicketsSheetExists();
-  const headers=["Ticket ID","PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status","Created Date","Component","Photo URL","Folder Link","Reject Reason","Reviewer Note","Management Decision Reason","QC Reject Reason"];
-  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}!A1:Q1?valueInputOption=USER_ENTERED`;
+  const headers=["Ticket ID","PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status","Created Date","Component","Photo URL","Folder Link","Reject Reason","Reviewer Note","Management Decision Reason","QC Reject Reason","QE In Charge"];
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}!A1:R1?valueInputOption=USER_ENTERED`;
   const res=await fetch(url,{ method:"PUT", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:[headers]}) });
   if(!res.ok){ const t=await res.text(); throw new Error(`Could not write headers to "${PCA_TICKETS_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
 }
@@ -4937,6 +4957,7 @@ async function pcaSyncTickets(){
           rejectReason:pmmPick(row,"Reject Reason"), reviewerNote:pmmPick(row,"Reviewer Note"),
           managementReason:pmmPick(row,"Management Decision Reason"),
           qcRejectReason:pmmPick(row,"QC Reject Reason"),
+          qeInCharge:pmmPick(row,"QE In Charge"),
           components:[], rowIndexes:[],
         };
       }
@@ -5218,10 +5239,11 @@ async function pcaSubmitTicket(){
 
   try{
     await pcaEnsureTicketsHeaders();
+    const qeEmail=await pcaGetCurrentUserEmail();
     const ticketId="pca_"+Date.now();
     const nowIso=new Date().toISOString();
     const folderLink=pcaDraftFolderId?`https://drive.google.com/drive/folders/${pcaDraftFolderId}`:"";
-    const rows=components.map(c=>[ticketId,r.poNumber,r.shipmentNumber,r.supplierName,r.supplierSku,r.description,r.quantity,r.updatedGrd,"approval",nowIso,c.component,c.photoUrl,folderLink]);
+    const rows=components.map(c=>[ticketId,r.poNumber,r.shipmentNumber,r.supplierName,r.supplierSku,r.description,r.quantity,r.updatedGrd,"approval",nowIso,c.component,c.photoUrl,folderLink,"","","","",qeEmail]);
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const res=await fetch(url,{ method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:rows}) });
     if(!res.ok){ const t=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${t.slice(0,150)}`); }
@@ -5288,7 +5310,7 @@ function pcaRenderApproval(){
     html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap">
         <thead><tr style="background:#f2f3f6">
-          ${["PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Status"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+          ${["PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","QE In Charge","Status"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
         </tr></thead>
         <tbody>
           ${openTickets.map(t=>`<tr onclick="pcaOpenTicketDetail('${t.id}')" style="border-bottom:0.5px solid #f0f1f3;cursor:pointer">
@@ -5298,6 +5320,7 @@ function pcaRenderApproval(){
             <td style="padding:7px 12px">${esc(t.supplierSku)}</td>
             <td style="padding:7px 12px;white-space:normal;min-width:200px">${esc(t.description)}</td>
             <td style="padding:7px 12px">${esc(t.quantity)}</td>
+            <td style="padding:7px 12px">${esc(t.qeInCharge)||"—"}</td>
             <td style="padding:7px 12px">${pcaStatusCellHtml(t)}</td>
           </tr>`).join("")}
         </tbody>
