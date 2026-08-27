@@ -165,6 +165,8 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
       <button class="tab-btn active" id="tab-table" onclick="switchTab('table')">Main Table</button>
       <button class="tab-btn" id="tab-monitoring" onclick="switchTab('monitoring')">Monitoring <span id="mon-badge" style="display:none;background:#e2445c;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px"></span></button>
       <button class="tab-btn" id="tab-expense" onclick="switchTab('expense')">💰 Test Expense</button>
+      <button class="tab-btn" id="tab-newentry" onclick="switchTab('newentry')">➕ New Entry</button>
+      <button class="tab-btn" id="tab-tracking" onclick="switchTab('tracking')">📝 Tracking</button>
     </div>
   </div>
 
@@ -669,6 +671,7 @@ function buildGroups(itemRows, subRows){
       country:row.country||"",
       colors:row.colors||"",
       channel:row.channel||"",
+      status:row.Status||"",
       subs:subMap[rid]||[],
     });
   });
@@ -2653,12 +2656,16 @@ function switchTab(t){
   document.getElementById("tab-table").className="tab-btn"+(t==="table"?" active":"");
   document.getElementById("tab-monitoring").className="tab-btn"+(t==="monitoring"?" active":"");
   document.getElementById("tab-expense").className="tab-btn"+(t==="expense"?" active":"");
+  const newEntryTab=document.getElementById("tab-newentry"); if(newEntryTab) newEntryTab.className="tab-btn"+(t==="newentry"?" active":"");
+  const trackingTab=document.getElementById("tab-tracking"); if(trackingTab) trackingTab.className="tab-btn"+(t==="tracking"?" active":"");
   const kpiEl=document.getElementById("kpi-section");
   if(kpiEl) kpiEl.style.display=t==="table"?"":"none";
   const tbEl=document.getElementById("toolbar-wrap");
   if(tbEl) tbEl.style.display=t==="table"?"flex":"none";
   if(t==="table") renderTable();
   else if(t==="monitoring") renderMonitoring();
+  else if(t==="newentry") cdRenderNewEntry();
+  else if(t==="tracking") cdRenderTracking();
   else renderExpense();
 }
 
@@ -2682,6 +2689,323 @@ function openDetail(sid,iid,gid){
   const item=g&&g.items.find(x=>x.id===iid);
   const sub=item&&item.subs.find(x=>x.id===sid);
   if(sub) openModal({type:"detail",data:sub});
+}
+
+// ── NEW ENTRY (create a test entry) + TRACKING (edit its Status) ───────────
+// Writes directly to the "Items" and "Subitems" tabs using each sheet's own
+// header row to place values in the right columns (rather than assuming fixed
+// positions), since these are the same tabs the read-only board above already
+// mirrors. Block 3 (Test Execution) is nested per Test Type, matching how the
+// sheet already encodes multiple "Priority Supplier N:" blocks inside a single
+// year cell (y2024/y2025/y2026) on the Subitems row -- see parsePBlocks above.
+const CD_CHANNEL_OPTIONS = ["Amazon","TikTok","Shopify","B2B","Sam's Club","Autozone"];
+const CD_PRIORITY_SKU_OPTIONS = ["A","B","C","Retail"];
+let cdHeaderMaps = {};
+let cdDraft = {sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:""};
+function cdNewExec(){ return {supplier:"",method:"",wwl:"",claim:"",report:"",lab:"",cost:"",date:"",result:""}; }
+function cdNewTestType(){ return {name:"",std:"",criteria:"",target:"",equipment:"",accreditation:"",labs:"",execs:[cdNewExec()]}; }
+let cdTestTypes = [cdNewTestType()];
+let cdSubmitting = false;
+
+async function cdGetHeaderMap(sheetName){
+  if(cdHeaderMaps[sheetName]) return cdHeaderMaps[sheetName];
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}!1:1?valueRenderOption=FORMATTED_VALUE`;
+  const res=await fetch(url,{headers:{Authorization:"Bearer "+accessToken}});
+  if(!res.ok) throw new Error(`Could not read headers for "${sheetName}" (${res.status})`);
+  const data=await res.json();
+  const headers=(data.values&&data.values[0])||[];
+  const map={};
+  headers.forEach((h,i)=>{ const key=String(h||"").trim(); if(key) map[key]=i; });
+  cdHeaderMaps[sheetName]=map;
+  return map;
+}
+function cdColLetter(idx){ let s="",n=idx+1; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26); } return s; }
+async function cdEnsureColumn(sheetName, headerName){
+  const map=await cdGetHeaderMap(sheetName);
+  if(map[headerName]!==undefined) return map;
+  const nextIdx=Object.keys(map).length?Math.max(...Object.values(map))+1:0;
+  const colLetter=cdColLetter(nextIdx);
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}!${colLetter}1?valueInputOption=USER_ENTERED`;
+  const res=await fetch(url,{method:"PUT",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[[headerName]]})});
+  if(!res.ok){ const t=await res.text(); throw new Error(`Could not add "${headerName}" column (${res.status}): ${t.slice(0,150)}`); }
+  map[headerName]=nextIdx;
+  cdHeaderMaps[sheetName]=map;
+  return map;
+}
+function cdBuildRow(map, values){
+  const maxIdx=Object.keys(map).length?Math.max(...Object.values(map)):-1;
+  const row=new Array(maxIdx+1).fill("");
+  Object.entries(values).forEach(([k,v])=>{ if(map[k]!==undefined) row[map[k]]=(v==null?"":String(v)); });
+  return row;
+}
+function cdGenerateId(){ return String(Date.now()).slice(-9)+String(Math.floor(Math.random()*1000)).padStart(3,"0"); }
+function cdGenerateSubId(){ return String(Date.now()).slice(-6)+String(Math.floor(Math.random()*100)).padStart(2,"0"); }
+function cdYearColFor(dateStr){
+  if(!dateStr) return "y2026";
+  const y=new Date(dateStr).getFullYear();
+  if(y===2024) return "y2024";
+  if(y===2025) return "y2025";
+  return "y2026";
+}
+function cdFormatExecBlock(ex, n){
+  const lines=[`Priority Supplier ${n}: ${ex.supplier||""}`];
+  if(ex.method) lines.push(`Test Method: ${ex.method}`);
+  if(ex.wwl) lines.push(`Rhino Test WWL: ${ex.wwl}`);
+  if(ex.claim) lines.push(`Rhino Break Strength Test Claim: ${ex.claim}`);
+  if(ex.result) lines.push(`Test Result: ${ex.result}`);
+  if(ex.date) lines.push(`Test Completion Date: ${ex.date}`);
+  if(ex.lab) lines.push(`Test Lab: ${ex.lab}`);
+  if(ex.cost) lines.push(`Cost: ${ex.cost}`);
+  if(ex.report) lines.push(`Test Report: ${ex.report}`);
+  return lines.join("\n");
+}
+
+function cdAddTestType(){ cdTestTypes.push(cdNewTestType()); cdRenderNewEntry(); }
+function cdRemoveTestType(i){ cdTestTypes.splice(i,1); cdRenderNewEntry(); }
+function cdAddExec(ti){ cdTestTypes[ti].execs.push(cdNewExec()); cdRenderNewEntry(); }
+function cdRemoveExec(ti,ei){ cdTestTypes[ti].execs.splice(ei,1); cdRenderNewEntry(); }
+
+function cdExecBlockHtml(tt, ti, ex, ei){
+  return `<div style="border:1px solid #eceef2;border-radius:6px;padding:10px;margin-bottom:8px;background:#fff">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:10.5px;font-weight:700;color:#888">Execution ${ei+1}</div>
+      ${tt.execs.length>1?`<button onclick="cdRemoveExec(${ti},${ei})" style="font-size:10px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:2px 7px;cursor:pointer">Remove</button>`:""}
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Priority Supplier</label><input class="pmm-input" value="${esc(ex.supplier)}" oninput="cdTestTypes[${ti}].execs[${ei}].supplier=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Tensile Test Method</label><input class="pmm-input" value="${esc(ex.method)}" oninput="cdTestTypes[${ti}].execs[${ei}].method=this.value"/></div>
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Rhino Test WWL</label><input class="pmm-input" value="${esc(ex.wwl)}" oninput="cdTestTypes[${ti}].execs[${ei}].wwl=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Rhino Break Strength Test Claim</label><input class="pmm-input" value="${esc(ex.claim)}" oninput="cdTestTypes[${ti}].execs[${ei}].claim=this.value"/></div>
+    </div>
+    <div class="pmm-field"><label class="pmm-label">Tensile Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label><input class="pmm-input" value="${esc(ex.report)}" oninput="cdTestTypes[${ti}].execs[${ei}].report=this.value"/></div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="cdTestTypes[${ti}].execs[${ei}].lab=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Cost</label><input class="pmm-input" placeholder="$0.00" value="${esc(ex.cost)}" oninput="cdTestTypes[${ti}].execs[${ei}].cost=this.value"/></div>
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Test Completion Date</label><input type="date" class="pmm-input" value="${esc(ex.date)}" oninput="cdTestTypes[${ti}].execs[${ei}].date=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Test Result</label>
+        <select class="pmm-input" onchange="cdTestTypes[${ti}].execs[${ei}].result=this.value">
+          <option value="">Select…</option>
+          <option value="PASS" ${ex.result==="PASS"?"selected":""}>PASS</option>
+          <option value="FAIL" ${ex.result==="FAIL"?"selected":""}>FAIL</option>
+        </select>
+      </div>
+    </div>
+  </div>`;
+}
+function cdTestTypeBlockHtml(tt, ti){
+  return `<div style="border:1.5px solid #e0e3ea;border-radius:8px;padding:14px;margin-bottom:14px;background:#fafbfc">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:11.5px;font-weight:700;color:#0073ea">Test Type ${ti+1}</div>
+      ${cdTestTypes.length>1?`<button onclick="cdRemoveTestType(${ti})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label><input class="pmm-input" value="${esc(tt.name)}" oninput="cdTestTypes[${ti}].name=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Standard</label><input class="pmm-input" value="${esc(tt.std)}" oninput="cdTestTypes[${ti}].std=this.value"/></div>
+    </div>
+    <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label><input class="pmm-input" value="${esc(tt.criteria)}" oninput="cdTestTypes[${ti}].criteria=this.value"/></div>
+    <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label><input class="pmm-input" value="${esc(tt.target)}" oninput="cdTestTypes[${ti}].target=this.value"/></div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Required Lab Equipment <span style="color:#aaa;font-weight:400">(optional)</span></label><input class="pmm-input" value="${esc(tt.equipment)}" oninput="cdTestTypes[${ti}].equipment=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Lab Accreditation <span style="color:#aaa;font-weight:400">(optional)</span></label><input class="pmm-input" value="${esc(tt.accreditation)}" oninput="cdTestTypes[${ti}].accreditation=this.value"/></div>
+    </div>
+    <div class="pmm-field"><label class="pmm-label">Recommended Labs <span style="color:#aaa;font-weight:400">(optional)</span></label><input class="pmm-input" value="${esc(tt.labs)}" oninput="cdTestTypes[${ti}].labs=this.value"/></div>
+    <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #dde0e7">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:#555">Test Execution</div>
+        <button onclick="cdAddExec(${ti})" style="font-size:10.5px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:4px 10px;cursor:pointer">+ Add Test Execution</button>
+      </div>
+      ${tt.execs.map((ex,ei)=>cdExecBlockHtml(tt,ti,ex,ei)).join("")}
+    </div>
+  </div>`;
+}
+function cdRenderNewEntry(){
+  const wrap=document.getElementById("board-wrap"); if(!wrap) return;
+  const d=cdDraft;
+  let html=`<div style="max-width:900px;margin:0 auto;padding:20px 0">`;
+  html+=`<div class="pmm-card">
+    <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">Product Details</div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">SKU (Name)</label><input class="pmm-input" value="${esc(d.sku)}" oninput="cdDraft.sku=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Parent SKU</label><input class="pmm-input" value="${esc(d.parentSku)}" oninput="cdDraft.parentSku=this.value"/></div>
+    </div>
+    <div class="pmm-field"><label class="pmm-label">Description</label><textarea class="pmm-input" rows="2" oninput="cdDraft.description=this.value">${esc(d.description)}</textarea></div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Priority SKU</label>
+        <select class="pmm-input" onchange="cdDraft.prioritySku=this.value">
+          <option value="">Select…</option>
+          ${CD_PRIORITY_SKU_OPTIONS.map(o=>`<option value="${o}" ${d.prioritySku===o?"selected":""}>${o}</option>`).join("")}
+        </select>
+      </div>
+      <div class="pmm-field"><label class="pmm-label">Website</label><input class="pmm-input" placeholder="https://…" value="${esc(d.website)}" oninput="cdDraft.website=this.value"/></div>
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Meet Claim</label>
+        <select class="pmm-input" onchange="cdDraft.meetsClaim=this.value">
+          <option value="">Select…</option>
+          <option value="Yes" ${d.meetsClaim==="Yes"?"selected":""}>Yes</option>
+          <option value="No" ${d.meetsClaim==="No"?"selected":""}>No</option>
+        </select>
+      </div>
+      <div class="pmm-field"><label class="pmm-label">Channel</label>
+        <select class="pmm-input" onchange="cdDraft.channel=this.value">
+          <option value="">Select…</option>
+          ${CD_CHANNEL_OPTIONS.map(o=>`<option value="${o}" ${d.channel===o?"selected":""}>${o}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Mechanical Test</label><input class="pmm-input" value="${esc(d.mechTesting)}" oninput="cdDraft.mechTesting=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Chemical Test</label><input class="pmm-input" value="${esc(d.chemTesting)}" oninput="cdDraft.chemTesting=this.value"/></div>
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Corrosion Test</label><input class="pmm-input" value="${esc(d.corrTesting)}" oninput="cdDraft.corrTesting=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Sale Country</label><input class="pmm-input" value="${esc(d.country)}" oninput="cdDraft.country=this.value"/></div>
+    </div>
+    <div class="pmm-field"><label class="pmm-label">Colors</label><input class="pmm-input" value="${esc(d.colors)}" oninput="cdDraft.colors=this.value"/></div>
+    <div style="font-size:10.5px;color:#999;margin-top:6px">ID will be generated automatically (12 digits) on submit.</div>
+  </div>`;
+  html+=`<div class="pmm-card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700;color:#333">Test Types</div>
+      <button onclick="cdAddTestType()" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:5px 12px;cursor:pointer">+ Add Test Type</button>
+    </div>
+    ${cdTestTypes.map((tt,ti)=>cdTestTypeBlockHtml(tt,ti)).join("")}
+  </div>`;
+  html+=`<button id="cd-submit-btn" onclick="cdConfirmSubmitEntry()" style="width:100%;padding:13px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:9px;cursor:pointer">✓ Submit Entry</button>`;
+  html+=`</div>`;
+  wrap.innerHTML=html;
+}
+
+function cdConfirmSubmitEntry(){
+  if(!cdDraft.sku.trim()){ alert("Please enter a SKU (Name)."); return; }
+  if(confirm("Submit this new test entry?")) cdSubmitEntry();
+}
+async function cdSubmitEntry(){
+  if(cdSubmitting) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  cdSubmitting=true;
+  const btn=document.getElementById("cd-submit-btn");
+  if(btn){ btn.disabled=true; btn.style.opacity=".6"; btn.textContent="Submitting…"; }
+  try{
+    const itemsMap=await cdGetHeaderMap(ITEMS_SHEET);
+    const subsMap=await cdGetHeaderMap(SUBITEMS_SHEET);
+    const newId=cdGenerateId();
+    const itemValues={
+      id:newId, name:cdDraft.sku, group:"Uncategorized",
+      parentSku:cdDraft.parentSku, description:cdDraft.description, prioritySku:cdDraft.prioritySku,
+      website:cdDraft.website, meetsClaim:cdDraft.meetsClaim,
+      mechTesting:cdDraft.mechTesting, chemTesting:cdDraft.chemTesting, corrTesting:cdDraft.corrTesting,
+      country:cdDraft.country, colors:cdDraft.colors, channel:cdDraft.channel,
+    };
+    const itemRow=cdBuildRow(itemsMap, itemValues);
+    const itemsUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const itemsRes=await fetch(itemsUrl,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[itemRow]})});
+    if(!itemsRes.ok){ const t=await itemsRes.text(); throw new Error(`Could not save item (${itemsRes.status}): ${t.slice(0,150)}`); }
+
+    const subRows=[];
+    cdTestTypes.forEach(tt=>{
+      if(!tt.name.trim() && !tt.std.trim()) return;
+      const yearBlocks={y2024:[],y2025:[],y2026:[]};
+      tt.execs.forEach(ex=>{
+        const hasData=ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||ex.result;
+        if(!hasData) return;
+        const yr=cdYearColFor(ex.date);
+        yearBlocks[yr].push(cdFormatExecBlock(ex, yearBlocks[yr].length+1));
+      });
+      const subValues={
+        parent_item_id:newId, s:cdGenerateSubId(), name:tt.name,
+        std:tt.std, criteria:tt.criteria, target:tt.target,
+        equipment:tt.equipment, accreditation:tt.accreditation, labs:tt.labs,
+        y2024:yearBlocks.y2024.join("\n\n"), y2025:yearBlocks.y2025.join("\n\n"), y2026:yearBlocks.y2026.join("\n\n"),
+      };
+      subRows.push(cdBuildRow(subsMap, subValues));
+    });
+    if(subRows.length){
+      const subsUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SUBITEMS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+      const subsRes=await fetch(subsUrl,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:subRows})});
+      if(!subsRes.ok){ const t=await subsRes.text(); throw new Error(`Could not save test types (${subsRes.status}): ${t.slice(0,150)}`); }
+    }
+
+    cdDraft={sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:""};
+    cdTestTypes=[cdNewTestType()];
+    await fetchSheetData();
+    switchTab("tracking");
+    alert("Entry saved. You can now set its status in Tracking.");
+  }catch(e){
+    alert("Could not submit: "+e.message);
+  }finally{
+    cdSubmitting=false;
+    const btn2=document.getElementById("cd-submit-btn");
+    if(btn2){ btn2.disabled=false; btn2.style.opacity="1"; btn2.textContent="✓ Submit Entry"; }
+  }
+}
+
+function cdRenderTracking(){
+  const wrap=document.getElementById("board-wrap"); if(!wrap) return;
+  const allItems=[];
+  GROUPS.forEach(g=>g.items.forEach(i=>allItems.push(i)));
+  let html=`<div style="max-width:1200px;margin:0 auto;padding:20px 0">`;
+  if(!allItems.length){
+    html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">📝</div><div style="font-size:12px">No items yet — create one from "New Entry".</div></div>`;
+  } else {
+    html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:11.5px">
+        <thead><tr style="background:#f2f3f6">
+          ${["SKU","Description","Priority SKU","Test Types","Status"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+        </tr></thead>
+        <tbody>
+          ${allItems.map(i=>`<tr style="border-bottom:0.5px solid #f0f1f3">
+            <td style="padding:7px 12px;font-weight:600">${esc(i.name)}</td>
+            <td style="padding:7px 12px;white-space:normal;min-width:220px">${esc(i.description)}</td>
+            <td style="padding:7px 12px">${esc(i.prioritySku)}</td>
+            <td style="padding:7px 12px">${i.subs.length}</td>
+            <td style="padding:7px 12px;min-width:220px">
+              <div style="display:flex;gap:6px;align-items:center">
+                <input id="cd-status-input-${esc(i.rowId)}" value="${esc(i.status||"")}" placeholder="Enter status…" style="flex:1;padding:5px 8px;border:1.5px solid #dde0e7;border-radius:6px;font-size:11px;outline:none"/>
+                <button id="cd-status-btn-${esc(i.rowId)}" onclick="cdSetItemStatus('${i.rowId}')" style="font-size:10.5px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">OK</button>
+              </div>
+            </td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+  }
+  html+=`</div>`;
+  wrap.innerHTML=html;
+}
+async function cdSetItemStatus(itemId){
+  const el=document.getElementById(`cd-status-input-${itemId}`);
+  const status=(el?el.value:"").trim();
+  if(!status){ alert("Please enter a status."); return; }
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  const btn=document.getElementById(`cd-status-btn-${itemId}`);
+  if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
+  try{
+    await cdEnsureColumn(ITEMS_SHEET, "Status");
+    const map=await cdGetHeaderMap(ITEMS_SHEET);
+    if(map.id===undefined) throw new Error(`Could not find an "id" column in "${ITEMS_SHEET}".`);
+    const itemsUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}?valueRenderOption=FORMATTED_VALUE`;
+    const res=await fetch(itemsUrl,{headers:{Authorization:"Bearer "+accessToken}});
+    if(!res.ok) throw new Error(`Could not read "${ITEMS_SHEET}" (${res.status})`);
+    const data=await res.json();
+    const rows=data.values||[];
+    let rowIndex=-1;
+    for(let r=1;r<rows.length;r++){ if((rows[r][map.id]||"").trim()===itemId){ rowIndex=r+1; break; } }
+    if(rowIndex===-1) throw new Error("Could not find this item's row in the sheet.");
+    const colLetter=cdColLetter(map.Status);
+    const writeUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}!${colLetter}${rowIndex}?valueInputOption=USER_ENTERED`;
+    const writeRes=await fetch(writeUrl,{method:"PUT",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[[status]]})});
+    if(!writeRes.ok){ const t=await writeRes.text(); throw new Error(`Could not save status (${writeRes.status}): ${t.slice(0,150)}`); }
+    GROUPS.forEach(g=>g.items.forEach(i=>{ if(i.rowId===itemId) i.status=status; }));
+    cdRenderTracking();
+  }catch(e){
+    alert("Could not save status: "+e.message);
+    if(btn){ btn.disabled=false; btn.textContent="OK"; }
+  }
 }
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
