@@ -167,6 +167,7 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
       <button class="tab-btn" id="tab-expense" onclick="switchTab('expense')">💰 Test Expense</button>
       <button class="tab-btn" id="tab-newentry" onclick="switchTab('newentry')">➕ New Entry</button>
       <button class="tab-btn" id="tab-tracking" onclick="switchTab('tracking')">📝 Tracking</button>
+      <button class="tab-btn" id="tab-completedtest" onclick="switchTab('completedtest')">🏁 Completed Test</button>
     </div>
   </div>
 
@@ -503,7 +504,7 @@ function gateContinueCached(){ hideLoginGate(); }
 // we simply prompt the person with a real button to click. A genuine click always
 // works, since it's a normal user-initiated popup, not a background request.
 let lastSyncPromptAt = 0;
-const SYNC_PROMPT_COOLDOWN_MS = 4*60*1000; // don't ask again within 4 minutes of the last prompt
+const SYNC_PROMPT_COOLDOWN_MS = 10*60*1000; // don't ask again within 10 minutes of the last prompt
 
 function promptSync(){
   const gate=document.getElementById("login-gate");
@@ -1679,14 +1680,15 @@ function renderMonitoring(){
         }).join("")}
       </div>`;
 
-      h+=`<div style="display:grid;grid-template-columns:${cg};border-bottom:0.5px solid #e8eaed;align-items:start">
+      h+=`<div oncontextmenu="cdShowMonContextMenu(event,'${donor.id}')" style="display:grid;grid-template-columns:${cg};border-bottom:0.5px solid #e8eaed;align-items:start;cursor:context-menu">
         ${productCell}${testCell}${scheduleCell}${decisionCell}
       </div>`;
     });
 
-    h+=`</div><div style="margin-top:8px;font-size:10px;color:#aaa;text-align:right">🟢 On Track >6mo · 🟡 Due Soon <6mo · 🔴 Retest Due = past due · Defer adds +12mo to due date</div>`;
+    h+=`</div><div style="margin-top:8px;font-size:10px;color:#aaa;text-align:right">🟢 On Track >6mo · 🟡 Due Soon <6mo · 🔴 Retest Due = past due · Defer adds +12mo to due date · Right-click a row for Tracking/Deferred options</div>`;
   }
   h+=`</div>`;
+  if(cdMonContextMenu) h+=cdMonContextMenuHtml();
   wrap.innerHTML=h;
 }
 
@@ -2658,6 +2660,7 @@ function switchTab(t){
   document.getElementById("tab-expense").className="tab-btn"+(t==="expense"?" active":"");
   const newEntryTab=document.getElementById("tab-newentry"); if(newEntryTab) newEntryTab.className="tab-btn"+(t==="newentry"?" active":"");
   const trackingTab=document.getElementById("tab-tracking"); if(trackingTab) trackingTab.className="tab-btn"+(t==="tracking"?" active":"");
+  const completedTestTab=document.getElementById("tab-completedtest"); if(completedTestTab) completedTestTab.className="tab-btn"+(t==="completedtest"?" active":"");
   const kpiEl=document.getElementById("kpi-section");
   if(kpiEl) kpiEl.style.display=t==="table"?"":"none";
   const tbEl=document.getElementById("toolbar-wrap");
@@ -2666,6 +2669,7 @@ function switchTab(t){
   else if(t==="monitoring") renderMonitoring();
   else if(t==="newentry") cdRenderNewEntry();
   else if(t==="tracking") cdRenderTracking();
+  else if(t==="completedtest") cdRenderCompletedTest();
   else renderExpense();
 }
 
@@ -2701,7 +2705,7 @@ function openDetail(sid,iid,gid){
 const CD_CHANNEL_OPTIONS = ["Amazon","TikTok","Shopify","B2B","Sam's Club","Autozone"];
 const CD_PRIORITY_SKU_OPTIONS = ["A","B","C","Retail"];
 let cdHeaderMaps = {};
-let cdDraft = {sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:""};
+let cdDraft = {sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]};
 function cdNewExec(){ return {supplier:"",method:"",wwl:"",claim:"",report:"",lab:"",cost:"",date:"",result:""}; }
 function cdNewTestType(){ return {name:"",std:"",criteria:"",target:"",equipment:"",accreditation:"",labs:"",execs:[cdNewExec()]}; }
 let cdTestTypes = [cdNewTestType()];
@@ -2709,8 +2713,10 @@ let cdSubmitting = false;
 
 async function cdGetHeaderMap(sheetName){
   if(cdHeaderMaps[sheetName]) return cdHeaderMaps[sheetName];
+  if(!accessToken) throw new Error('Please "Connect & Sync" with Google first.');
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}!1:1?valueRenderOption=FORMATTED_VALUE`;
   const res=await fetch(url,{headers:{Authorization:"Bearer "+accessToken}});
+  cdCheckAuthError(res);
   if(!res.ok) throw new Error(`Could not read headers for "${sheetName}" (${res.status})`);
   const data=await res.json();
   const headers=(data.values&&data.values[0])||[];
@@ -2718,6 +2724,17 @@ async function cdGetHeaderMap(sheetName){
   headers.forEach((h,i)=>{ const key=String(h||"").trim(); if(key) map[key]=i; });
   cdHeaderMaps[sheetName]=map;
   return map;
+}
+// Google access tokens expire (typically after ~1 hour); a 401 here means the
+// token has gone stale mid-session. Clear it (and any cached header maps, since
+// a fresh sign-in could point at different underlying data) so the person gets
+// one clear, actionable message instead of a raw "(401)" popup, matching the
+// same pattern used elsewhere in the app for expired sessions.
+function cdCheckAuthError(res){
+  if(res && res.status===401){
+    accessToken=null; cdHeaderMaps={};
+    throw new Error("Your Google session expired. Go to the Compliance Dashboard tab and click Re-sync, then try again.");
+  }
 }
 function cdColLetter(idx){ let s="",n=idx+1; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26); } return s; }
 async function cdEnsureColumn(sheetName, headerName){
@@ -2727,6 +2744,7 @@ async function cdEnsureColumn(sheetName, headerName){
   const colLetter=cdColLetter(nextIdx);
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}!${colLetter}1?valueInputOption=USER_ENTERED`;
   const res=await fetch(url,{method:"PUT",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[[headerName]]})});
+  cdCheckAuthError(res);
   if(!res.ok){ const t=await res.text(); throw new Error(`Could not add "${headerName}" column (${res.status}): ${t.slice(0,150)}`); }
   map[headerName]=nextIdx;
   cdHeaderMaps[sheetName]=map;
@@ -2825,11 +2843,16 @@ function cdTestTypeBlockHtml(tt, ti){
 function cdRenderNewEntry(){
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
   const d=cdDraft;
+  const channelArr=Array.isArray(d.channel)?d.channel:(d.channel?String(d.channel).split(",").map(s=>s.trim()).filter(Boolean):[]);
   let html=`<div style="max-width:900px;margin:0 auto;padding:20px 0">`;
   html+=`<div class="pmm-card">
     <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">Product Details</div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">SKU (Name)</label><input class="pmm-input" value="${esc(d.sku)}" oninput="cdDraft.sku=this.value"/></div>
+      <div class="pmm-field">
+        <label class="pmm-label">SKU (Name)</label>
+        <input id="cd-sku-input" class="pmm-input" value="${esc(d.sku)}" oninput="cdDraft.sku=this.value" onblur="cdLookupSku()" placeholder="Type a SKU, then click away to look it up"/>
+        <div id="cd-sku-lookup-status" style="font-size:10px;color:#0073ea;margin-top:3px"></div>
+      </div>
       <div class="pmm-field"><label class="pmm-label">Parent SKU</label><input class="pmm-input" value="${esc(d.parentSku)}" oninput="cdDraft.parentSku=this.value"/></div>
     </div>
     <div class="pmm-field"><label class="pmm-label">Description</label><textarea class="pmm-input" rows="2" oninput="cdDraft.description=this.value">${esc(d.description)}</textarea></div>
@@ -2850,11 +2873,13 @@ function cdRenderNewEntry(){
           <option value="No" ${d.meetsClaim==="No"?"selected":""}>No</option>
         </select>
       </div>
-      <div class="pmm-field"><label class="pmm-label">Channel</label>
-        <select class="pmm-input" onchange="cdDraft.channel=this.value">
-          <option value="">Select…</option>
-          ${CD_CHANNEL_OPTIONS.map(o=>`<option value="${o}" ${d.channel===o?"selected":""}>${o}</option>`).join("")}
-        </select>
+      <div class="pmm-field">
+        <label class="pmm-label">Channel <span style="color:#aaa;font-weight:400">(select all that apply)</span></label>
+        <div style="display:flex;flex-wrap:wrap;gap:5px 14px;padding:9px 12px;border:1.5px solid #c8cdd7;border-radius:7px">
+          ${CD_CHANNEL_OPTIONS.map(o=>`<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:#333;cursor:pointer;white-space:nowrap">
+            <input type="checkbox" ${channelArr.includes(o)?"checked":""} onchange="cdToggleChannel('${o}', this.checked)"/> ${esc(o)}
+          </label>`).join("")}
+        </div>
       </div>
     </div>
     <div class="pmm-grid2">
@@ -2879,6 +2904,89 @@ function cdRenderNewEntry(){
   html+=`</div>`;
   wrap.innerHTML=html;
 }
+function cdToggleChannel(opt, checked){
+  if(!Array.isArray(cdDraft.channel)) cdDraft.channel=cdDraft.channel?String(cdDraft.channel).split(",").map(s=>s.trim()).filter(Boolean):[];
+  if(checked){ if(!cdDraft.channel.includes(opt)) cdDraft.channel.push(opt); }
+  else { cdDraft.channel=cdDraft.channel.filter(c=>c!==opt); }
+}
+
+// ── SKU auto-populate: check existing Items first, then the Fulfil lookup sheet
+const CD_FULFIL_LOOKUP_SPREADSHEET_ID = "1MrcrTQp-Ttp7yhJ0LhsklnQCMQOhg9CUX-r7OLSjUpk";
+let cdFulfilLookupSheetTitle = null;
+let cdFulfilLookupIndex = null; // {SKU: {product, tier}}
+function cdFindExistingItemBySku(sku){
+  const target=sku.trim().toUpperCase();
+  if(!target) return null;
+  for(const g of GROUPS){ for(const i of g.items){ if((i.name||"").trim().toUpperCase()===target) return i; } }
+  return null;
+}
+async function cdLoadFulfilLookup(){
+  if(cdFulfilLookupIndex) return cdFulfilLookupIndex;
+  if(!accessToken) return {};
+  try{
+    if(!cdFulfilLookupSheetTitle){
+      const metaRes=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CD_FULFIL_LOOKUP_SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
+      if(!metaRes.ok) return {};
+      const meta=await metaRes.json();
+      const sheet0=(meta.sheets||[]).find(s=>s.properties.sheetId===0)||(meta.sheets||[])[0];
+      if(!sheet0) return {};
+      cdFulfilLookupSheetTitle=sheet0.properties.title;
+    }
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CD_FULFIL_LOOKUP_SPREADSHEET_ID}/values/${encodeURIComponent(cdFulfilLookupSheetTitle)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
+    if(!res.ok) return {};
+    const data=await res.json();
+    const rows=data.values||[];
+    if(!rows.length) return {};
+    const headers=rows[0].map(h=>String(h||"").trim().toLowerCase());
+    const skuIdx=headers.findIndex(h=>h==="sku");
+    const productIdx=headers.findIndex(h=>h.includes("product"));
+    const tierIdx=headers.findIndex(h=>h.includes("tier")||h.includes("priority"));
+    const idx={};
+    for(let r=1;r<rows.length;r++){
+      const row=rows[r];
+      const sku=(skuIdx!==-1?(row[skuIdx]||""):"").trim().toUpperCase();
+      if(!sku) continue;
+      idx[sku]={ product: productIdx!==-1?(row[productIdx]||""):"", tier: tierIdx!==-1?(row[tierIdx]||""):"" };
+    }
+    cdFulfilLookupIndex=idx;
+    return idx;
+  }catch(e){ return {}; }
+}
+async function cdLookupSku(){
+  const sku=(cdDraft.sku||"").trim();
+  const statusEl=document.getElementById("cd-sku-lookup-status");
+  if(!sku){ if(statusEl) statusEl.textContent=""; return; }
+  const existing=cdFindExistingItemBySku(sku);
+  if(existing){
+    cdDraft.description=existing.description||cdDraft.description;
+    cdDraft.prioritySku=existing.prioritySku||cdDraft.prioritySku;
+    cdDraft.website=existing.websiteUrl||cdDraft.website;
+    cdDraft.meetsClaim=existing.meetsClaim||cdDraft.meetsClaim;
+    cdDraft.mechTesting=existing.mechTesting||cdDraft.mechTesting;
+    cdDraft.chemTesting=existing.chemTesting||cdDraft.chemTesting;
+    cdDraft.corrTesting=existing.corrTesting||cdDraft.corrTesting;
+    cdDraft.country=existing.country||cdDraft.country;
+    cdDraft.colors=existing.colors||cdDraft.colors;
+    cdDraft.channel=existing.channel?String(existing.channel).split(",").map(s=>s.trim()).filter(Boolean):cdDraft.channel;
+    cdRenderNewEntry();
+    const s=document.getElementById("cd-sku-lookup-status"); if(s) s.textContent="Found in existing items — fields auto-filled.";
+    return;
+  }
+  if(statusEl) statusEl.textContent="Checking Fulfil lookup…";
+  const idx=await cdLoadFulfilLookup();
+  const match=idx[sku.toUpperCase()];
+  if(match){
+    if(match.product) cdDraft.description=match.product;
+    if(match.tier){
+      const t=match.tier.trim().toUpperCase();
+      cdDraft.prioritySku = t==="NPD" ? "A" : (CD_PRIORITY_SKU_OPTIONS.map(o=>o.toUpperCase()).includes(t)?match.tier.trim():match.tier);
+    }
+    cdRenderNewEntry();
+    const s=document.getElementById("cd-sku-lookup-status"); if(s) s.textContent="Found in Fulfil lookup — Product & Priority SKU auto-filled.";
+  } else if(statusEl){
+    statusEl.textContent = Object.keys(idx).length ? "No match found — fill in manually." : "Could not check the Fulfil lookup sheet — fill in manually.";
+  }
+}
 
 function cdConfirmSubmitEntry(){
   if(!cdDraft.sku.trim()){ alert("Please enter a SKU (Name)."); return; }
@@ -2899,11 +3007,13 @@ async function cdSubmitEntry(){
       parentSku:cdDraft.parentSku, description:cdDraft.description, prioritySku:cdDraft.prioritySku,
       website:cdDraft.website, meetsClaim:cdDraft.meetsClaim,
       mechTesting:cdDraft.mechTesting, chemTesting:cdDraft.chemTesting, corrTesting:cdDraft.corrTesting,
-      country:cdDraft.country, colors:cdDraft.colors, channel:cdDraft.channel,
+      country:cdDraft.country, colors:cdDraft.colors,
+      channel:Array.isArray(cdDraft.channel)?cdDraft.channel.join(", "):cdDraft.channel,
     };
     const itemRow=cdBuildRow(itemsMap, itemValues);
     const itemsUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const itemsRes=await fetch(itemsUrl,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[itemRow]})});
+    cdCheckAuthError(itemsRes);
     if(!itemsRes.ok){ const t=await itemsRes.text(); throw new Error(`Could not save item (${itemsRes.status}): ${t.slice(0,150)}`); }
 
     const subRows=[];
@@ -2927,12 +3037,17 @@ async function cdSubmitEntry(){
     if(subRows.length){
       const subsUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SUBITEMS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
       const subsRes=await fetch(subsUrl,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:subRows})});
+      cdCheckAuthError(subsRes);
       if(!subsRes.ok){ const t=await subsRes.text(); throw new Error(`Could not save test types (${subsRes.status}): ${t.slice(0,150)}`); }
     }
 
-    cdDraft={sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:""};
+    cdDraft={sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]};
     cdTestTypes=[cdNewTestType()];
     await fetchSheetData();
+    // Items are identified in GROUPS as "i"+id (see buildGroups) -- mark the
+    // newly created one as transferred so it shows up in the curated Tracking list.
+    cdTrackingTransferredIds.add("i"+newId);
+    localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
     switchTab("tracking");
     alert("Entry saved. You can now set its status in Tracking.");
   }catch(e){
@@ -2947,10 +3062,10 @@ async function cdSubmitEntry(){
 function cdRenderTracking(){
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
   const allItems=[];
-  GROUPS.forEach(g=>g.items.forEach(i=>allItems.push(i)));
+  GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdTrackingTransferredIds.has(i.id)) allItems.push(i); }));
   let html=`<div style="max-width:1200px;margin:0 auto;padding:20px 0">`;
   if(!allItems.length){
-    html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">📝</div><div style="font-size:12px">No items yet — create one from "New Entry".</div></div>`;
+    html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">📝</div><div style="font-size:12px">Nothing here yet — create an item from "New Entry", or right-click an item in Monitoring and choose "Transfer to Tracking".</div></div>`;
   } else {
     html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11.5px">
@@ -2990,6 +3105,7 @@ async function cdSetItemStatus(itemId){
     if(map.id===undefined) throw new Error(`Could not find an "id" column in "${ITEMS_SHEET}".`);
     const itemsUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}?valueRenderOption=FORMATTED_VALUE`;
     const res=await fetch(itemsUrl,{headers:{Authorization:"Bearer "+accessToken}});
+    cdCheckAuthError(res);
     if(!res.ok) throw new Error(`Could not read "${ITEMS_SHEET}" (${res.status})`);
     const data=await res.json();
     const rows=data.values||[];
@@ -2999,12 +3115,130 @@ async function cdSetItemStatus(itemId){
     const colLetter=cdColLetter(map.Status);
     const writeUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}!${colLetter}${rowIndex}?valueInputOption=USER_ENTERED`;
     const writeRes=await fetch(writeUrl,{method:"PUT",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[[status]]})});
+    cdCheckAuthError(writeRes);
     if(!writeRes.ok){ const t=await writeRes.text(); throw new Error(`Could not save status (${writeRes.status}): ${t.slice(0,150)}`); }
     GROUPS.forEach(g=>g.items.forEach(i=>{ if(i.rowId===itemId) i.status=status; }));
     cdRenderTracking();
   }catch(e){
     alert("Could not save status: "+e.message);
     if(btn){ btn.disabled=false; btn.textContent="OK"; }
+  }
+}
+
+// ── Monitoring: right-click "Transfer to Tracking" / "Deferred" ────────────
+// Tracking is a curated list (not "every item automatically") -- an item only
+// appears there once someone explicitly transfers it from Monitoring. That
+// curation is remembered locally (per browser) since it's a workflow marker,
+// not sheet data. "Deferred" instead records the item + a reason as a new row
+// on the "Completed test" tab (gid 893584726) in this same spreadsheet.
+const CD_TRACKING_TRANSFER_LS = "rhino_cd_tracking_transferred_v1";
+let cdTrackingTransferredIds = new Set(JSON.parse(localStorage.getItem(CD_TRACKING_TRANSFER_LS)||"[]"));
+const CD_COMPLETED_TEST_GID = "893584726";
+let cdSheetTitleByGid = {};
+let cdMonContextMenu = null; // {x,y,itemId}
+
+function cdFindItemById(itemId){
+  for(const g of GROUPS){ for(const i of g.items){ if(i.id===itemId) return i; } }
+  return null;
+}
+async function cdGetSheetTitleByGid(gid){
+  if(cdSheetTitleByGid[gid]) return cdSheetTitleByGid[gid];
+  if(!accessToken) throw new Error('Please "Connect & Sync" with Google first.');
+  const metaRes=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
+  cdCheckAuthError(metaRes);
+  if(!metaRes.ok) throw new Error(`Could not read spreadsheet tabs (${metaRes.status})`);
+  const meta=await metaRes.json();
+  const sheet=(meta.sheets||[]).find(s=>String(s.properties.sheetId)===String(gid));
+  if(!sheet) throw new Error(`Could not find a tab with gid ${gid}.`);
+  cdSheetTitleByGid[gid]=sheet.properties.title;
+  return sheet.properties.title;
+}
+
+function cdShowMonContextMenu(e, itemId){
+  e.preventDefault();
+  cdMonContextMenu={x:e.clientX, y:e.clientY, itemId};
+  renderMonitoring();
+}
+function cdCloseMonContextMenu(){ cdMonContextMenu=null; renderMonitoring(); }
+function cdMonContextMenuHtml(){
+  const m=cdMonContextMenu;
+  return `<div onclick="cdCloseMonContextMenu()" style="position:fixed;inset:0;z-index:90"></div>
+    <div style="position:fixed;top:${m.y}px;left:${m.x}px;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.18);z-index:91;min-width:190px;overflow:hidden">
+      <div onclick="cdTransferToTracking()" style="padding:10px 16px;font-size:12px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">📝 Transfer to Tracking</div>
+      <div onclick="cdPromptDefer()" style="padding:10px 16px;font-size:12px;cursor:pointer;color:#0055bb" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">🔵 Deferred</div>
+    </div>`;
+}
+function cdTransferToTracking(){
+  const itemId=cdMonContextMenu.itemId;
+  cdMonContextMenu=null;
+  cdTrackingTransferredIds.add(itemId);
+  localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+  switchTab("tracking");
+}
+function cdPromptDefer(){
+  const itemId=cdMonContextMenu.itemId;
+  cdMonContextMenu=null;
+  const item=cdFindItemById(itemId);
+  if(!item) return;
+  const reason=prompt(`Why is "${item.name}" being deferred?`);
+  if(reason===null) return;
+  if(!reason.trim()){ alert("Please provide a reason."); return; }
+  cdDeferItem(item, reason.trim());
+}
+async function cdDeferItem(item, reason){
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  try{
+    const sheetName=await cdGetSheetTitleByGid(CD_COMPLETED_TEST_GID);
+    await cdEnsureColumn(sheetName, "SKU");
+    await cdEnsureColumn(sheetName, "Description");
+    await cdEnsureColumn(sheetName, "Priority SKU");
+    await cdEnsureColumn(sheetName, "Deferred Reason");
+    await cdEnsureColumn(sheetName, "Deferred Date");
+    const map=await cdGetHeaderMap(sheetName);
+    const row=cdBuildRow(map, {
+      SKU:item.name, Description:item.description, "Priority SKU":item.prioritySku,
+      "Deferred Reason":reason, "Deferred Date":new Date().toISOString().slice(0,10),
+    });
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+    const res=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[row]})});
+    cdCheckAuthError(res);
+    if(!res.ok){ const t=await res.text(); throw new Error(`Could not save to Completed Test (${res.status}): ${t.slice(0,150)}`); }
+    cdTrackingTransferredIds.delete(item.id);
+    localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+    switchTab("completedtest");
+    alert(`"${item.name}" moved to Completed Test.`);
+  }catch(e){
+    alert("Could not defer: "+e.message);
+  }
+}
+async function cdRenderCompletedTest(){
+  const wrap=document.getElementById("board-wrap"); if(!wrap) return;
+  wrap.innerHTML=`<div style="text-align:center;padding:48px;color:#aaa">Loading…</div>`;
+  if(!accessToken){ wrap.innerHTML=`<div style="text-align:center;padding:48px;color:#aaa">Connect &amp; Sync with Google first.</div>`; return; }
+  try{
+    const sheetName=await cdGetSheetTitleByGid(CD_COMPLETED_TEST_GID);
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}?valueRenderOption=FORMATTED_VALUE`;
+    const res=await fetch(url,{headers:{Authorization:"Bearer "+accessToken}});
+    cdCheckAuthError(res);
+    if(!res.ok) throw new Error(`Could not read "${sheetName}" (${res.status})`);
+    const data=await res.json();
+    const rows=rowsToObjects(data.values||[]);
+    if(!rows.length){
+      wrap.innerHTML=`<div style="max-width:1000px;margin:0 auto;padding:20px 0"><div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">🏁</div><div style="font-size:12px">No deferred items yet.</div></div></div>`;
+      return;
+    }
+    const headers=Object.keys(rows[0]).filter(h=>h);
+    let html=`<div style="max-width:1100px;margin:0 auto;padding:20px 0">
+      <div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:11.5px">
+          <thead><tr style="background:#f2f3f6">${headers.map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9;white-space:nowrap">${esc(h)}</th>`).join("")}</tr></thead>
+          <tbody>${rows.map(r=>`<tr style="border-bottom:0.5px solid #f0f1f3">${headers.map(h=>`<td style="padding:7px 12px;white-space:normal">${esc(r[h]||"")}</td>`).join("")}</tr>`).join("")}</tbody>
+        </table>
+      </div>
+    </div>`;
+    wrap.innerHTML=html;
+  }catch(e){
+    wrap.innerHTML=`<div style="text-align:center;padding:48px;color:#e2445c">Could not load Completed Test: ${esc(e.message)}</div>`;
   }
 }
 
