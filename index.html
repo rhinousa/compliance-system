@@ -167,7 +167,8 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
       <button class="tab-btn" id="tab-expense" onclick="switchTab('expense')">💰 Test Expense</button>
       <button class="tab-btn" id="tab-newentry" onclick="switchTab('newentry')">➕ New Entry</button>
       <button class="tab-btn" id="tab-tracking" onclick="switchTab('tracking')">📝 Tracking</button>
-      <button class="tab-btn" id="tab-completedtest" onclick="switchTab('completedtest')">🏁 Completed Test</button>
+      <button class="tab-btn" id="tab-completedtest" onclick="switchTab('completedtest')">✅ Completed Test</button>
+      <button class="tab-btn" id="tab-completeditems" onclick="switchTab('completeditems')">🏁 Completed Items</button>
     </div>
   </div>
 
@@ -633,18 +634,27 @@ function buildGroups(itemRows, subRows){
   subRows.forEach((row,idx)=>{
     const pid=(row.parent_item_id||"").trim(); if(!pid) return;
     if(!subMap[pid]) subMap[pid]=[];
-    const raw24=(row.y2024||"").trim(), raw25=(row.y2025||"").trim(), raw26=(row.y2026||"").trim();
     const name=row.name||"";
     const isTensile=/tensile|MBS|break strength/i.test(name);
     // Tensile tests are required annually (12 months)
     const freq = isTensile ? {months:12, label:"Annual (12 months)"} : parseFreq(row.labs||"");
     const sid=(row.s||"").trim()||(pid+"_"+idx);
+    // Dynamically discover every "y20xx" column present on this row (not just
+    // 2024-2026), so new year columns (2027, 2028, ...) are picked up automatically
+    // as soon as they exist in the sheet -- see cdYearColFor/cdEnsureColumn.
+    const yearBlocks={};
+    Object.keys(row).forEach(k=>{
+      const m=k.match(/^y(20\d{2})$/);
+      if(!m) return;
+      yearBlocks[m[1]]=parsePBlocks((row[k]||"").trim());
+    });
     subMap[pid].push({
       id:"s"+sid, rowId:sid, name,
       std:row.std||"", criteria:row.criteria||"",
       target:row.target||"", equipment:row.equipment||"",
       accreditation:row.accreditation||"", labs:row.labs||"",
-      p24:parsePBlocks(raw24), p25:parsePBlocks(raw25), p26:parsePBlocks(raw26),
+      p24:yearBlocks["2024"]||[], p25:yearBlocks["2025"]||[], p26:yearBlocks["2026"]||[],
+      yearBlocks,
       isTensile, freq,
     });
   });
@@ -672,7 +682,7 @@ function buildGroups(itemRows, subRows){
       country:row.country||"",
       colors:row.colors||"",
       channel:row.channel||"",
-      status:row.Status||"",
+      status:row["Status Remarks"]||row.Status||"",
       subs:subMap[rid]||[],
     });
   });
@@ -1497,7 +1507,7 @@ function renderMonitoring(){
   });
 
   // Apply filters
-  let rows=[...allRows];
+  let rows=allRows.filter(r=>!cdMonitoringClosedIds.has(r.donor.id)); // hide items already transferred/deferred
   if(monFocusParent) rows=rows.filter(r=>r.parentKey===monFocusParent);
   if(monSearchQ){
     const q=monSearchQ.toLowerCase();
@@ -2548,6 +2558,78 @@ function renderModals(){
       </div>
     </div>`;
     if(e.photoUrl) setTimeout(()=>{ if(typeof pmmSetupImageZoom==="function") pmmSetupImageZoom("pmm-detail-photo"); }, 0);
+  } else if(modal.type==="cdItemEdit"){
+    const d=modal.draft;
+    const channelArr=Array.isArray(d.channel)?d.channel:[];
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:960px;max-height:90vh;display:flex;flex-direction:column">
+        <div style="background:#0073ea;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+          <div style="color:#fff;font-weight:800;font-size:15px">${esc(d.sku)||"Item"}</div>
+          <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+        </div>
+        <div style="padding:20px;overflow-y:auto">
+          <div class="pmm-card">
+            <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:10px">Status Remarks</div>
+            <div class="pmm-field"><textarea class="pmm-input" rows="2" oninput="modal.draft.statusRemarks=this.value" placeholder="What's the real status of this test item?">${esc(d.statusRemarks)}</textarea></div>
+          </div>
+          <div class="pmm-card">
+            <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">Product Details</div>
+            <div class="pmm-grid2">
+              <div class="pmm-field"><label class="pmm-label">SKU (Name)</label><input class="pmm-input" value="${esc(d.sku)}" oninput="modal.draft.sku=this.value"/></div>
+              <div class="pmm-field"><label class="pmm-label">Parent SKU</label><input class="pmm-input" value="${esc(d.parentSku)}" oninput="modal.draft.parentSku=this.value"/></div>
+            </div>
+            <div class="pmm-field"><label class="pmm-label">Description</label><textarea class="pmm-input" rows="2" oninput="modal.draft.description=this.value">${esc(d.description)}</textarea></div>
+            <div class="pmm-grid2">
+              <div class="pmm-field"><label class="pmm-label">Priority SKU</label>
+                <select class="pmm-input" onchange="modal.draft.prioritySku=this.value">
+                  <option value="">Select…</option>
+                  ${CD_PRIORITY_SKU_OPTIONS.map(o=>`<option value="${o}" ${d.prioritySku===o?"selected":""}>${o}</option>`).join("")}
+                </select>
+              </div>
+              <div class="pmm-field"><label class="pmm-label">Website</label><input class="pmm-input" value="${esc(d.website)}" oninput="modal.draft.website=this.value"/></div>
+            </div>
+            <div class="pmm-grid2">
+              <div class="pmm-field"><label class="pmm-label">Meet Claim</label>
+                <select class="pmm-input" onchange="modal.draft.meetsClaim=this.value">
+                  <option value="">Select…</option>
+                  <option value="Yes" ${d.meetsClaim==="Yes"?"selected":""}>Yes</option>
+                  <option value="No" ${d.meetsClaim==="No"?"selected":""}>No</option>
+                </select>
+              </div>
+              <div class="pmm-field">
+                <label class="pmm-label">Channel</label>
+                <div style="display:flex;flex-wrap:wrap;gap:5px 14px;padding:9px 12px;border:1.5px solid #c8cdd7;border-radius:7px">
+                  ${CD_CHANNEL_OPTIONS.map(o=>`<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:#333;cursor:pointer;white-space:nowrap">
+                    <input type="checkbox" ${channelArr.includes(o)?"checked":""} onchange="cdEditToggleChannel('${o}', this.checked)"/> ${esc(o)}
+                  </label>`).join("")}
+                </div>
+              </div>
+            </div>
+            <div class="pmm-grid2">
+              <div class="pmm-field"><label class="pmm-label">Mechanical Test</label><input class="pmm-input" value="${esc(d.mechTesting)}" oninput="modal.draft.mechTesting=this.value"/></div>
+              <div class="pmm-field"><label class="pmm-label">Chemical Test</label><input class="pmm-input" value="${esc(d.chemTesting)}" oninput="modal.draft.chemTesting=this.value"/></div>
+            </div>
+            <div class="pmm-grid2">
+              <div class="pmm-field"><label class="pmm-label">Corrosion Test</label><input class="pmm-input" value="${esc(d.corrTesting)}" oninput="modal.draft.corrTesting=this.value"/></div>
+              <div class="pmm-field"><label class="pmm-label">Sale Country</label><input class="pmm-input" value="${esc(d.country)}" oninput="modal.draft.country=this.value"/></div>
+            </div>
+            <div class="pmm-field"><label class="pmm-label">Colors</label><input class="pmm-input" value="${esc(d.colors)}" oninput="modal.draft.colors=this.value"/></div>
+          </div>
+          <div class="pmm-card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div style="font-size:13px;font-weight:700;color:#333">Test Types</div>
+              <button onclick="cdEditAddTestType()" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:5px 12px;cursor:pointer">+ Add Test Type</button>
+            </div>
+            ${d.testTypes.map((tt,ti)=>cdEditTestTypeBlockHtml(tt,ti)).join("")}
+          </div>
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid #eee;display:flex;gap:10px;justify-content:flex-end;flex-shrink:0">
+          <button onclick="closeModal()" style="padding:9px 16px;font-size:12px;font-weight:600;color:#555;background:#f0f2f5;border:none;border-radius:7px;cursor:pointer">Cancel</button>
+          <button id="cd-edit-save-btn" onclick="cdSaveItemEdit()" style="padding:9px 20px;font-size:12px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:7px;cursor:pointer">💾 Save Changes</button>
+          <button id="cd-edit-complete-btn" onclick="cdMarkCompleted()" style="padding:9px 20px;font-size:12px;font-weight:700;color:#fff;background:#0a7a46;border:none;border-radius:7px;cursor:pointer">✅ Mark Completed</button>
+        </div>
+      </div>
+    </div>`;
   } else if(modal.type==="website"){
     const {url,name}=modal;
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
@@ -2661,6 +2743,7 @@ function switchTab(t){
   const newEntryTab=document.getElementById("tab-newentry"); if(newEntryTab) newEntryTab.className="tab-btn"+(t==="newentry"?" active":"");
   const trackingTab=document.getElementById("tab-tracking"); if(trackingTab) trackingTab.className="tab-btn"+(t==="tracking"?" active":"");
   const completedTestTab=document.getElementById("tab-completedtest"); if(completedTestTab) completedTestTab.className="tab-btn"+(t==="completedtest"?" active":"");
+  const completedItemsTab=document.getElementById("tab-completeditems"); if(completedItemsTab) completedItemsTab.className="tab-btn"+(t==="completeditems"?" active":"");
   const kpiEl=document.getElementById("kpi-section");
   if(kpiEl) kpiEl.style.display=t==="table"?"":"none";
   const tbEl=document.getElementById("toolbar-wrap");
@@ -2670,6 +2753,7 @@ function switchTab(t){
   else if(t==="newentry") cdRenderNewEntry();
   else if(t==="tracking") cdRenderTracking();
   else if(t==="completedtest") cdRenderCompletedTest();
+  else if(t==="completeditems") cdRenderCompletedItems();
   else renderExpense();
 }
 
@@ -2706,7 +2790,7 @@ const CD_CHANNEL_OPTIONS = ["Amazon","TikTok","Shopify","B2B","Sam's Club","Auto
 const CD_PRIORITY_SKU_OPTIONS = ["A","B","C","Retail"];
 let cdHeaderMaps = {};
 let cdDraft = {sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]};
-function cdNewExec(){ return {supplier:"",method:"",wwl:"",claim:"",report:"",lab:"",cost:"",date:"",result:""}; }
+function cdNewExec(){ return {supplier:"",method:"",wwl:"",claim:"",report:"",lab:"",cost:"",date:"",resultValue:"",resultVerdict:""}; }
 function cdNewTestType(){ return {name:"",std:"",criteria:"",target:"",equipment:"",accreditation:"",labs:"",execs:[cdNewExec()]}; }
 let cdTestTypes = [cdNewTestType()];
 let cdSubmitting = false;
@@ -2758,23 +2842,46 @@ function cdBuildRow(map, values){
 }
 function cdGenerateId(){ return String(Date.now()).slice(-9)+String(Math.floor(Math.random()*1000)).padStart(3,"0"); }
 function cdGenerateSubId(){ return String(Date.now()).slice(-6)+String(Math.floor(Math.random()*100)).padStart(2,"0"); }
+// Fully automatic: the year is always taken from the Test Completion Date (or
+// today, if blank). Any year works, not just 2024-2026 -- cdEnsureColumn adds
+// the "y20XX" column on the fly the first time it's needed (e.g. 2027, 2028...).
 function cdYearColFor(dateStr){
-  if(!dateStr) return "y2026";
-  const y=new Date(dateStr).getFullYear();
-  if(y===2024) return "y2024";
-  if(y===2025) return "y2025";
-  return "y2026";
+  const y = dateStr ? new Date(dateStr).getFullYear() : NaN;
+  return "y"+(isNaN(y)?new Date().getFullYear():y);
+}
+function cdLbsToKg(lbsStr){
+  const n=parseFloat(String(lbsStr||"").replace(/[^0-9.\-]/g,""));
+  if(isNaN(n)) return null;
+  return (n*0.45359237).toFixed(1);
+}
+function cdFmtNum(n){
+  const num=parseFloat(String(n||"").replace(/[^0-9.\-]/g,""));
+  if(isNaN(num)) return String(n||"");
+  return num.toLocaleString("en-US",{maximumFractionDigits:2});
+}
+function cdFmtDateUS(dateStr){
+  const m=String(dateStr||"").match(/^(\d{4})-(\d{2})-(\d{2})$/); // <input type=date> gives yyyy-mm-dd
+  return m ? `${m[2]}/${m[3]}/${m[1]}` : (dateStr||"");
+}
+function cdFmtCost(cost){
+  const s=String(cost||"").trim();
+  if(!s) return "";
+  return s.startsWith("$") ? s : ("$"+s);
 }
 function cdFormatExecBlock(ex, n){
   const lines=[`Priority Supplier ${n}: ${ex.supplier||""}`];
-  if(ex.method) lines.push(`Test Method: ${ex.method}`);
-  if(ex.wwl) lines.push(`Rhino Test WWL: ${ex.wwl}`);
-  if(ex.claim) lines.push(`Rhino Break Strength Test Claim: ${ex.claim}`);
-  if(ex.result) lines.push(`Test Result: ${ex.result}`);
-  if(ex.date) lines.push(`Test Completion Date: ${ex.date}`);
+  lines.push(`Tensile Test Method: ${ex.method||"Not Specified/Lab Proprietary"}`);
+  const wwlKg=cdLbsToKg(ex.wwl);
+  lines.push(`Rhino Test WWL (lbs.): ${ex.wwl?cdFmtNum(ex.wwl):""}${wwlKg?` (${cdFmtNum(wwlKg)} kg)`:""}`);
+  const claimKg=cdLbsToKg(ex.claim);
+  lines.push(`Rhino Break Strength Test Claim (lbs): ${ex.claim?cdFmtNum(ex.claim):""}${claimKg?` (${cdFmtNum(claimKg)} kg)`:""}`);
+  const resKg=cdLbsToKg(ex.resultValue);
+  const verdict=ex.resultVerdict?` (${ex.resultVerdict})`:"";
+  lines.push(`Test Result (lbs): ${ex.resultValue?cdFmtNum(ex.resultValue):""}${verdict}${resKg?` (${cdFmtNum(resKg)} kg)`:""}`);
+  if(ex.report) lines.push(`Tensile Test Report: ${ex.report}`);
+  if(ex.date) lines.push(`Test Completion Date: ${cdFmtDateUS(ex.date)}`);
   if(ex.lab) lines.push(`Test Lab: ${ex.lab}`);
-  if(ex.cost) lines.push(`Cost: ${ex.cost}`);
-  if(ex.report) lines.push(`Test Report: ${ex.report}`);
+  if(ex.cost) lines.push(`Cost: ${cdFmtCost(ex.cost)}`);
   return lines.join("\n");
 }
 
@@ -2794,24 +2901,25 @@ function cdExecBlockHtml(tt, ti, ex, ei){
       <div class="pmm-field"><label class="pmm-label">Tensile Test Method</label><input class="pmm-input" value="${esc(ex.method)}" oninput="cdTestTypes[${ti}].execs[${ei}].method=this.value"/></div>
     </div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Rhino Test WWL</label><input class="pmm-input" value="${esc(ex.wwl)}" oninput="cdTestTypes[${ti}].execs[${ei}].wwl=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Rhino Break Strength Test Claim</label><input class="pmm-input" value="${esc(ex.claim)}" oninput="cdTestTypes[${ti}].execs[${ei}].claim=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Rhino Test WWL (lbs.) <span style="color:#aaa;font-weight:400">— kg auto-added</span></label><input class="pmm-input" value="${esc(ex.wwl)}" oninput="cdTestTypes[${ti}].execs[${ei}].wwl=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Rhino Break Strength Test Claim (lbs) <span style="color:#aaa;font-weight:400">— kg auto-added</span></label><input class="pmm-input" value="${esc(ex.claim)}" oninput="cdTestTypes[${ti}].execs[${ei}].claim=this.value"/></div>
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Test Result (lbs) <span style="color:#aaa;font-weight:400">— kg auto-added</span></label><input class="pmm-input" value="${esc(ex.resultValue)}" oninput="cdTestTypes[${ti}].execs[${ei}].resultValue=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Result Verdict</label>
+        <select class="pmm-input" onchange="cdTestTypes[${ti}].execs[${ei}].resultVerdict=this.value">
+          <option value="">Select…</option>
+          <option value="PASS" ${ex.resultVerdict==="PASS"?"selected":""}>PASS</option>
+          <option value="FAIL" ${ex.resultVerdict==="FAIL"?"selected":""}>FAIL</option>
+        </select>
+      </div>
     </div>
     <div class="pmm-field"><label class="pmm-label">Tensile Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label><input class="pmm-input" value="${esc(ex.report)}" oninput="cdTestTypes[${ti}].execs[${ei}].report=this.value"/></div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="cdTestTypes[${ti}].execs[${ei}].lab=this.value"/></div>
       <div class="pmm-field"><label class="pmm-label">Cost</label><input class="pmm-input" placeholder="$0.00" value="${esc(ex.cost)}" oninput="cdTestTypes[${ti}].execs[${ei}].cost=this.value"/></div>
     </div>
-    <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Test Completion Date</label><input type="date" class="pmm-input" value="${esc(ex.date)}" oninput="cdTestTypes[${ti}].execs[${ei}].date=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Test Result</label>
-        <select class="pmm-input" onchange="cdTestTypes[${ti}].execs[${ei}].result=this.value">
-          <option value="">Select…</option>
-          <option value="PASS" ${ex.result==="PASS"?"selected":""}>PASS</option>
-          <option value="FAIL" ${ex.result==="FAIL"?"selected":""}>FAIL</option>
-        </select>
-      </div>
-    </div>
+    <div class="pmm-field"><label class="pmm-label">Test Completion Date</label><input type="date" class="pmm-input" value="${esc(ex.date)}" oninput="cdTestTypes[${ti}].execs[${ei}].date=this.value"/></div>
   </div>`;
 }
 function cdTestTypeBlockHtml(tt, ti){
@@ -3017,23 +3125,27 @@ async function cdSubmitEntry(){
     if(!itemsRes.ok){ const t=await itemsRes.text(); throw new Error(`Could not save item (${itemsRes.status}): ${t.slice(0,150)}`); }
 
     const subRows=[];
-    cdTestTypes.forEach(tt=>{
-      if(!tt.name.trim() && !tt.std.trim()) return;
-      const yearBlocks={y2024:[],y2025:[],y2026:[]};
+    for(const tt of cdTestTypes){
+      if(!tt.name.trim() && !tt.std.trim()) continue;
+      const yearBlocks={};
       tt.execs.forEach(ex=>{
-        const hasData=ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||ex.result;
+        const hasData=ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||ex.resultValue||ex.resultVerdict;
         if(!hasData) return;
         const yr=cdYearColFor(ex.date);
+        if(!yearBlocks[yr]) yearBlocks[yr]=[];
         yearBlocks[yr].push(cdFormatExecBlock(ex, yearBlocks[yr].length+1));
       });
       const subValues={
         parent_item_id:newId, s:cdGenerateSubId(), name:tt.name,
         std:tt.std, criteria:tt.criteria, target:tt.target,
         equipment:tt.equipment, accreditation:tt.accreditation, labs:tt.labs,
-        y2024:yearBlocks.y2024.join("\n\n"), y2025:yearBlocks.y2025.join("\n\n"), y2026:yearBlocks.y2026.join("\n\n"),
       };
+      for(const yr of Object.keys(yearBlocks)){
+        await cdEnsureColumn(SUBITEMS_SHEET, yr); // creates the column (e.g. y2027) the first time it's needed
+        subValues[yr]=yearBlocks[yr].join("\n\n");
+      }
       subRows.push(cdBuildRow(subsMap, subValues));
-    });
+    }
     if(subRows.length){
       const subsUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SUBITEMS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
       const subsRes=await fetch(subsUrl,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:subRows})});
@@ -3070,20 +3182,285 @@ function cdRenderTracking(){
     html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11.5px">
         <thead><tr style="background:#f2f3f6">
-          ${["SKU","Description","Priority SKU","Test Types","Status"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+          ${["SKU","Description","Priority SKU","Test Types","Status Remarks"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
         </tr></thead>
         <tbody>
-          ${allItems.map(i=>`<tr style="border-bottom:0.5px solid #f0f1f3">
+          ${allItems.map(i=>`<tr onclick="cdOpenItemEdit('${i.id}')" style="border-bottom:0.5px solid #f0f1f3;cursor:pointer">
             <td style="padding:7px 12px;font-weight:600">${esc(i.name)}</td>
             <td style="padding:7px 12px;white-space:normal;min-width:220px">${esc(i.description)}</td>
             <td style="padding:7px 12px">${esc(i.prioritySku)}</td>
             <td style="padding:7px 12px">${i.subs.length}</td>
-            <td style="padding:7px 12px;min-width:220px">
-              <div style="display:flex;gap:6px;align-items:center">
-                <input id="cd-status-input-${esc(i.rowId)}" value="${esc(i.status||"")}" placeholder="Enter status…" style="flex:1;padding:5px 8px;border:1.5px solid #dde0e7;border-radius:6px;font-size:11px;outline:none"/>
-                <button id="cd-status-btn-${esc(i.rowId)}" onclick="cdSetItemStatus('${i.rowId}')" style="font-size:10.5px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">OK</button>
-              </div>
-            </td>
+            <td style="padding:7px 12px;white-space:normal;min-width:200px;color:${i.status?"#333":"#bbb"}">${esc(i.status)||"Click to add remarks…"}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:10px;color:#aaa;margin-top:8px">Click any row to view/edit full details, set Status Remarks, or mark it completed.</div>`;
+  }
+  html+=`</div>`;
+  wrap.innerHTML=html;
+}
+
+// ── Full item edit pop-up (Tracking row click) ──────────────────────────────
+function cdBlockToExec(b){
+  return {
+    supplier:b.supplier||"", method:b.method||"",
+    wwl:cdStripKgSuffix(b.wwl||""), claim:cdStripKgSuffix(b.claim||""),
+    report:b.report||"", lab:b.lab||"", cost:String(b.cost||"").replace(/^\$/,""),
+    date:cdParseDateToInputFormat(b.date||""),
+    resultValue:cdStripKgSuffix(String(b.result||"").replace(/\((PASS|FAIL)\)/i,"").trim()),
+    resultVerdict:/FAIL/i.test(b.result||"")?"FAIL":/PASS/i.test(b.result||"")?"PASS":"",
+  };
+}
+function cdStripKgSuffix(s){ return String(s||"").replace(/\s*\([\d,\.]+\s*kg\)/gi,"").replace(/,/g,"").trim(); }
+function cdParseDateToInputFormat(s){
+  const m=String(s||"").match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[1]}-${m[2]}` : s;
+}
+function cdSubToEditTestType(sub){
+  const yearBlocks=sub.yearBlocks||{};
+  const originalYears=Object.keys(yearBlocks).filter(y=>yearBlocks[y]&&yearBlocks[y].length).map(y=>"y"+y);
+  const allBlocks=Object.values(yearBlocks).flat();
+  return {
+    subId:sub.rowId, name:sub.name, std:sub.std, criteria:sub.criteria, target:sub.target,
+    equipment:sub.equipment, accreditation:sub.accreditation, labs:sub.labs,
+    originalYears,
+    execs: allBlocks.length ? allBlocks.map(cdBlockToExec) : [cdNewExec()],
+  };
+}
+function cdBuildEditDraftFromItem(item){
+  return {
+    rowId:item.rowId,
+    sku:item.name, parentSku:item.parentSku, description:item.description,
+    prioritySku:item.prioritySku, website:item.websiteUrl, meetsClaim:item.meetsClaim,
+    mechTesting:item.mechTesting, chemTesting:item.chemTesting, corrTesting:item.corrTesting,
+    country:item.country, colors:item.colors,
+    channel: item.channel ? String(item.channel).split(",").map(s=>s.trim()).filter(Boolean) : [],
+    statusRemarks: item.status||"",
+    testTypes: item.subs.length ? item.subs.map(cdSubToEditTestType) : [cdNewTestType()],
+  };
+}
+function cdOpenItemEdit(itemId){
+  const item=cdFindItemById(itemId);
+  if(!item) return;
+  openModal({type:"cdItemEdit", itemId, draft:cdBuildEditDraftFromItem(item)});
+}
+function cdEditToggleChannel(opt, checked){
+  const d=modal.draft;
+  if(!Array.isArray(d.channel)) d.channel=[];
+  if(checked){ if(!d.channel.includes(opt)) d.channel.push(opt); }
+  else d.channel=d.channel.filter(c=>c!==opt);
+}
+function cdEditAddTestType(){ modal.draft.testTypes.push(cdNewTestType()); renderModals(); }
+function cdEditRemoveTestType(i){ modal.draft.testTypes.splice(i,1); renderModals(); }
+function cdEditAddExec(ti){ modal.draft.testTypes[ti].execs.push(cdNewExec()); renderModals(); }
+function cdEditRemoveExec(ti,ei){ modal.draft.testTypes[ti].execs.splice(ei,1); renderModals(); }
+function cdEditExecBlockHtml(tt, ti, ex, ei){
+  return `<div style="border:1px solid #eceef2;border-radius:6px;padding:10px;margin-bottom:8px;background:#fff">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:10.5px;font-weight:700;color:#888">Execution ${ei+1}</div>
+      ${tt.execs.length>1?`<button onclick="cdEditRemoveExec(${ti},${ei})" style="font-size:10px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:2px 7px;cursor:pointer">Remove</button>`:""}
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Priority Supplier</label><input class="pmm-input" value="${esc(ex.supplier)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].supplier=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Tensile Test Method</label><input class="pmm-input" value="${esc(ex.method)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].method=this.value"/></div>
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Rhino Test WWL (lbs.)</label><input class="pmm-input" value="${esc(ex.wwl)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].wwl=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Rhino Break Strength Test Claim (lbs)</label><input class="pmm-input" value="${esc(ex.claim)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].claim=this.value"/></div>
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Test Result (lbs)</label><input class="pmm-input" value="${esc(ex.resultValue)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].resultValue=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Result Verdict</label>
+        <select class="pmm-input" onchange="modal.draft.testTypes[${ti}].execs[${ei}].resultVerdict=this.value">
+          <option value="">Select…</option>
+          <option value="PASS" ${ex.resultVerdict==="PASS"?"selected":""}>PASS</option>
+          <option value="FAIL" ${ex.resultVerdict==="FAIL"?"selected":""}>FAIL</option>
+        </select>
+      </div>
+    </div>
+    <div class="pmm-field"><label class="pmm-label">Tensile Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label><input class="pmm-input" value="${esc(ex.report)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].report=this.value"/></div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].lab=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Cost</label><input class="pmm-input" placeholder="$0.00" value="${esc(ex.cost)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].cost=this.value"/></div>
+    </div>
+    <div class="pmm-field"><label class="pmm-label">Test Completion Date</label><input type="date" class="pmm-input" value="${esc(ex.date)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].date=this.value"/></div>
+  </div>`;
+}
+function cdEditTestTypeBlockHtml(tt, ti){
+  return `<div style="border:1.5px solid #e0e3ea;border-radius:8px;padding:14px;margin-bottom:14px;background:#fafbfc">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:11.5px;font-weight:700;color:#0073ea">${esc(tt.name)||`Test Type ${ti+1}`}</div>
+      ${modal.draft.testTypes.length>1?`<button onclick="cdEditRemoveTestType(${ti})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
+    </div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label><input class="pmm-input" value="${esc(tt.name)}" oninput="modal.draft.testTypes[${ti}].name=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Standard</label><input class="pmm-input" value="${esc(tt.std)}" oninput="modal.draft.testTypes[${ti}].std=this.value"/></div>
+    </div>
+    <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label><input class="pmm-input" value="${esc(tt.criteria)}" oninput="modal.draft.testTypes[${ti}].criteria=this.value"/></div>
+    <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label><input class="pmm-input" value="${esc(tt.target)}" oninput="modal.draft.testTypes[${ti}].target=this.value"/></div>
+    <div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Required Lab Equipment <span style="color:#aaa;font-weight:400">(optional)</span></label><input class="pmm-input" value="${esc(tt.equipment)}" oninput="modal.draft.testTypes[${ti}].equipment=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Lab Accreditation <span style="color:#aaa;font-weight:400">(optional)</span></label><input class="pmm-input" value="${esc(tt.accreditation)}" oninput="modal.draft.testTypes[${ti}].accreditation=this.value"/></div>
+    </div>
+    <div class="pmm-field"><label class="pmm-label">Recommended Labs <span style="color:#aaa;font-weight:400">(optional)</span></label><input class="pmm-input" value="${esc(tt.labs)}" oninput="modal.draft.testTypes[${ti}].labs=this.value"/></div>
+    <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #dde0e7">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:#555">Test Execution</div>
+        <button onclick="cdEditAddExec(${ti})" style="font-size:10.5px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:4px 10px;cursor:pointer">+ Add Test Execution</button>
+      </div>
+      ${tt.execs.map((ex,ei)=>cdEditExecBlockHtml(tt,ti,ex,ei)).join("")}
+    </div>
+  </div>`;
+}
+async function cdSaveItemFields(){
+  const d=modal.draft;
+  const map=await cdEnsureColumn(ITEMS_SHEET, "Status Remarks");
+  if(map.id===undefined) throw new Error(`Could not find an "id" column in "${ITEMS_SHEET}".`);
+  const itemsUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}?valueRenderOption=FORMATTED_VALUE`;
+  const res=await fetch(itemsUrl,{headers:{Authorization:"Bearer "+accessToken}});
+  cdCheckAuthError(res);
+  if(!res.ok) throw new Error(`Could not read "${ITEMS_SHEET}" (${res.status})`);
+  const data=await res.json();
+  const rows=data.values||[];
+  let rowIndex=-1;
+  for(let r=1;r<rows.length;r++){ if((rows[r][map.id]||"").trim()===d.rowId){ rowIndex=r+1; break; } }
+  if(rowIndex===-1) throw new Error("Could not find this item's row in the sheet.");
+  const gid=await pmmGetSheetGidFor(ITEMS_SHEET);
+  const fields={
+    name:d.sku, parentSku:d.parentSku, description:d.description, prioritySku:d.prioritySku,
+    website:d.website, meetsClaim:d.meetsClaim, mechTesting:d.mechTesting, chemTesting:d.chemTesting,
+    corrTesting:d.corrTesting, country:d.country, colors:d.colors,
+    channel:Array.isArray(d.channel)?d.channel.join(", "):d.channel,
+    "Status Remarks":d.statusRemarks,
+  };
+  const requests=[];
+  Object.entries(fields).forEach(([key,val])=>{
+    if(map[key]===undefined) return;
+    requests.push({ updateCells:{ range:{sheetId:gid, startRowIndex:rowIndex-1, endRowIndex:rowIndex, startColumnIndex:map[key], endColumnIndex:map[key]+1}, rows:[{values:[{userEnteredValue:{stringValue:String(val||"")}}]}], fields:"userEnteredValue" } });
+  });
+  if(requests.length){
+    const bres=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({requests})});
+    cdCheckAuthError(bres);
+    if(!bres.ok){ const t=await bres.text(); throw new Error(`Could not save item details (${bres.status}): ${t.slice(0,150)}`); }
+  }
+  GROUPS.forEach(g=>g.items.forEach(i=>{
+    if(i.id===modal.itemId){
+      i.name=d.sku; i.parentSku=d.parentSku; i.description=d.description; i.prioritySku=d.prioritySku;
+      i.websiteUrl=d.website; i.meetsClaim=d.meetsClaim; i.mechTesting=d.mechTesting; i.chemTesting=d.chemTesting;
+      i.corrTesting=d.corrTesting; i.country=d.country; i.colors=d.colors;
+      i.channel=Array.isArray(d.channel)?d.channel.join(", "):d.channel;
+      i.status=d.statusRemarks;
+    }
+  }));
+}
+async function cdSaveItemEdit(){
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  const btn=document.getElementById("cd-edit-save-btn");
+  if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
+  try{
+    await cdSaveItemFields();
+    closeModal();
+    cdRenderTracking();
+  }catch(e){
+    alert("Could not save: "+e.message);
+  }finally{
+    const btn2=document.getElementById("cd-edit-save-btn");
+    if(btn2){ btn2.disabled=false; btn2.textContent="💾 Save Changes"; }
+  }
+}
+async function cdMarkCompleted(){
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  if(!confirm("Mark this item as completed? This saves the test results to the Subitems sheet.")) return;
+  const btn=document.getElementById("cd-edit-complete-btn");
+  if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
+  const itemId=modal.itemId;
+  const d=modal.draft;
+  try{
+    await cdSaveItemFields();
+    const rawRes=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SUBITEMS_SHEET)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
+    cdCheckAuthError(rawRes);
+    if(!rawRes.ok) throw new Error(`Could not read "${SUBITEMS_SHEET}" (${rawRes.status})`);
+    const rawData=await rawRes.json();
+    const rawRows=rawData.values||[];
+    for(const tt of d.testTypes){
+      const yearBlocks={};
+      tt.execs.forEach(ex=>{
+        const hasData=ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||ex.resultValue||ex.resultVerdict;
+        if(!hasData) return;
+        const yr=cdYearColFor(ex.date);
+        if(!yearBlocks[yr]) yearBlocks[yr]=[];
+        yearBlocks[yr].push(cdFormatExecBlock(ex, yearBlocks[yr].length+1));
+      });
+      (tt.originalYears||[]).forEach(yr=>{ if(!(yr in yearBlocks)) yearBlocks[yr]=[]; }); // clear years the user emptied out
+      for(const yr of Object.keys(yearBlocks)) await cdEnsureColumn(SUBITEMS_SHEET, yr);
+      const freshMap=await cdGetHeaderMap(SUBITEMS_SHEET);
+
+      let rowIndex=-1;
+      if(tt.subId && freshMap.s!==undefined){
+        for(let r=1;r<rawRows.length;r++){ if((rawRows[r][freshMap.s]||"").trim()===tt.subId){ rowIndex=r+1; break; } }
+      }
+      if(rowIndex!==-1){
+        const gid=await pmmGetSheetGidFor(SUBITEMS_SHEET);
+        const fieldsToWrite={ name:tt.name, std:tt.std, criteria:tt.criteria, target:tt.target, equipment:tt.equipment, accreditation:tt.accreditation, labs:tt.labs };
+        Object.entries(yearBlocks).forEach(([yr,blocks])=>{ fieldsToWrite[yr]=blocks.join("\n\n"); });
+        const requests=[];
+        Object.entries(fieldsToWrite).forEach(([key,val])=>{
+          if(freshMap[key]===undefined) return;
+          requests.push({ updateCells:{ range:{sheetId:gid, startRowIndex:rowIndex-1, endRowIndex:rowIndex, startColumnIndex:freshMap[key], endColumnIndex:freshMap[key]+1}, rows:[{values:[{userEnteredValue:{stringValue:String(val||"")}}]}], fields:"userEnteredValue" } });
+        });
+        if(requests.length){
+          const bres=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({requests})});
+          cdCheckAuthError(bres);
+          if(!bres.ok){ const t=await bres.text(); throw new Error(`Could not update "${tt.name}" (${bres.status}): ${t.slice(0,150)}`); }
+        }
+      } else {
+        const subValues={ parent_item_id:d.rowId, s:cdGenerateSubId(), name:tt.name, std:tt.std, criteria:tt.criteria, target:tt.target, equipment:tt.equipment, accreditation:tt.accreditation, labs:tt.labs };
+        Object.entries(yearBlocks).forEach(([yr,blocks])=>{ subValues[yr]=blocks.join("\n\n"); });
+        const row=cdBuildRow(freshMap, subValues);
+        const appendUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SUBITEMS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+        const ares=await fetch(appendUrl,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[row]})});
+        cdCheckAuthError(ares);
+        if(!ares.ok){ const t=await ares.text(); throw new Error(`Could not add "${tt.name}" (${ares.status}): ${t.slice(0,150)}`); }
+      }
+    }
+    cdCompletedTestIds.add(itemId);
+    localStorage.setItem(CD_COMPLETED_TEST_LS, JSON.stringify([...cdCompletedTestIds]));
+    cdTrackingTransferredIds.delete(itemId);
+    localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+    closeModal();
+    await fetchSheetData();
+    switchTab("completedtest");
+    alert("Marked completed — test results saved to Subitems.");
+  }catch(e){
+    alert("Could not mark completed: "+e.message);
+  }finally{
+    const btn2=document.getElementById("cd-edit-complete-btn");
+    if(btn2){ btn2.disabled=false; btn2.textContent="✅ Mark Completed"; }
+  }
+}
+const CD_COMPLETED_TEST_LS = "rhino_cd_completed_test_v1";
+let cdCompletedTestIds = new Set(JSON.parse(localStorage.getItem(CD_COMPLETED_TEST_LS)||"[]"));
+function cdRenderCompletedTest(){
+  const wrap=document.getElementById("board-wrap"); if(!wrap) return;
+  const allItems=[];
+  GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdCompletedTestIds.has(i.id)) allItems.push(i); }));
+  let html=`<div style="max-width:1100px;margin:0 auto;padding:20px 0">`;
+  if(!allItems.length){
+    html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-size:12px">No completed tests yet — mark one completed from Tracking.</div></div>`;
+  } else {
+    html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:11.5px">
+        <thead><tr style="background:#f2f3f6">
+          ${["SKU","Description","Priority SKU","Test Types","Status Remarks"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+        </tr></thead>
+        <tbody>
+          ${allItems.map(i=>`<tr onclick="cdOpenItemEdit('${i.id}')" style="border-bottom:0.5px solid #f0f1f3;cursor:pointer">
+            <td style="padding:7px 12px;font-weight:600">${esc(i.name)}</td>
+            <td style="padding:7px 12px;white-space:normal;min-width:220px">${esc(i.description)}</td>
+            <td style="padding:7px 12px">${esc(i.prioritySku)}</td>
+            <td style="padding:7px 12px">${i.subs.length}</td>
+            <td style="padding:7px 12px;white-space:normal;min-width:200px">${esc(i.status)||"—"}</td>
           </tr>`).join("")}
         </tbody>
       </table>
@@ -3092,48 +3469,20 @@ function cdRenderTracking(){
   html+=`</div>`;
   wrap.innerHTML=html;
 }
-async function cdSetItemStatus(itemId){
-  const el=document.getElementById(`cd-status-input-${itemId}`);
-  const status=(el?el.value:"").trim();
-  if(!status){ alert("Please enter a status."); return; }
-  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
-  const btn=document.getElementById(`cd-status-btn-${itemId}`);
-  if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
-  try{
-    await cdEnsureColumn(ITEMS_SHEET, "Status");
-    const map=await cdGetHeaderMap(ITEMS_SHEET);
-    if(map.id===undefined) throw new Error(`Could not find an "id" column in "${ITEMS_SHEET}".`);
-    const itemsUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}?valueRenderOption=FORMATTED_VALUE`;
-    const res=await fetch(itemsUrl,{headers:{Authorization:"Bearer "+accessToken}});
-    cdCheckAuthError(res);
-    if(!res.ok) throw new Error(`Could not read "${ITEMS_SHEET}" (${res.status})`);
-    const data=await res.json();
-    const rows=data.values||[];
-    let rowIndex=-1;
-    for(let r=1;r<rows.length;r++){ if((rows[r][map.id]||"").trim()===itemId){ rowIndex=r+1; break; } }
-    if(rowIndex===-1) throw new Error("Could not find this item's row in the sheet.");
-    const colLetter=cdColLetter(map.Status);
-    const writeUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}!${colLetter}${rowIndex}?valueInputOption=USER_ENTERED`;
-    const writeRes=await fetch(writeUrl,{method:"PUT",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[[status]]})});
-    cdCheckAuthError(writeRes);
-    if(!writeRes.ok){ const t=await writeRes.text(); throw new Error(`Could not save status (${writeRes.status}): ${t.slice(0,150)}`); }
-    GROUPS.forEach(g=>g.items.forEach(i=>{ if(i.rowId===itemId) i.status=status; }));
-    cdRenderTracking();
-  }catch(e){
-    alert("Could not save status: "+e.message);
-    if(btn){ btn.disabled=false; btn.textContent="OK"; }
-  }
-}
 
 // ── Monitoring: right-click "Transfer to Tracking" / "Deferred" ────────────
 // Tracking is a curated list (not "every item automatically") -- an item only
 // appears there once someone explicitly transfers it from Monitoring. That
 // curation is remembered locally (per browser) since it's a workflow marker,
 // not sheet data. "Deferred" instead records the item + a reason as a new row
-// on the "Completed test" tab (gid 893584726) in this same spreadsheet.
+// on the "Completed test" tab (gid 893584726) in this same spreadsheet, under
+// our "Completed Items" tab. Either action also removes the row from view in
+// Monitoring, since there's nothing further to do with it there.
 const CD_TRACKING_TRANSFER_LS = "rhino_cd_tracking_transferred_v1";
 let cdTrackingTransferredIds = new Set(JSON.parse(localStorage.getItem(CD_TRACKING_TRANSFER_LS)||"[]"));
-const CD_COMPLETED_TEST_GID = "893584726";
+const CD_MON_CLOSED_LS = "rhino_cd_monitoring_closed_v1";
+let cdMonitoringClosedIds = new Set(JSON.parse(localStorage.getItem(CD_MON_CLOSED_LS)||"[]"));
+const CD_COMPLETED_ITEMS_GID = "893584726";
 let cdSheetTitleByGid = {};
 let cdMonContextMenu = null; // {x,y,itemId}
 
@@ -3152,6 +3501,10 @@ async function cdGetSheetTitleByGid(gid){
   if(!sheet) throw new Error(`Could not find a tab with gid ${gid}.`);
   cdSheetTitleByGid[gid]=sheet.properties.title;
   return sheet.properties.title;
+}
+function cdCloseFromMonitoring(itemId){
+  cdMonitoringClosedIds.add(itemId);
+  localStorage.setItem(CD_MON_CLOSED_LS, JSON.stringify([...cdMonitoringClosedIds]));
 }
 
 function cdShowMonContextMenu(e, itemId){
@@ -3173,6 +3526,7 @@ function cdTransferToTracking(){
   cdMonContextMenu=null;
   cdTrackingTransferredIds.add(itemId);
   localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+  cdCloseFromMonitoring(itemId);
   switchTab("tracking");
 }
 function cdPromptDefer(){
@@ -3188,7 +3542,7 @@ function cdPromptDefer(){
 async function cdDeferItem(item, reason){
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
   try{
-    const sheetName=await cdGetSheetTitleByGid(CD_COMPLETED_TEST_GID);
+    const sheetName=await cdGetSheetTitleByGid(CD_COMPLETED_ITEMS_GID);
     await cdEnsureColumn(sheetName, "SKU");
     await cdEnsureColumn(sheetName, "Description");
     await cdEnsureColumn(sheetName, "Priority SKU");
@@ -3202,21 +3556,22 @@ async function cdDeferItem(item, reason){
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const res=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[row]})});
     cdCheckAuthError(res);
-    if(!res.ok){ const t=await res.text(); throw new Error(`Could not save to Completed Test (${res.status}): ${t.slice(0,150)}`); }
+    if(!res.ok){ const t=await res.text(); throw new Error(`Could not save to Completed Items (${res.status}): ${t.slice(0,150)}`); }
     cdTrackingTransferredIds.delete(item.id);
     localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
-    switchTab("completedtest");
-    alert(`"${item.name}" moved to Completed Test.`);
+    cdCloseFromMonitoring(item.id);
+    switchTab("completeditems");
+    alert(`"${item.name}" moved to Completed Items.`);
   }catch(e){
     alert("Could not defer: "+e.message);
   }
 }
-async function cdRenderCompletedTest(){
+async function cdRenderCompletedItems(){
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
   wrap.innerHTML=`<div style="text-align:center;padding:48px;color:#aaa">Loading…</div>`;
   if(!accessToken){ wrap.innerHTML=`<div style="text-align:center;padding:48px;color:#aaa">Connect &amp; Sync with Google first.</div>`; return; }
   try{
-    const sheetName=await cdGetSheetTitleByGid(CD_COMPLETED_TEST_GID);
+    const sheetName=await cdGetSheetTitleByGid(CD_COMPLETED_ITEMS_GID);
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}?valueRenderOption=FORMATTED_VALUE`;
     const res=await fetch(url,{headers:{Authorization:"Bearer "+accessToken}});
     cdCheckAuthError(res);
@@ -3238,7 +3593,7 @@ async function cdRenderCompletedTest(){
     </div>`;
     wrap.innerHTML=html;
   }catch(e){
-    wrap.innerHTML=`<div style="text-align:center;padding:48px;color:#e2445c">Could not load Completed Test: ${esc(e.message)}</div>`;
+    wrap.innerHTML=`<div style="text-align:center;padding:48px;color:#e2445c">Could not load Completed Items: ${esc(e.message)}</div>`;
   }
 }
 
