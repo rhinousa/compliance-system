@@ -2792,7 +2792,7 @@ const CD_CHANNEL_OPTIONS = ["Amazon","TikTok","Shopify","B2B","Sam's Club","Auto
 const CD_PRIORITY_SKU_OPTIONS = ["A","B","C","Retail"];
 let cdHeaderMaps = {};
 let cdDraft = {sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]};
-function cdNewExec(){ return {supplier:"",method:"",wwl:"",claim:"",report:"",lab:"",cost:"",date:"",resultValue:"",resultVerdict:""}; }
+function cdNewExec(){ return {supplier:"",method:"",wwl:"",claim:"",report:"",lab:"",cost:"",date:"",samples:[{value:"",verdict:""}]}; }
 function cdNewTestType(){ return {name:"",std:"",criteria:"",target:"",equipment:"",accreditation:"",labs:"",execs:[cdNewExec()]}; }
 let cdTestTypes = [cdNewTestType()];
 let cdSubmitting = false;
@@ -2903,9 +2903,8 @@ function cdFormatExecBlock(ex, n){
   lines.push(`Rhino Test WWL (lbs.): ${ex.wwl?cdFmtNum(ex.wwl):""}${wwlKg?` (${cdFmtNum(wwlKg)} kg)`:""}`);
   const claimKg=cdLbsToKg(ex.claim);
   lines.push(`Rhino Break Strength Test Claim (lbs): ${ex.claim?cdFmtNum(ex.claim):""}${claimKg?` (${cdFmtNum(claimKg)} kg)`:""}`);
-  const resKg=cdLbsToKg(ex.resultValue);
-  const verdict=ex.resultVerdict?` (${ex.resultVerdict})`:"";
-  lines.push(`Test Result (lbs): ${ex.resultValue?cdFmtNum(ex.resultValue):""}${verdict}${resKg?` (${cdFmtNum(resKg)} kg)`:""}`);
+  const sampleTexts=(ex.samples||[]).filter(s=>s.value||s.verdict).map((s,i)=>`Sample ${i+1} = ${s.value?cdFmtNum(s.value):""} lbs${s.verdict?` (${s.verdict})`:""}`);
+  lines.push(`Test Result (lbs): ${sampleTexts.join("  ")}`);
   if(ex.report) lines.push(`Tensile Test Report: ${ex.report}`);
   if(ex.date) lines.push(`Test Completion Date: ${cdFmtDateUS(ex.date)}`);
   if(ex.lab) lines.push(`Test Lab: ${ex.lab}`);
@@ -2917,6 +2916,30 @@ function cdAddTestType(){ cdTestTypes.push(cdNewTestType()); cdRenderNewEntry();
 function cdRemoveTestType(i){ cdTestTypes.splice(i,1); cdRenderNewEntry(); }
 function cdAddExec(ti){ cdTestTypes[ti].execs.push(cdNewExec()); cdRenderNewEntry(); }
 function cdRemoveExec(ti,ei){ cdTestTypes[ti].execs.splice(ei,1); cdRenderNewEntry(); }
+function cdAddSample(ti,ei){ cdTestTypes[ti].execs[ei].samples.push({value:"",verdict:""}); cdRenderNewEntry(); }
+function cdRemoveSample(ti,ei,si){
+  cdTestTypes[ti].execs[ei].samples.splice(si,1);
+  if(!cdTestTypes[ti].execs[ei].samples.length) cdTestTypes[ti].execs[ei].samples.push({value:"",verdict:""});
+  cdRenderNewEntry();
+}
+function cdSamplesHtml(samples, pathPrefix, addFn, removeFnCall){
+  return `<div style="margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <label class="pmm-label" style="margin-bottom:0">Test Result — Samples</label>
+      <button onclick="${addFn}" style="font-size:10px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:5px;padding:3px 9px;cursor:pointer">+ Add Sample</button>
+    </div>
+    ${samples.map((s,si)=>`<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+      <span style="font-size:10.5px;color:#888;min-width:62px">Sample ${si+1}</span>
+      <input class="pmm-input" placeholder="lbs" style="flex:1" value="${esc(s.value)}" oninput="${pathPrefix}.samples[${si}].value=this.value"/>
+      <select class="pmm-input" style="width:110px" onchange="${pathPrefix}.samples[${si}].verdict=this.value">
+        <option value="">Verdict…</option>
+        <option value="PASS" ${s.verdict==="PASS"?"selected":""}>PASS</option>
+        <option value="FAIL" ${s.verdict==="FAIL"?"selected":""}>FAIL</option>
+      </select>
+      ${samples.length>1?`<button onclick="${removeFnCall(si)}" style="font-size:10px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:4px 8px;cursor:pointer">✕</button>`:""}
+    </div>`).join("")}
+  </div>`;
+}
 
 function cdExecBlockHtml(tt, ti, ex, ei){
   return `<div style="border:1px solid #eceef2;border-radius:6px;padding:10px;margin-bottom:8px;background:#fff">
@@ -2932,16 +2955,7 @@ function cdExecBlockHtml(tt, ti, ex, ei){
       <div class="pmm-field"><label class="pmm-label">Rhino Test WWL (lbs.) <span style="color:#aaa;font-weight:400">— kg auto-added</span></label><input class="pmm-input" value="${esc(ex.wwl)}" oninput="cdTestTypes[${ti}].execs[${ei}].wwl=this.value"/></div>
       <div class="pmm-field"><label class="pmm-label">Rhino Break Strength Test Claim (lbs) <span style="color:#aaa;font-weight:400">— kg auto-added</span></label><input class="pmm-input" value="${esc(ex.claim)}" oninput="cdTestTypes[${ti}].execs[${ei}].claim=this.value"/></div>
     </div>
-    <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Test Result (lbs) <span style="color:#aaa;font-weight:400">— kg auto-added</span></label><input class="pmm-input" value="${esc(ex.resultValue)}" oninput="cdTestTypes[${ti}].execs[${ei}].resultValue=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Result Verdict</label>
-        <select class="pmm-input" onchange="cdTestTypes[${ti}].execs[${ei}].resultVerdict=this.value">
-          <option value="">Select…</option>
-          <option value="PASS" ${ex.resultVerdict==="PASS"?"selected":""}>PASS</option>
-          <option value="FAIL" ${ex.resultVerdict==="FAIL"?"selected":""}>FAIL</option>
-        </select>
-      </div>
-    </div>
+    ${cdSamplesHtml(ex.samples, `cdTestTypes[${ti}].execs[${ei}]`, `cdAddSample(${ti},${ei})`, si=>`cdRemoveSample(${ti},${ei},${si})`)}
     <div class="pmm-field"><label class="pmm-label">Tensile Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label><input class="pmm-input" value="${esc(ex.report)}" oninput="cdTestTypes[${ti}].execs[${ei}].report=this.value"/></div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="cdTestTypes[${ti}].execs[${ei}].lab=this.value"/></div>
@@ -3037,9 +3051,20 @@ function cdRenderNewEntry(){
     </div>
     ${cdTestTypes.map((tt,ti)=>cdTestTypeBlockHtml(tt,ti)).join("")}
   </div>`;
-  html+=`<button id="cd-submit-btn" onclick="cdConfirmSubmitEntry()" style="width:100%;padding:13px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:9px;cursor:pointer">✓ Submit Entry</button>`;
+  html+=`<div style="display:flex;gap:10px">
+    <button onclick="cdResetNewEntryForm()" style="padding:13px 22px;font-size:13px;font-weight:700;color:#555;background:#f0f2f5;border:none;border-radius:9px;cursor:pointer">↺ Reset</button>
+    <button id="cd-submit-btn" onclick="cdConfirmSubmitEntry()" style="flex:1;padding:13px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:9px;cursor:pointer">✓ Submit Entry</button>
+  </div>`;
   html+=`</div>`;
   wrap.innerHTML=html;
+}
+function cdResetNewEntryForm(){
+  const hasData = cdDraft.sku || cdDraft.description || cdTestTypes.some(tt=>tt.name.trim()||tt.std.trim());
+  if(hasData && !confirm("Reset the form? This clears everything you've entered so far.")) return;
+  cdDraft={sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]};
+  cdTestTypes=[cdNewTestType()];
+  cdClearLookupRecommendations();
+  cdRenderNewEntry();
 }
 function cdToggleChannel(opt, checked){
   if(!Array.isArray(cdDraft.channel)) cdDraft.channel=cdDraft.channel?String(cdDraft.channel).split(",").map(s=>s.trim()).filter(Boolean):[];
@@ -3098,11 +3123,13 @@ function cdApplyRecommendedTestTypes(){
   const chosen=cdLookupRecommendedSourceItem.subs.filter(s=>cdLookupRecommendedSelected.has(s.rowId));
   if(!chosen.length){ alert("Select at least one test type to add."); return; }
   const blankOnly = cdTestTypes.length===1 && !cdTestTypes[0].name.trim() && !cdTestTypes[0].std.trim();
-  const converted = chosen.map(s=>{
-    const tt=cdSubToEditTestType(s);
-    delete tt.subId; delete tt.originalYears; // this is a fresh copy for a different item, not an update to the source's row
-    return tt;
-  });
+  // Only the structural Test Type fields carry over -- never the source item's
+  // execution/results, since this is a brand-new item that hasn't been tested yet.
+  const converted = chosen.map(s=>({
+    name:s.name, std:s.std, criteria:s.criteria, target:s.target,
+    equipment:s.equipment, accreditation:s.accreditation, labs:s.labs,
+    execs:[cdNewExec()],
+  }));
   cdTestTypes = blankOnly ? converted : cdTestTypes.concat(converted);
   cdClearLookupRecommendations();
   cdRenderNewEntry();
@@ -3112,7 +3139,7 @@ function cdRecommendedTestTypesHtml(){
   const subs=cdLookupRecommendedSourceItem.subs;
   return `<div class="pmm-card" style="border-color:#0073ea;background:#f5faff">
     <div style="font-size:13px;font-weight:700;color:#0055bb;margin-bottom:4px">📋 Recommended Test Types</div>
-    <div style="font-size:11px;color:#555;margin-bottom:12px">"${esc(cdLookupRecommendedSourceItem.name)}" already has ${subs.length} test type${subs.length!==1?"s":""} on file. Pick any that apply — they'll be added below with their prior results.</div>
+    <div style="font-size:11px;color:#555;margin-bottom:12px">"${esc(cdLookupRecommendedSourceItem.name)}" already has ${subs.length} test type${subs.length!==1?"s":""} on file. Pick any that apply — just the test type details carry over (name, standard, criteria, etc.), not the prior execution/results, since this is a new item.</div>
     ${subs.map(s=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid #dde0e7;border-radius:6px;margin-bottom:6px;cursor:pointer;background:#fff">
       <input type="checkbox" onchange="cdToggleRecommendedSub('${s.rowId}', this.checked)"/>
       <span style="font-size:12px;color:#333">${esc(s.name)}</span>
@@ -3270,7 +3297,7 @@ async function cdSubmitEntry(){
       if(!tt.name.trim() && !tt.std.trim()) continue;
       const yearBlocks={};
       tt.execs.forEach(ex=>{
-        const hasData=ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||ex.resultValue||ex.resultVerdict;
+        const hasData=ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||(ex.samples||[]).some(s=>s.value||s.verdict);
         if(!hasData) return;
         const yr=cdYearColFor(ex.date);
         if(!yearBlocks[yr]) yearBlocks[yr]=[];
@@ -3348,14 +3375,32 @@ function cdRenderTracking(){
 }
 
 // ── Full item edit pop-up (Tracking row click) ──────────────────────────────
+// Parses "Sample 1 = 1,864 lbs (PASS)  Sample 2 = 1,903 lbs (PASS)" (the
+// current multi-sample format) back into a samples array for editing. Falls
+// back to reading a single legacy "5,693 (PASS) (2,582.4 kg)"-style value
+// (from before multi-sample support existed) as one sample.
+function cdParseSamplesFromResult(resultText){
+  const text=String(resultText||"");
+  const re=/Sample\s*\d+\s*=\s*([\d,\.]+)\s*lbs\s*(?:\(([A-Za-z]+)\))?/gi;
+  const samples=[];
+  let m;
+  while((m=re.exec(text))){
+    samples.push({value:m[1].replace(/,/g,""), verdict:(m[2]||"").toUpperCase()});
+  }
+  if(!samples.length){
+    const single=text.replace(/\s*\([\d,\.]+\s*kg\)/gi,"").trim();
+    const sm=single.match(/^([\d,\.]+)\s*\(?(PASS|FAIL)?\)?/i);
+    if(sm && sm[1]) samples.push({value:sm[1].replace(/,/g,""), verdict:(sm[2]||"").toUpperCase()});
+  }
+  return samples.length ? samples : [{value:"",verdict:""}];
+}
 function cdBlockToExec(b){
   return {
     supplier:b.supplier||"", method:b.method||"",
     wwl:cdStripKgSuffix(b.wwl||""), claim:cdStripKgSuffix(b.claim||""),
     report:b.report||"", lab:b.lab||"", cost:String(b.cost||"").replace(/^\$/,""),
     date:cdParseDateToInputFormat(b.date||""),
-    resultValue:cdStripKgSuffix(String(b.result||"").replace(/\((PASS|FAIL)\)/i,"").trim()),
-    resultVerdict:/FAIL/i.test(b.result||"")?"FAIL":/PASS/i.test(b.result||"")?"PASS":"",
+    samples:cdParseSamplesFromResult(b.result||""),
   };
 }
 function cdStripKgSuffix(s){ return String(s||"").replace(/\s*\([\d,\.]+\s*kg\)/gi,"").replace(/,/g,"").trim(); }
@@ -3401,6 +3446,12 @@ function cdEditAddTestType(){ modal.draft.testTypes.push(cdNewTestType()); rende
 function cdEditRemoveTestType(i){ modal.draft.testTypes.splice(i,1); renderModals(); }
 function cdEditAddExec(ti){ modal.draft.testTypes[ti].execs.push(cdNewExec()); renderModals(); }
 function cdEditRemoveExec(ti,ei){ modal.draft.testTypes[ti].execs.splice(ei,1); renderModals(); }
+function cdEditAddSample(ti,ei){ modal.draft.testTypes[ti].execs[ei].samples.push({value:"",verdict:""}); renderModals(); }
+function cdEditRemoveSample(ti,ei,si){
+  modal.draft.testTypes[ti].execs[ei].samples.splice(si,1);
+  if(!modal.draft.testTypes[ti].execs[ei].samples.length) modal.draft.testTypes[ti].execs[ei].samples.push({value:"",verdict:""});
+  renderModals();
+}
 function cdEditExecBlockHtml(tt, ti, ex, ei){
   return `<div style="border:1px solid #eceef2;border-radius:6px;padding:10px;margin-bottom:8px;background:#fff">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -3415,16 +3466,7 @@ function cdEditExecBlockHtml(tt, ti, ex, ei){
       <div class="pmm-field"><label class="pmm-label">Rhino Test WWL (lbs.)</label><input class="pmm-input" value="${esc(ex.wwl)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].wwl=this.value"/></div>
       <div class="pmm-field"><label class="pmm-label">Rhino Break Strength Test Claim (lbs)</label><input class="pmm-input" value="${esc(ex.claim)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].claim=this.value"/></div>
     </div>
-    <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Test Result (lbs)</label><input class="pmm-input" value="${esc(ex.resultValue)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].resultValue=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Result Verdict</label>
-        <select class="pmm-input" onchange="modal.draft.testTypes[${ti}].execs[${ei}].resultVerdict=this.value">
-          <option value="">Select…</option>
-          <option value="PASS" ${ex.resultVerdict==="PASS"?"selected":""}>PASS</option>
-          <option value="FAIL" ${ex.resultVerdict==="FAIL"?"selected":""}>FAIL</option>
-        </select>
-      </div>
-    </div>
+    ${cdSamplesHtml(ex.samples, `modal.draft.testTypes[${ti}].execs[${ei}]`, `cdEditAddSample(${ti},${ei})`, si=>`cdEditRemoveSample(${ti},${ei},${si})`)}
     <div class="pmm-field"><label class="pmm-label">Tensile Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label><input class="pmm-input" value="${esc(ex.report)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].report=this.value"/></div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].lab=this.value"/></div>
@@ -3513,11 +3555,11 @@ async function cdSaveTestTypes(){
   const rawData=await rawRes.json();
   const rawRows=rawData.values||[];
   for(const tt of d.testTypes){
-    const hasAnyExecData=tt.execs.some(ex=>ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||ex.resultValue||ex.resultVerdict);
+    const hasAnyExecData=tt.execs.some(ex=>ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||(ex.samples||[]).some(s=>s.value||s.verdict));
     if(!tt.name.trim() && !tt.std.trim() && !hasAnyExecData) continue; // skip a fully-blank "+ Add Test Type" row
     const yearBlocks={};
     tt.execs.forEach(ex=>{
-      const hasData=ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||ex.resultValue||ex.resultVerdict;
+      const hasData=ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||(ex.samples||[]).some(s=>s.value||s.verdict);
       if(!hasData) return;
       const yr=cdYearColFor(ex.date);
       if(!yearBlocks[yr]) yearBlocks[yr]=[];
