@@ -1565,10 +1565,7 @@ function renderMonitoring(){
 
   h+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:10px 14px;margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-      <div style="position:relative;flex:1;min-width:180px;max-width:300px">
-        <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#aaa" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input value="${esc(monSearchQ)}" oninput="monSearchQ=this.value;renderMonitoring()" placeholder="Search SKU or test name…" style="width:100%;padding:6px 10px 6px 28px;border:1.5px solid #dde0e7;border-radius:7px;font-size:12px;background:#fafbfc;color:#333;outline:none;height:32px" autocomplete="off"/>
-      </div>
+      ${cdSearchBarHtml("mon-search-box", monSearchQ, "monSearchQ=this.value;renderMonitoring()", "Search SKU or test name…")}
       ${clearFocusBtn}
       ${(monSearchQ||monFilterStatus!=="ALL"||monFilterDecision!=="ALL"||monFocusParent||monFilterPriority!=="ALL")?`<button onclick="clearMonFilters()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear all</button>`:""}
       <button onclick="exportMonitoringExcel()" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer">📊 Export Excel</button>
@@ -1775,6 +1772,10 @@ function renderExpense(){
   if(expFilterPriority!=="ALL") rows=rows.filter(r=>r.priority.toLowerCase()===expFilterPriority.toLowerCase());
   if(expFilterCategory!=="ALL") rows=rows.filter(r=>r.category===expFilterCategory);
   if(expFilterYear!=="ALL") rows=rows.filter(r=>r.year===expFilterYear);
+  if(expSearchQ){
+    const q=expSearchQ.toLowerCase();
+    rows=rows.filter(r=>(r.item.name||"").toLowerCase().includes(q)||(r.item.description||"").toLowerCase().includes(q)||(r.subName||"").toLowerCase().includes(q)||(r.supplier||"").toLowerCase().includes(q));
+  }
 
   // ── Aggregations ──
   const totalCost=rows.reduce((s,r)=>s+r.cost,0);
@@ -1875,6 +1876,10 @@ function renderExpense(){
 
   // ── Filter bar ──
   h+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:10px 14px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+      ${cdSearchBarHtml("exp-search-box", expSearchQ, "expSearchQ=this.value;renderExpense()", "Search products & tests…")}
+      <button onclick="exportExpenseCSV()" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer">📊 Export Excel</button>
+    </div>
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
       <span style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">Priority SKU:</span>
       ${pBtnE("ALL","All")}
@@ -1883,8 +1888,7 @@ function renderExpense(){
       ${pBtnE("B","B SKU")}
       ${pBtnE("C","C SKU")}
       ${pBtnE("NPD","NPD")}
-      ${hasFilter?`<button onclick="expFilterPriority='ALL';expFilterCategory='ALL';expFilterYear='ALL';renderExpense()" style="margin-left:8px;font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear filters</button>`:""}
-      <button onclick="exportExpenseCSV()" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer">📊 Export Excel</button>
+      ${hasFilter||expSearchQ?`<button onclick="expFilterPriority='ALL';expFilterCategory='ALL';expFilterYear='ALL';expSearchQ='';renderExpense()" style="margin-left:8px;font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear filters</button>`:""}
     </div>
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
       <span style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">Category:</span>
@@ -2317,6 +2321,32 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="cdTransferChecklist"){
+    const item=cdFindItemById(modal.itemId);
+    if(!item){ root.innerHTML=""; return; }
+    const icon=s=>s==="overdue"?"🔴":s==="due_soon"?"🟡":s==="ok"?"🟢":s==="deferred"?"🔵":"⚪";
+    const label=s=>s==="overdue"?"Retest Due":s==="due_soon"?"Due Soon":s==="ok"?"On Track":s==="deferred"?"Deferred":"No test data yet";
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:460px;background:#141824;border-radius:14px">
+        <div style="padding:22px 24px 18px">
+          <div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:6px">${modal.allDeferred?"🔵 Moving to Deferred Items":"📝 Tests to Perform"}</div>
+          <div style="color:#8a8f9c;font-size:11.5px;margin-bottom:14px">${modal.allDeferred
+            ? `All annual tests on "${esc(item.name)}" are currently deferred in Monitoring — this item will move to Deferred Items instead of Tracking.`
+            : `"${esc(item.name)}" needs testing on the following, based on Monitoring:`}</div>
+          <div style="max-height:280px;overflow-y:auto;margin-bottom:16px">
+            ${modal.checklist.length?modal.checklist.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #232838;border-radius:7px;margin-bottom:6px;background:#191d29">
+              <span style="font-size:13px">${icon(c.status)}</span>
+              <span style="font-size:12px;color:#e4e6ea;flex:1">${esc(c.name)}</span>
+              <span style="font-size:9.5px;font-weight:700;color:#8a8f9c">${label(c.status)}</span>
+            </div>`).join(""):`<div style="color:#8a8f9c;font-size:11.5px">No annual test data on file yet for this item.</div>`}
+          </div>
+          <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button onclick="closeModal()" style="padding:9px 16px;font-size:12px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Cancel</button>
+            <button onclick="cdConfirmTransfer('${modal.itemId}', ${modal.allDeferred})" style="padding:9px 20px;font-size:12px;font-weight:700;color:${modal.allDeferred?"#fff":"#0b1f0f"};background:${modal.allDeferred?"#0055bb":"#00e05e"};border:none;border-radius:8px;cursor:pointer">${modal.allDeferred?"Move to Deferred Items":"Confirm Transfer"}</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
   } else if(modal.type==="pcaTicketDetail"){
     const t=pcaTickets.find(x=>x.id===modal.ticketId);
     if(!t){ root.innerHTML=""; return; }
@@ -2733,6 +2763,85 @@ function mainSelectSearchSuggestion(text){
   if(activeTab==="table") renderTable(); else renderMonitoring();
   renderToolbar();
 }
+
+// ── Generic search-with-suggestions, reused by Monitoring, Test Expense,
+// Tracking, Completed Test, and Deferred Items (same matching/highlighting
+// as the Main Table's search box above, just wired to each tab's own query).
+const CD_SEARCH_QUERY_GETTERS = {};  // input id -> () => current query string
+const CD_SEARCH_SELECT_HANDLERS = {}; // input id -> (text) => set query + re-render
+function cdRegisterSearch(id, getter, handler){
+  CD_SEARCH_QUERY_GETTERS[id]=getter;
+  CD_SEARCH_SELECT_HANDLERS[id]=handler;
+}
+function cdGenericSuggestions(query){
+  const q=(query||"").trim().toLowerCase();
+  if(!q) return [];
+  const seen=new Set(); const results=[];
+  GROUPS.forEach(g=>g.items.forEach(item=>{
+    if(item.name && item.name.toLowerCase().includes(q) && !seen.has("sku:"+item.name)){
+      seen.add("sku:"+item.name); results.push({type:"SKU", label:item.name});
+    }
+    (item.subs||[]).forEach(s=>{
+      if(s.name && s.name.toLowerCase().includes(q) && !seen.has("test:"+s.name)){
+        seen.add("test:"+s.name); results.push({type:"TEST", label:s.name});
+      }
+    });
+  }));
+  return results.slice(0,12);
+}
+function cdSuggestDropdownHtml(id, query){
+  const results=cdGenericSuggestions(query);
+  if(!results.length) return "";
+  const q=query.trim().toLowerCase();
+  return results.map(r=>{
+    const idx=r.label.toLowerCase().indexOf(q);
+    let highlighted=esc(r.label);
+    if(idx!==-1){
+      highlighted=`${esc(r.label.slice(0,idx))}<span style="color:#0a7a46;font-weight:700">${esc(r.label.slice(idx,idx+q.length))}</span>${esc(r.label.slice(idx+q.length))}`;
+    }
+    const badgeColor = r.type==="SKU" ? "#0073ea" : "#7c3aed";
+    return `<div onclick="cdSelectSuggestion('${id}','${esc(r.label).replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">
+      <span style="font-size:9px;font-weight:800;color:#fff;background:${badgeColor};border-radius:4px;padding:2px 6px;letter-spacing:.3px;flex-shrink:0">${r.type}</span>
+      <span style="font-size:12.5px;color:#333">${highlighted}</span>
+    </div>`;
+  }).join("");
+}
+function cdShowSuggestFor(id){
+  const el=document.getElementById(id+"-suggest"); if(!el) return;
+  const getQ=CD_SEARCH_QUERY_GETTERS[id]; if(!getQ) return;
+  const q=getQ();
+  if(!q){ el.style.display="none"; el.innerHTML=""; return; }
+  el.innerHTML=cdSuggestDropdownHtml(id, q);
+  el.style.display=el.innerHTML?"block":"none";
+}
+function cdHideSuggestFor(id){ setTimeout(()=>{ const el=document.getElementById(id+"-suggest"); if(el) el.style.display="none"; }, 150); }
+function cdSelectSuggestion(id, text){
+  const el=document.getElementById(id+"-suggest"); if(el){ el.style.display="none"; el.innerHTML=""; }
+  const handler=CD_SEARCH_SELECT_HANDLERS[id];
+  if(handler) handler(text);
+}
+function cdSearchBarHtml(id, query, oninputExpr, placeholder){
+  return `<div style="position:relative;flex:1;min-width:200px;max-width:320px">
+    <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#aaa" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input id="${id}" value="${esc(query)}" oninput="${oninputExpr};cdShowSuggestFor('${id}')" onfocus="cdShowSuggestFor('${id}')" onblur="cdHideSuggestFor('${id}')" placeholder="${esc(placeholder||"Search products & tests…")}" autocomplete="off" style="width:100%;padding:6px 10px 6px 28px;border:1.5px solid #dde0e7;border-radius:7px;font-size:12px;background:#fafbfc;color:#333;outline:none;height:32px"/>
+    <div id="${id}-suggest" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:60;max-height:280px;overflow-y:auto"></div>
+  </div>`;
+}
+function cdFilterItemsBySearch(items, q){
+  if(!q) return items;
+  const s=q.toLowerCase();
+  return items.filter(i=>
+    (i.name||"").toLowerCase().includes(s) ||
+    (i.description||"").toLowerCase().includes(s) ||
+    (i.subs||[]).some(sub=>(sub.name||"").toLowerCase().includes(s))
+  );
+}
+let cdTrackingSearchQ="", cdCompletedSearchQ="", cdDeferredSearchQ="", expSearchQ="";
+cdRegisterSearch("mon-search-box", ()=>monSearchQ, (text)=>{ monSearchQ=text; renderMonitoring(); });
+cdRegisterSearch("exp-search-box", ()=>expSearchQ, (text)=>{ expSearchQ=text; renderExpense(); });
+cdRegisterSearch("trk-search-box", ()=>cdTrackingSearchQ, (text)=>{ cdTrackingSearchQ=text; cdRenderTracking(); });
+cdRegisterSearch("cmp-search-box", ()=>cdCompletedSearchQ, (text)=>{ cdCompletedSearchQ=text; cdRenderCompletedTest(); });
+cdRegisterSearch("def-search-box", ()=>cdDeferredSearchQ, (text)=>{ cdDeferredSearchQ=text; cdRenderDeferredItems(); });
 
 function tDD(n){
   openDD=openDD===n?null:n;
@@ -3409,8 +3518,13 @@ function cdRenderTracking(){
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
   const allItems=[];
   GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdTrackingTransferredIds.has(i.id)) allItems.push(i); }));
+  const filtered=cdFilterItemsBySearch(allItems, cdTrackingSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
-    ${cdItemsTableHtml(allItems, "tracking", `Nothing here yet — create an item from "New Entry", or right-click an item in Monitoring and choose "Transfer to Tracking".`)}
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      ${cdSearchBarHtml("trk-search-box", cdTrackingSearchQ, "cdTrackingSearchQ=this.value;cdRenderTracking()", "Search products & tests…")}
+      ${cdTrackingSearchQ?`<button onclick="cdTrackingSearchQ='';cdRenderTracking()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear</button>`:""}
+    </div>
+    ${cdItemsTableHtml(filtered, "tracking", allItems.length?"No items match your search.":`Nothing here yet — create an item from "New Entry", or right-click an item in Monitoring and choose "Transfer to Tracking".`)}
     ${allItems.length?`<div style="font-size:10px;color:#aaa;margin-top:8px">Click any row to view/edit full details, set Status Remarks, or mark it completed. ↩️ reverts it back to Monitoring, ✕ removes it from this list.</div>`:""}
   </div>`;
 }
@@ -3671,7 +3785,7 @@ async function cdSaveItemEdit(){
 }
 async function cdMarkCompleted(){
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
-  if(!confirm("Mark this item as completed? This saves the test results to the Subitems sheet.")) return;
+  if(!confirm("Are you sure you want to move completed test?")) return;
   const btn=document.getElementById("cd-edit-complete-btn");
   if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
   const itemId=modal.itemId;
@@ -3739,8 +3853,13 @@ function cdRenderCompletedTest(){
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
   const allItems=[];
   GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdCompletedTestIds.has(i.id)) allItems.push(i); }));
+  const filtered=cdFilterItemsBySearch(allItems, cdCompletedSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
-    ${cdItemsTableHtml(allItems, "completedtest", "No completed tests yet — mark one completed from Tracking.")}
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      ${cdSearchBarHtml("cmp-search-box", cdCompletedSearchQ, "cdCompletedSearchQ=this.value;cdRenderCompletedTest()", "Search products & tests…")}
+      ${cdCompletedSearchQ?`<button onclick="cdCompletedSearchQ='';cdRenderCompletedTest()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear</button>`:""}
+    </div>
+    ${cdItemsTableHtml(filtered, "completedtest", allItems.length?"No items match your search.":"No completed tests yet — mark one completed from Tracking.")}
   </div>`;
 }
 
@@ -3806,7 +3925,7 @@ function cdItemsTableHtml(items, tabKey, emptyMessage){
   return `<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
     <table style="width:100%;border-collapse:collapse;font-size:11.5px">
       <thead><tr style="background:#f2f3f6">
-        ${["Product / SKUs","Description","Priority SKU","Schedule per Test",""].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+        ${["Product / SKUs","Description","Priority SKU","Schedule per Test","Status Remarks",""].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
       </tr></thead>
       <tbody>
         ${items.map(i=>{
@@ -3819,6 +3938,7 @@ function cdItemsTableHtml(items, tabKey, emptyMessage){
             <td style="padding:9px 12px;white-space:normal;min-width:200px;vertical-align:top">${esc(i.description)}</td>
             <td style="padding:9px 12px;vertical-align:top">${i.prioritySku?`<span style="background:#e8f2ff;color:#0055bb;border:1px solid #c0d8f8;border-radius:6px;font-size:11px;font-weight:700;padding:2px 6px">${esc(i.prioritySku)}</span>`:`<span style="color:#ddd;font-size:10px">—</span>`}</td>
             <td style="padding:9px 12px;min-width:220px;vertical-align:top">${cdItemScheduleHtml(i)}</td>
+            <td style="padding:9px 12px;white-space:normal;min-width:180px;vertical-align:top;color:${i.status?"#333":"#bbb"}">${esc(i.status)||"Click to add remarks…"}</td>
             <td style="padding:9px 12px;vertical-align:top;white-space:nowrap">
               <button onclick="event.stopPropagation();cdPromptRevertItem('${i.id}')" title="Revert to Monitoring" style="background:none;border:none;cursor:pointer;font-size:13px;margin-right:6px;padding:0">↩️</button>
               <button onclick="event.stopPropagation();cdPromptDeleteItem('${i.id}','${tabKey}')" title="Remove from this list" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;cursor:pointer;font-size:11px;padding:2px 7px">✕</button>
@@ -3916,13 +4036,27 @@ function cdMonContextMenuHtml(){
 function cdTransferToTracking(){
   const itemId=cdMonContextMenu.itemId;
   cdMonContextMenu=null;
+  cdShowTransferChecklist(itemId);
+}
+// Shows what testing is actually needed (per Monitoring's status for each
+// test type) before committing the transfer -- and if every annual test is
+// currently marked Deferred, routes straight to Deferred Items instead.
+function cdShowTransferChecklist(itemId){
   const item=cdFindItemById(itemId);
   if(!item) return;
-  // If every annual test this item is tracked on is currently marked "Defer"
-  // in Monitoring (a fully-deferred item, not just a mixed one), send it
-  // straight to Deferred Items instead of Tracking.
   const trackedSubs=item.subs.filter(s=>(s.p24&&s.p24.length)||(s.p25&&s.p25.length)||(s.p26&&s.p26.length));
+  const relevantSubs=trackedSubs.length?trackedSubs:item.subs;
   const allDeferred = trackedSubs.length>0 && trackedSubs.every(s=>getRetestDecision(item.id,s.id)==="next");
+  const checklist=relevantSubs.map(s=>({
+    name:s.name,
+    status: trackedSubs.length ? (getRetestDecision(item.id,s.id)==="next" ? "deferred" : monStatus(s,item.id)) : "none",
+  }));
+  openModal({type:"cdTransferChecklist", itemId, allDeferred, checklist});
+}
+function cdConfirmTransfer(itemId, allDeferred){
+  closeModal();
+  const item=cdFindItemById(itemId);
+  if(!item) return;
   if(allDeferred){
     cdDeferItem(item, "All annual tests are currently marked Deferred in Monitoring.");
     return;
@@ -3981,8 +4115,13 @@ function cdRenderDeferredItems(){
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
   const allItems=[];
   GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdDeferredItemIds.has(i.id)) allItems.push(i); }));
+  const filtered=cdFilterItemsBySearch(allItems, cdDeferredSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
-    ${cdItemsTableHtml(allItems, "deferreditems", `No deferred items yet — right-click an item in Monitoring and choose "Deferred".`)}
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      ${cdSearchBarHtml("def-search-box", cdDeferredSearchQ, "cdDeferredSearchQ=this.value;cdRenderDeferredItems()", "Search products & tests…")}
+      ${cdDeferredSearchQ?`<button onclick="cdDeferredSearchQ='';cdRenderDeferredItems()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear</button>`:""}
+    </div>
+    ${cdItemsTableHtml(filtered, "deferreditems", allItems.length?"No items match your search.":`No deferred items yet — right-click an item in Monitoring and choose "Deferred".`)}
   </div>`;
 }
 
