@@ -2317,6 +2317,7 @@ function renderModals(){
             ${t.rejectReason?`<div><strong>Rejection Reason:</strong> ${esc(t.rejectReason)}</div>`:""}
             ${t.reviewerNote?`<div><strong>Reviewer Note:</strong> ${esc(t.reviewerNote)}</div>`:""}
             ${t.managementReason?`<div><strong>Management Decision:</strong> ${esc(t.managementReason)}</div>`:""}
+            ${t.managementEvidenceUrl?`<div><strong>Decision Evidence:</strong> <a href="${esc(t.managementEvidenceUrl)}" target="_blank">View file</a></div>`:""}
           </div>
           <div style="margin-top:16px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -2796,9 +2797,35 @@ function cdNewTestType(){ return {name:"",std:"",criteria:"",target:"",equipment
 let cdTestTypes = [cdNewTestType()];
 let cdSubmitting = false;
 
+// Auto-creates a tab if it doesn't exist yet -- but only for the sheets this
+// app manages end-to-end (Tracking, Deferred items, Completed Test). Items
+// and Subitems must already exist; silently creating a blank duplicate there
+// would hide a real configuration problem instead of surfacing it.
+const CD_AUTO_CREATE_SHEETS = new Set(); // populated below once CD_TRACKING_SHEET etc. are declared
+let cdSheetExistsCache = {};
+async function cdEnsureSheetExists(sheetName){
+  if(!CD_AUTO_CREATE_SHEETS.has(sheetName)) return;
+  if(cdSheetExistsCache[sheetName]) return;
+  if(!accessToken) throw new Error('Please "Connect & Sync" with Google first.');
+  const metaRes=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
+  cdCheckAuthError(metaRes);
+  if(!metaRes.ok) throw new Error(`Could not read the spreadsheet's tab list (${metaRes.status}).`);
+  const meta=await metaRes.json();
+  const exists=(meta.sheets||[]).some(s=>s.properties.title===sheetName);
+  if(!exists){
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{
+      method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
+      body:JSON.stringify({requests:[{addSheet:{properties:{title:sheetName}}}]}),
+    });
+    cdCheckAuthError(res);
+    if(!res.ok){ const t=await res.text(); throw new Error(`Could not create the "${sheetName}" tab (${res.status}): ${t.slice(0,150)}`); }
+  }
+  cdSheetExistsCache[sheetName]=true;
+}
 async function cdGetHeaderMap(sheetName){
   if(cdHeaderMaps[sheetName]) return cdHeaderMaps[sheetName];
   if(!accessToken) throw new Error('Please "Connect & Sync" with Google first.');
+  await cdEnsureSheetExists(sheetName);
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}!1:1?valueRenderOption=FORMATTED_VALUE`;
   const res=await fetch(url,{headers:{Authorization:"Bearer "+accessToken}});
   cdCheckAuthError(res);
@@ -3002,6 +3029,7 @@ function cdRenderNewEntry(){
     <div class="pmm-field"><label class="pmm-label">Colors</label><input class="pmm-input" value="${esc(d.colors)}" oninput="cdDraft.colors=this.value"/></div>
     <div style="font-size:10.5px;color:#999;margin-top:6px">ID will be generated automatically (12 digits) on submit.</div>
   </div>`;
+  html+=cdRecommendedTestTypesHtml();
   html+=`<div class="pmm-card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <div style="font-size:13px;font-weight:700;color:#333">Test Types</div>
@@ -3019,15 +3047,79 @@ function cdToggleChannel(opt, checked){
   else { cdDraft.channel=cdDraft.channel.filter(c=>c!==opt); }
 }
 
-// ── SKU auto-populate: check existing Items first, then the Fulfil lookup sheet
+// ── SKU auto-populate: check existing Items first, then a same-parent sibling
+// (via the Fulfil lookup's Parent SKU/Reference column), then plain Fulfil
+// Product/Tier. A sibling match also offers its existing test types to pick
+// from, since same-parent variants (e.g. different colors) share materials
+// and test data.
 const CD_FULFIL_LOOKUP_SPREADSHEET_ID = "1MrcrTQp-Ttp7yhJ0LhsklnQCMQOhg9CUX-r7OLSjUpk";
 let cdFulfilLookupSheetTitle = null;
-let cdFulfilLookupIndex = null; // {SKU: {product, tier}}
+let cdFulfilLookupIndex = null; // {SKU: {product, tier, parent}}
+let cdLookupRecommendedSourceItem = null; // item whose test types are being offered
+let cdLookupRecommendedSelected = new Set(); // chosen sub rowIds
 function cdFindExistingItemBySku(sku){
   const target=sku.trim().toUpperCase();
   if(!target) return null;
   for(const g of GROUPS){ for(const i of g.items){ if((i.name||"").trim().toUpperCase()===target) return i; } }
   return null;
+}
+function cdFindItemByParentSku(parentVal){
+  const target=String(parentVal||"").trim().toUpperCase();
+  if(!target) return null;
+  for(const g of GROUPS){ for(const i of g.items){ if((i.parentSku||"").trim().toUpperCase()===target) return i; } }
+  return null;
+}
+function cdApplyItemToDraft(item){
+  cdDraft.description=item.description||cdDraft.description;
+  cdDraft.parentSku=item.parentSku||cdDraft.parentSku;
+  cdDraft.prioritySku=item.prioritySku||cdDraft.prioritySku;
+  cdDraft.website=item.websiteUrl||cdDraft.website;
+  cdDraft.meetsClaim=item.meetsClaim||cdDraft.meetsClaim;
+  cdDraft.mechTesting=item.mechTesting||cdDraft.mechTesting;
+  cdDraft.chemTesting=item.chemTesting||cdDraft.chemTesting;
+  cdDraft.corrTesting=item.corrTesting||cdDraft.corrTesting;
+  cdDraft.country=item.country||cdDraft.country;
+  cdDraft.colors=item.colors||cdDraft.colors;
+  cdDraft.channel=item.channel?String(item.channel).split(",").map(s=>s.trim()).filter(Boolean):cdDraft.channel;
+}
+function cdClearLookupRecommendations(){
+  cdLookupRecommendedSourceItem=null;
+  cdLookupRecommendedSelected=new Set();
+}
+function cdOfferTestTypeRecommendations(item){
+  cdLookupRecommendedSourceItem = (item.subs && item.subs.length) ? item : null;
+  cdLookupRecommendedSelected = new Set();
+}
+function cdToggleRecommendedSub(subId, checked){
+  if(checked) cdLookupRecommendedSelected.add(subId); else cdLookupRecommendedSelected.delete(subId);
+}
+function cdApplyRecommendedTestTypes(){
+  if(!cdLookupRecommendedSourceItem) return;
+  const chosen=cdLookupRecommendedSourceItem.subs.filter(s=>cdLookupRecommendedSelected.has(s.rowId));
+  if(!chosen.length){ alert("Select at least one test type to add."); return; }
+  const blankOnly = cdTestTypes.length===1 && !cdTestTypes[0].name.trim() && !cdTestTypes[0].std.trim();
+  const converted = chosen.map(s=>{
+    const tt=cdSubToEditTestType(s);
+    delete tt.subId; delete tt.originalYears; // this is a fresh copy for a different item, not an update to the source's row
+    return tt;
+  });
+  cdTestTypes = blankOnly ? converted : cdTestTypes.concat(converted);
+  cdClearLookupRecommendations();
+  cdRenderNewEntry();
+}
+function cdRecommendedTestTypesHtml(){
+  if(!cdLookupRecommendedSourceItem) return "";
+  const subs=cdLookupRecommendedSourceItem.subs;
+  return `<div class="pmm-card" style="border-color:#0073ea;background:#f5faff">
+    <div style="font-size:13px;font-weight:700;color:#0055bb;margin-bottom:4px">📋 Recommended Test Types</div>
+    <div style="font-size:11px;color:#555;margin-bottom:12px">"${esc(cdLookupRecommendedSourceItem.name)}" already has ${subs.length} test type${subs.length!==1?"s":""} on file. Pick any that apply — they'll be added below with their prior results.</div>
+    ${subs.map(s=>`<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid #dde0e7;border-radius:6px;margin-bottom:6px;cursor:pointer;background:#fff">
+      <input type="checkbox" onchange="cdToggleRecommendedSub('${s.rowId}', this.checked)"/>
+      <span style="font-size:12px;color:#333">${esc(s.name)}</span>
+      ${s.std?`<span style="font-size:10.5px;color:#999">— ${esc(s.std)}</span>`:""}
+    </label>`).join("")}
+    <button onclick="cdApplyRecommendedTestTypes()" style="margin-top:6px;font-size:11.5px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:6px;padding:7px 16px;cursor:pointer">+ Add Selected Test Types</button>
+  </div>`;
 }
 async function cdLoadFulfilLookup(){
   if(cdFulfilLookupIndex) return cdFulfilLookupIndex;
@@ -3050,12 +3142,17 @@ async function cdLoadFulfilLookup(){
     const skuIdx=headers.findIndex(h=>h==="sku");
     const productIdx=headers.findIndex(h=>h.includes("product"));
     const tierIdx=headers.findIndex(h=>h.includes("tier")||h.includes("priority"));
+    const parentIdx=headers.findIndex(h=>h.includes("parent")||h.includes("reference"));
     const idx={};
     for(let r=1;r<rows.length;r++){
       const row=rows[r];
       const sku=(skuIdx!==-1?(row[skuIdx]||""):"").trim().toUpperCase();
       if(!sku) continue;
-      idx[sku]={ product: productIdx!==-1?(row[productIdx]||""):"", tier: tierIdx!==-1?(row[tierIdx]||""):"" };
+      idx[sku]={
+        product: productIdx!==-1?(row[productIdx]||""):"",
+        tier: tierIdx!==-1?(row[tierIdx]||""):"",
+        parent: parentIdx!==-1?(row[parentIdx]||""):"",
+      };
     }
     cdFulfilLookupIndex=idx;
     return idx;
@@ -3064,19 +3161,12 @@ async function cdLoadFulfilLookup(){
 async function cdLookupSku(){
   const sku=(cdDraft.sku||"").trim();
   const statusEl=document.getElementById("cd-sku-lookup-status");
-  if(!sku){ if(statusEl) statusEl.textContent=""; return; }
+  cdClearLookupRecommendations();
+  if(!sku){ if(statusEl) statusEl.textContent=""; cdRenderNewEntry(); return; }
   const existing=cdFindExistingItemBySku(sku);
   if(existing){
-    cdDraft.description=existing.description||cdDraft.description;
-    cdDraft.prioritySku=existing.prioritySku||cdDraft.prioritySku;
-    cdDraft.website=existing.websiteUrl||cdDraft.website;
-    cdDraft.meetsClaim=existing.meetsClaim||cdDraft.meetsClaim;
-    cdDraft.mechTesting=existing.mechTesting||cdDraft.mechTesting;
-    cdDraft.chemTesting=existing.chemTesting||cdDraft.chemTesting;
-    cdDraft.corrTesting=existing.corrTesting||cdDraft.corrTesting;
-    cdDraft.country=existing.country||cdDraft.country;
-    cdDraft.colors=existing.colors||cdDraft.colors;
-    cdDraft.channel=existing.channel?String(existing.channel).split(",").map(s=>s.trim()).filter(Boolean):cdDraft.channel;
+    cdApplyItemToDraft(existing);
+    cdOfferTestTypeRecommendations(existing);
     cdRenderNewEntry();
     const s=document.getElementById("cd-sku-lookup-status"); if(s) s.textContent="Found in existing items — fields auto-filled.";
     return;
@@ -3085,7 +3175,19 @@ async function cdLookupSku(){
   const idx=await cdLoadFulfilLookup();
   const match=idx[sku.toUpperCase()];
   if(match){
+    // Same parent as an item we already have? Borrow its full record --
+    // same underlying materials/test data, just a different color/variant.
+    const sibling = match.parent ? cdFindItemByParentSku(match.parent) : null;
+    if(sibling){
+      cdApplyItemToDraft(sibling);
+      if(match.parent) cdDraft.parentSku=match.parent;
+      cdOfferTestTypeRecommendations(sibling);
+      cdRenderNewEntry();
+      const s=document.getElementById("cd-sku-lookup-status"); if(s) s.textContent=`Same parent as "${sibling.name}" — fields & test types auto-filled from it.`;
+      return;
+    }
     if(match.product) cdDraft.description=match.product;
+    if(match.parent) cdDraft.parentSku=match.parent;
     if(match.tier){
       const t=match.tier.trim().toUpperCase();
       cdDraft.prioritySku = t==="NPD" ? "A" : (CD_PRIORITY_SKU_OPTIONS.map(o=>o.toUpperCase()).includes(t)?match.tier.trim():match.tier);
@@ -3196,6 +3298,7 @@ async function cdSubmitEntry(){
     const submittedSku=cdDraft.sku;
     cdDraft={sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]};
     cdTestTypes=[cdNewTestType()];
+    cdClearLookupRecommendations();
     await fetchSheetData();
     // Items are identified in GROUPS as "i"+id (see buildGroups) -- mark the
     // item as transferred so it shows up in the curated Tracking list.
@@ -3479,6 +3582,7 @@ async function cdMarkCompleted(){
   const btn=document.getElementById("cd-edit-complete-btn");
   if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
   const itemId=modal.itemId;
+  const d=modal.draft;
   try{
     await cdSaveItemFields();
     await cdSaveTestTypes();
@@ -3486,6 +3590,7 @@ async function cdMarkCompleted(){
     localStorage.setItem(CD_COMPLETED_TEST_LS, JSON.stringify([...cdCompletedTestIds]));
     cdTrackingTransferredIds.delete(itemId);
     localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+    await cdAppendCompletedTestRow({rowId:d.rowId, name:d.sku});
     closeModal();
     await fetchSheetData();
     switchTab("completedtest");
@@ -3497,9 +3602,47 @@ async function cdMarkCompleted(){
     if(btn2){ btn2.disabled=false; btn2.textContent="✅ Mark Completed"; }
   }
 }
+const CD_COMPLETED_TEST_SHEET = "Completed Test";
 const CD_COMPLETED_TEST_LS = "rhino_cd_completed_test_v1";
 let cdCompletedTestIds = new Set(JSON.parse(localStorage.getItem(CD_COMPLETED_TEST_LS)||"[]"));
+let cdCompletedTestHydrated = false;
+async function cdHydrateCompletedTestSet(){
+  if(cdCompletedTestHydrated || !accessToken) return;
+  cdCompletedTestHydrated=true;
+  try{
+    const map=await cdGetHeaderMap(CD_COMPLETED_TEST_SHEET);
+    if(map["Item ID"]===undefined) return;
+    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_COMPLETED_TEST_SHEET)}?valueRenderOption=FORMATTED_VALUE`;
+    const res=await fetch(url,{headers:{Authorization:"Bearer "+accessToken}});
+    cdCheckAuthError(res);
+    if(!res.ok) return;
+    const data=await res.json();
+    const rows=data.values||[];
+    let changed=false;
+    for(let r=1;r<rows.length;r++){
+      const rawId=(rows[r][map["Item ID"]]||"").trim();
+      if(rawId && !cdCompletedTestIds.has("i"+rawId)){ cdCompletedTestIds.add("i"+rawId); changed=true; }
+    }
+    if(changed){
+      localStorage.setItem(CD_COMPLETED_TEST_LS, JSON.stringify([...cdCompletedTestIds]));
+      if(activeTab==="completedtest") cdRenderCompletedTest();
+    }
+  }catch(e){ /* best-effort */ }
+}
+async function cdAppendCompletedTestRow(item){
+  if(!accessToken || !item || !item.rowId) return;
+  await cdEnsureColumn(CD_COMPLETED_TEST_SHEET, "Item ID");
+  await cdEnsureColumn(CD_COMPLETED_TEST_SHEET, "SKU");
+  await cdEnsureColumn(CD_COMPLETED_TEST_SHEET, "Completed Date");
+  const map=await cdGetHeaderMap(CD_COMPLETED_TEST_SHEET);
+  const row=cdBuildRow(map, {"Item ID":item.rowId, "SKU":item.name||"", "Completed Date":new Date().toISOString().slice(0,10)});
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_COMPLETED_TEST_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+  const res=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[row]})});
+  cdCheckAuthError(res);
+  if(!res.ok){ const t=await res.text(); throw new Error(`Could not save to "${CD_COMPLETED_TEST_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
+}
 function cdRenderCompletedTest(){
+  cdHydrateCompletedTestSet();
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
   const allItems=[];
   GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdCompletedTestIds.has(i.id)) allItems.push(i); }));
@@ -3539,6 +3682,9 @@ function cdRenderCompletedTest(){
 // do with it there.
 const CD_TRACKING_SHEET = "Tracking";
 const CD_DEFERRED_SHEET = "Deferred items";
+CD_AUTO_CREATE_SHEETS.add(CD_TRACKING_SHEET);
+CD_AUTO_CREATE_SHEETS.add(CD_DEFERRED_SHEET);
+CD_AUTO_CREATE_SHEETS.add(CD_COMPLETED_TEST_SHEET);
 const CD_TRACKING_TRANSFER_LS = "rhino_cd_tracking_transferred_v1";
 let cdTrackingTransferredIds = new Set(JSON.parse(localStorage.getItem(CD_TRACKING_TRANSFER_LS)||"[]"));
 const CD_MON_CLOSED_LS = "rhino_cd_monitoring_closed_v1";
@@ -5816,7 +5962,7 @@ const PCA_COLUMN_HINTS = {
   updatedGrd: ["updated grd","grd","goods ready date"],
 };
 const PCA_STATUS_COL_INDEX = 10; // column K, 0-indexed
-const PCA_EXTRA_COLS = { rejectReason: 13, reviewerNote: 14, managementReason: 15, qcRejectReason: 16, qeInCharge: 17 }; // extra columns N,O,P,Q,R
+const PCA_EXTRA_COLS = { rejectReason: 13, reviewerNote: 14, managementReason: 15, qcRejectReason: 16, qeInCharge: 17, managementEvidenceUrl: 18 }; // extra columns N,O,P,Q,R,S
 const PCA_CLOSED_STATUSES = ["waived", "qc_approve"]; // "management_decision" only counts as closed once managementReason is filled -- see pcaIsClosed()
 function pcaIsClosed(t){ return t.status==="waived" || t.status==="qc_approve" || (t.status==="management_decision" && !!t.managementReason); }
 
@@ -5854,6 +6000,7 @@ document.addEventListener("paste", function(e){
     const t=pcaTickets.find(x=>x.id===modal.ticketId);
     if(t){
       if(t.status==="reproduce_sample"){ e.preventDefault(); pcaUploadReproducePhoto(t.id, file); return; }
+      if(t.status==="management_decision" && !t.managementReason){ e.preventDefault(); pcaUploadMgmtEvidence(t.id, file); return; }
       const idx=t.components.findIndex(c=>!c.photoUrl);
       if(idx!==-1){ e.preventDefault(); pcaReplaceComponentPhoto(t.id, idx, file); }
     }
@@ -6040,8 +6187,8 @@ async function pcaEnsureTicketsSheetExists(){
 
 async function pcaEnsureTicketsHeaders(){
   await pcaEnsureTicketsSheetExists();
-  const headers=["Ticket ID","PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status","Created Date","Component","Photo URL","Folder Link","Reject Reason","Reviewer Note","Management Decision Reason","QC Reject Reason","QE In Charge"];
-  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}!A1:R1?valueInputOption=USER_ENTERED`;
+  const headers=["Ticket ID","PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status","Created Date","Component","Photo URL","Folder Link","Reject Reason","Reviewer Note","Management Decision Reason","QC Reject Reason","QE In Charge","Management Evidence URL"];
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}!A1:S1?valueInputOption=USER_ENTERED`;
   const res=await fetch(url,{ method:"PUT", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:[headers]}) });
   if(!res.ok){ const t=await res.text(); throw new Error(`Could not write headers to "${PCA_TICKETS_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
 }
@@ -6068,6 +6215,7 @@ async function pcaSyncTickets(){
           managementReason:pmmPick(row,"Management Decision Reason"),
           qcRejectReason:pmmPick(row,"QC Reject Reason"),
           qeInCharge:pmmPick(row,"QE In Charge"),
+          managementEvidenceUrl:pmmPick(row,"Management Evidence URL"),
           components:[], rowIndexes:[],
         };
       }
@@ -6379,12 +6527,25 @@ const PCA_STATUS_LABELS={
   qc_inspection:"For QC Inspection", qc_approve:"QC Approved", qc_reject:"QC Rejected",
   management_decision:"Management Decision",
 };
+// A distinct color per status, rather than lumping everything into just
+// green/red/amber -- makes each stage recognizable at a glance in the tables.
+const PCA_STATUS_COLORS={
+  approval:              {bg:"#fff3cd", color:"#856404"}, // amber
+  reject:                {bg:"#f8d7da", color:"#721c24"}, // red
+  inform_supplier:       {bg:"#dbe9ff", color:"#1e429f"}, // blue
+  reproduce_sample:      {bg:"#ede4ff", color:"#5b21b6"}, // purple
+  review:                {bg:"#d3f3f0", color:"#0c6b64"}, // teal
+  approve:               {bg:"#dcf5e0", color:"#1e6b34"}, // light green
+  release_to_production: {bg:"#c8f3e3", color:"#0a6e50"}, // sea green
+  waived:                {bg:"#e9ecef", color:"#495057"}, // gray
+  qc_inspection:         {bg:"#ffe8cc", color:"#a15c00"}, // orange
+  qc_approve:             {bg:"#c3f0da", color:"#0a7a46"}, // strong green
+  qc_reject:             {bg:"#f5c6cb", color:"#7a1f2b"}, // maroon
+  management_decision:   {bg:"#f3e4ff", color:"#6b21a8"}, // violet
+};
 function pcaStatusBadgeHtml(status){
-  const isGreen=status==="release_to_production"||status==="qc_approve";
-  const isRed=status==="reject"||status==="qc_reject";
-  const bg=isGreen?"#d4edda":isRed?"#f8d7da":"#fff3cd";
-  const color=isGreen?"#155724":isRed?"#721c24":"#856404";
-  return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${bg};color:${color}">${PCA_STATUS_LABELS[status]||status}</span>`;
+  const c=PCA_STATUS_COLORS[status]||{bg:"#eee",color:"#555"};
+  return `<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:${c.bg};color:${c.color}">${PCA_STATUS_LABELS[status]||status}</span>`;
 }
 
 // Status cell = badge, plus any remark tied to that status (e.g. a rejection
@@ -6396,10 +6557,10 @@ function pcaStatusCellHtml(t){
   else if(t.status==="qc_reject" && t.qcRejectReason) remark=t.qcRejectReason;
   else if(t.status==="management_decision" && t.managementReason) remark=t.managementReason;
   if(!remark) return `<div>${badge}</div>`;
-  const isRed = t.status==="reject" || t.status==="qc_reject";
-  const border = isRed ? "#e2445c" : "#dab000";
-  const bg = isRed ? "#fdf2f3" : "#fffaeb";
-  const text = isRed ? "#8a1f2d" : "#7a5500";
+  const c=PCA_STATUS_COLORS[t.status]||{bg:"#f7f7f7",color:"#555"};
+  const border = c.color;
+  const bg = c.bg;
+  const text = c.color;
   return `<div>${badge}<div style="font-size:10.5px;font-weight:500;color:${text};background:${bg};border-left:3px solid ${border};padding:5px 9px;margin-top:6px;border-radius:0 5px 5px 0;text-align:left;white-space:normal;max-width:230px;line-height:1.45">${esc(remark)}</div></div>`;
 }
 
@@ -6605,6 +6766,44 @@ async function pcaUploadReproducePhoto(ticketId, file){
   }
 }
 
+// ── Management Decision evidence (file/photo upload, or paste) ────────────
+let pcaMgmtEvidenceDraft = {}; // ticketId -> {url, isImage, name} -- held until the decision is submitted
+function pcaMgmtEvidenceUploadHtml(t){
+  const ev=pcaMgmtEvidenceDraft[t.id];
+  return `<div style="margin-bottom:14px" id="pca-mgmt-evidence-wrap-${t.id}">
+    <div style="font-size:11px;color:#888;margin-bottom:6px">Evidence for this decision (file or photo, or paste an image):</div>
+    <div id="pca-mgmt-evidence-preview-${t.id}">
+      ${ev?(ev.isImage
+        ? `<div style="position:relative;display:inline-block;margin-bottom:8px"><img src="${pmmPhotoDisplayUrl(ev.url)}" style="max-width:220px;max-height:160px;border-radius:6px;display:block"/><button onclick="pcaClearMgmtEvidence('${t.id}')" title="Remove" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;border:none;cursor:pointer;font-size:11px">🗑️</button></div>`
+        : `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:#333;background:#f7f8fa;border:1px solid #e0e3ea;border-radius:6px;padding:8px 12px;margin-bottom:8px">📎 ${esc(ev.name||"Evidence file")} uploaded<button onclick="pcaClearMgmtEvidence('${t.id}')" style="margin-left:auto;font-size:10px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:2px 8px;cursor:pointer">Remove</button></div>`
+      ):""}
+    </div>
+    <input type="file" id="pca-mgmt-evidence-file-${t.id}" style="display:none" onchange="pcaUploadMgmtEvidence('${t.id}', this.files[0])"/>
+    <button onclick="document.getElementById('pca-mgmt-evidence-file-${t.id}').click()" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:6px 14px;cursor:pointer">📎 ${ev?"Replace":"Add"} Evidence File/Photo</button>
+  </div>`;
+}
+async function pcaUploadMgmtEvidence(ticketId, file){
+  if(!file) return;
+  const t=pcaTickets.find(x=>x.id===ticketId);
+  if(!t) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  const wrap=document.getElementById(`pca-mgmt-evidence-preview-${ticketId}`);
+  if(wrap) wrap.innerHTML=`<div style="font-size:11px;color:#888"><span class="spin"></span> Uploading…</div>`;
+  try{
+    let folderId=PCA_DRIVE_FOLDER_ID;
+    if(t.folderLink){ const m=t.folderLink.match(/folders\/([a-zA-Z0-9_-]+)/); if(m) folderId=m[1]; }
+    const url=await pcaUploadPhotoToFolder(file, folderId);
+    pcaMgmtEvidenceDraft[ticketId]={url, isImage:(file.type||"").startsWith("image/"), name:file.name};
+    pcaOpenTicketDetail(ticketId);
+  }catch(e){
+    alert("Could not upload evidence: "+e.message);
+  }
+}
+function pcaClearMgmtEvidence(ticketId){
+  delete pcaMgmtEvidenceDraft[ticketId];
+  pcaOpenTicketDetail(ticketId);
+}
+
 async function pcaAdvanceStage(ticketId, newStage, extra){
   const t=pcaTickets.find(x=>x.id===ticketId);
   if(!t) return;
@@ -6675,7 +6874,11 @@ function pcaSubmitManagementDecision(ticketId){
   const el=document.getElementById(`pca-mgmt-reason-${ticketId}`);
   const reason=(el?el.value:"").trim();
   if(!reason){ alert("Please enter a reason before closing the ticket."); return; }
-  pcaAdvanceStage(ticketId, "management_decision", {managementReason:reason});
+  const extra={managementReason:reason};
+  const ev=pcaMgmtEvidenceDraft[ticketId];
+  if(ev) extra.managementEvidenceUrl=ev.url;
+  pcaAdvanceStage(ticketId, "management_decision", extra);
+  delete pcaMgmtEvidenceDraft[ticketId];
 }
 function pcaShowQcRejectReason(ticketId){
   const el=document.getElementById(`pca-qc-reject-reason-${ticketId}`);
@@ -6739,9 +6942,11 @@ function pcaActionsHtmlFor(t){
       if(!t.managementReason){
         return `<div style="font-size:11px;color:#888;margin-bottom:8px">Enter the management decision reason to close this ticket:</div>`
           +`<textarea id="pca-mgmt-reason-${t.id}" class="pmm-input" placeholder="Decision reason" style="min-height:70px;margin-bottom:10px"></textarea>`
+          +pcaMgmtEvidenceUploadHtml(t)
           +btn("✓ Submit Decision & Close Ticket", `pcaSubmitManagementDecision('${t.id}')`, "#0a7a46");
       }
-      return `<div style="font-size:12px;color:#7a5500;font-weight:700">⚠ Management Decision: ${esc(t.managementReason)} — process complete.</div>`;
+      return `<div style="font-size:12px;color:#7a5500;font-weight:700">⚠ Management Decision: ${esc(t.managementReason)} — process complete.</div>`
+        +(t.managementEvidenceUrl?`<div style="margin-top:10px"><a href="${esc(t.managementEvidenceUrl)}" target="_blank" style="font-size:11.5px;color:#0073ea;text-decoration:none">📎 View decision evidence ↗</a></div>`:"");
     default:
       return "";
   }
