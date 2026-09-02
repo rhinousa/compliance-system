@@ -192,9 +192,10 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
   <div id="toolbar-wrap" style="display:none;background:#fff;border-left:0.5px solid #dde0e7;border-right:0.5px solid #dde0e7;border-bottom:1px solid #e8eaed;padding:10px 18px 8px;flex-direction:column;gap:0">
     <!-- Row 1: Search + SKU + Sort + Clear -->
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-      <div id="search-wrap">
+      <div id="search-wrap" style="position:relative">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="searchBox" placeholder="Search products &amp; tests…" autocomplete="off" spellcheck="false" oninput="onSearch(this.value)"/>
+        <input id="searchBox" placeholder="Search products &amp; tests…" autocomplete="off" spellcheck="false" oninput="onSearch(this.value)" onfocus="if(searchQ)mainOpenSearchSuggest()" onblur="mainCloseSearchSuggest()"/>
+        <div id="main-search-suggest" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:60;max-height:280px;overflow-y:auto"></div>
       </div>
       <div style="position:relative;flex-shrink:0">
         <select id="skuSelect" onchange="onSkuSelect(this.value)" style="padding:6px 28px 6px 10px;border:1.5px solid #dde0e7;border-radius:7px;font-size:12px;background:#fafbfc;color:#333;outline:none;height:34px;cursor:pointer;appearance:none;min-width:140px;max-width:200px">
@@ -958,7 +959,8 @@ function ycell(blocks){
     reportList.forEach(r=>{
       // Use onclick window.open as fallback for environments where href clicks are blocked
       const cleanUrl=r.url.replace(/&amp;/g,"&");
-      h+=`<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="rpt" onclick="event.stopPropagation()" title="${esc(r.label)}">📄 ${esc(r.label)} ↗</a>`;
+      const lbl=cdNormalizeReportLabel(r.label);
+      h+=`<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="rpt" onclick="event.stopPropagation()" title="${esc(lbl)}">📄 ${esc(lbl)} ↗</a>`;
     });
     if(b.cap) h+=`<div style="margin-top:3px;padding:3px 6px;background:#fff8e0;border-left:2px solid #fdab3d;border-radius:0 3px 3px 0;font-size:9px"><span style="font-weight:700;color:#b07000">CAP:</span> ${esc(b.cap)}</div>`;
     if(b.evidence){
@@ -1320,7 +1322,14 @@ function renderTable(){
           (s.p24&&s.p24.length>0)||(s.p25&&s.p25.length>0)||(s.p26&&s.p26.length>0)
         );
         let annualCell=`<span style="color:#ddd;font-size:10px">—</span>`;
-        if(subsWithData.length>0){
+        if(typeof cdTrackingTransferredIds!=="undefined" && cdTrackingTransferredIds.has(item.id)){
+          // Already pulled into Tracking -- it's actively being tested, not on
+          // the normal Monitoring due-date cycle, so show that instead.
+          annualCell=`<div style="font-size:9px;line-height:1.6">
+            <div style="display:inline-flex;align-items:center;gap:3px;background:#eef4ff;border:1px solid #b8d4ff;border-radius:4px;padding:2px 6px;font-weight:700;color:#0055bb">🧪 On Testing</div>
+            <div style="color:#888;font-size:8px;margin-top:2px">In Tracking</div>
+          </div>`;
+        } else if(subsWithData.length>0){
           const subStatuses=subsWithData.map(s=>({
             sub:s,
             decision:getRetestDecision(item.id,s.id),
@@ -2140,7 +2149,7 @@ function renderModals(){
           inner+=`<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px">`;
           rptList.forEach(r=>{
             const cleanUrl=r.url.replace(/&amp;/g,"&");
-            inner+=`<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;background:#0073ea;color:#fff;font-size:11px;font-weight:600;padding:6px 14px;border-radius:6px;text-decoration:none">📄 ${esc(r.label)} ↗</a>`;
+            inner+=`<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-flex;align-items:center;gap:5px;background:#0073ea;color:#fff;font-size:11px;font-weight:600;padding:6px 14px;border-radius:6px;text-decoration:none">📄 ${esc(cdNormalizeReportLabel(r.label))} ↗</a>`;
           });
           inner+=`</div>`;
         }
@@ -2289,6 +2298,21 @@ function renderModals(){
           <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
             <button onclick="closeModal()" style="padding:9px 18px;font-size:12.5px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Cancel</button>
             <button onclick="confirmPwGate()" style="padding:9px 20px;font-size:12.5px;font-weight:700;color:#0b1f0f;background:#00e05e;border:none;border-radius:8px;cursor:pointer">Confirm</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  } else if(modal.type==="textGate"){
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:440px;background:#141824;border-radius:14px">
+        <div style="padding:22px 24px 18px">
+          <div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:6px">${esc(modal.title||"Enter a reason")}</div>
+          <div style="color:#8a8f9c;font-size:11.5px;margin-bottom:14px">${esc(modal.message||"")}</div>
+          <textarea id="textgate-input" placeholder="${esc(modal.placeholder||"")}" rows="3" style="width:100%;padding:11px 14px;border:1.5px solid #00c853;border-radius:8px;background:#0c0f18;color:#fff;font-size:13px;outline:none;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
+          <div id="textgate-error" style="color:#ff6b6b;font-size:11px;margin-top:6px;min-height:14px"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:12px">
+            <button onclick="closeModal()" style="padding:9px 18px;font-size:12.5px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Cancel</button>
+            <button onclick="confirmTextGate()" style="padding:9px 20px;font-size:12.5px;font-weight:700;color:#0b1f0f;background:#00e05e;border:none;border-radius:8px;cursor:pointer">Confirm</button>
           </div>
         </div>
       </div>
@@ -2662,7 +2686,53 @@ function toggleGroup(id){ gExp[id]=gExp[id]===false; renderTable(); }
 function toggleItem(id){ iExp[id]=iExp[id]===false; renderTable(); }
 
 // Search: directly update state and re-render board only — input stays focused
-function onSearch(v){ searchQ=v; if(activeTab==="table") renderTable(); else renderMonitoring(); renderToolbar(); }
+function onSearch(v){
+  searchQ=v;
+  if(activeTab==="table") renderTable(); else renderMonitoring();
+  renderToolbar();
+  mainRenderSearchSuggest();
+}
+// Live "as you type" suggestions -- matches SKUs and test type names, with
+// the typed portion highlighted, similar to a typeahead search.
+function mainOpenSearchSuggest(){ mainRenderSearchSuggest(); }
+function mainCloseSearchSuggest(){ setTimeout(()=>{ const el=document.getElementById("main-search-suggest"); if(el) el.style.display="none"; }, 150); }
+function mainRenderSearchSuggest(){
+  const el=document.getElementById("main-search-suggest"); if(!el) return;
+  const q=(searchQ||"").trim().toLowerCase();
+  if(!q){ el.style.display="none"; el.innerHTML=""; return; }
+  const seen=new Set(); const results=[];
+  GROUPS.forEach(g=>g.items.forEach(item=>{
+    if(item.name && item.name.toLowerCase().includes(q) && !seen.has("sku:"+item.name)){
+      seen.add("sku:"+item.name); results.push({type:"SKU", label:item.name});
+    }
+    (item.subs||[]).forEach(s=>{
+      if(s.name && s.name.toLowerCase().includes(q) && !seen.has("test:"+s.name)){
+        seen.add("test:"+s.name); results.push({type:"TEST", label:s.name});
+      }
+    });
+  }));
+  if(!results.length){ el.style.display="none"; el.innerHTML=""; return; }
+  el.innerHTML=results.slice(0,12).map(r=>{
+    const idx=r.label.toLowerCase().indexOf(q);
+    let highlighted=esc(r.label);
+    if(idx!==-1){
+      highlighted=`${esc(r.label.slice(0,idx))}<span style="color:#0a7a46;font-weight:700">${esc(r.label.slice(idx,idx+q.length))}</span>${esc(r.label.slice(idx+q.length))}`;
+    }
+    const badgeColor = r.type==="SKU" ? "#0073ea" : "#7c3aed";
+    return `<div onclick="mainSelectSearchSuggestion('${esc(r.label).replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">
+      <span style="font-size:9px;font-weight:800;color:#fff;background:${badgeColor};border-radius:4px;padding:2px 6px;letter-spacing:.3px;flex-shrink:0">${r.type}</span>
+      <span style="font-size:12.5px;color:#333">${highlighted}</span>
+    </div>`;
+  }).join("");
+  el.style.display="block";
+}
+function mainSelectSearchSuggestion(text){
+  searchQ=text;
+  const box=document.getElementById("searchBox"); if(box) box.value=text;
+  const el=document.getElementById("main-search-suggest"); if(el){ el.style.display="none"; el.innerHTML=""; }
+  if(activeTab==="table") renderTable(); else renderMonitoring();
+  renderToolbar();
+}
 
 function tDD(n){
   openDD=openDD===n?null:n;
@@ -2788,7 +2858,7 @@ function openDetail(sid,iid,gid){
 // mirrors. Block 3 (Test Execution) is nested per Test Type, matching how the
 // sheet already encodes multiple "Priority Supplier N:" blocks inside a single
 // year cell (y2024/y2025/y2026) on the Subitems row -- see parsePBlocks above.
-const CD_CHANNEL_OPTIONS = ["Amazon","TikTok","Shopify","B2B","Sam's Club","Autozone"];
+const CD_CHANNEL_OPTIONS = ["Amazon","TikTok","Shopify","B2B","Sam's Club","Autozone","Walmart"];
 const CD_PRIORITY_SKU_OPTIONS = ["A","B","C","Retail"];
 let cdHeaderMaps = {};
 let cdDraft = {sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]};
@@ -2896,6 +2966,12 @@ function cdFmtCost(cost){
   if(!s) return "";
   return s.startsWith("$") ? s : ("$"+s);
 }
+// Normalizes any "Tensile Test Report"-style label (old data) down to plain
+// "Test Report", wherever it's displayed -- other genuinely distinct report
+// types (SAE Report, etc.) are left as-is.
+function cdNormalizeReportLabel(label){
+  return /tensile\s*test\s*report/i.test(label||"") ? "Test Report" : (label||"Report");
+}
 function cdFormatExecBlock(ex, n){
   const lines=[`Priority Supplier ${n}: ${ex.supplier||""}`];
   lines.push(`Tensile Test Method: ${ex.method||"Not Specified/Lab Proprietary"}`);
@@ -2905,7 +2981,7 @@ function cdFormatExecBlock(ex, n){
   lines.push(`Rhino Break Strength Test Claim (lbs): ${ex.claim?cdFmtNum(ex.claim):""}${claimKg?` (${cdFmtNum(claimKg)} kg)`:""}`);
   const sampleTexts=(ex.samples||[]).filter(s=>s.value||s.verdict).map((s,i)=>`Sample ${i+1} = ${s.value?cdFmtNum(s.value):""} lbs${s.verdict?` (${s.verdict})`:""}`);
   lines.push(`Test Result (lbs): ${sampleTexts.join("  ")}`);
-  if(ex.report) lines.push(`Tensile Test Report: ${ex.report}`);
+  if(ex.report) lines.push(`Test Report: ${ex.report}`);
   if(ex.date) lines.push(`Test Completion Date: ${cdFmtDateUS(ex.date)}`);
   if(ex.lab) lines.push(`Test Lab: ${ex.lab}`);
   if(ex.cost) lines.push(`Cost: ${cdFmtCost(ex.cost)}`);
@@ -2956,7 +3032,7 @@ function cdExecBlockHtml(tt, ti, ex, ei){
       <div class="pmm-field"><label class="pmm-label">Rhino Break Strength Test Claim (lbs) <span style="color:#aaa;font-weight:400">— kg auto-added</span></label><input class="pmm-input" value="${esc(ex.claim)}" oninput="cdTestTypes[${ti}].execs[${ei}].claim=this.value"/></div>
     </div>
     ${cdSamplesHtml(ex.samples, `cdTestTypes[${ti}].execs[${ei}]`, `cdAddSample(${ti},${ei})`, si=>`cdRemoveSample(${ti},${ei},${si})`)}
-    <div class="pmm-field"><label class="pmm-label">Tensile Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label><input class="pmm-input" value="${esc(ex.report)}" oninput="cdTestTypes[${ti}].execs[${ei}].report=this.value"/></div>
+    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label><input class="pmm-input" value="${esc(ex.report)}" oninput="cdTestTypes[${ti}].execs[${ei}].report=this.value"/></div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="cdTestTypes[${ti}].execs[${ei}].lab=this.value"/></div>
       <div class="pmm-field"><label class="pmm-label">Cost</label><input class="pmm-input" placeholder="$0.00" value="${esc(ex.cost)}" oninput="cdTestTypes[${ti}].execs[${ei}].cost=this.value"/></div>
@@ -3333,30 +3409,10 @@ function cdRenderTracking(){
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
   const allItems=[];
   GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdTrackingTransferredIds.has(i.id)) allItems.push(i); }));
-  let html=`<div style="max-width:1200px;margin:0 auto;padding:20px 0">`;
-  if(!allItems.length){
-    html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">📝</div><div style="font-size:12px">Nothing here yet — create an item from "New Entry", or right-click an item in Monitoring and choose "Transfer to Tracking".</div></div>`;
-  } else {
-    html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:11.5px">
-        <thead><tr style="background:#f2f3f6">
-          ${["SKU","Description","Priority SKU","Test Types","Status Remarks"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
-        </tr></thead>
-        <tbody>
-          ${allItems.map(i=>`<tr onclick="cdOpenItemEdit('${i.id}')" style="border-bottom:0.5px solid #f0f1f3;cursor:pointer">
-            <td style="padding:7px 12px;font-weight:600">${esc(i.name)}</td>
-            <td style="padding:7px 12px;white-space:normal;min-width:220px">${esc(i.description)}</td>
-            <td style="padding:7px 12px">${esc(i.prioritySku)}</td>
-            <td style="padding:7px 12px">${i.subs.length}</td>
-            <td style="padding:7px 12px;white-space:normal;min-width:200px;color:${i.status?"#333":"#bbb"}">${esc(i.status)||"Click to add remarks…"}</td>
-          </tr>`).join("")}
-        </tbody>
-      </table>
-    </div>
-    <div style="font-size:10px;color:#aaa;margin-top:8px">Click any row to view/edit full details, set Status Remarks, or mark it completed.</div>`;
-  }
-  html+=`</div>`;
-  wrap.innerHTML=html;
+  wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
+    ${cdItemsTableHtml(allItems, "tracking", `Nothing here yet — create an item from "New Entry", or right-click an item in Monitoring and choose "Transfer to Tracking".`)}
+    ${allItems.length?`<div style="font-size:10px;color:#aaa;margin-top:8px">Click any row to view/edit full details, set Status Remarks, or mark it completed. ↩️ reverts it back to Monitoring, ✕ removes it from this list.</div>`:""}
+  </div>`;
 }
 
 // ── Full item edit pop-up (Tracking row click) ──────────────────────────────
@@ -3452,7 +3508,7 @@ function cdEditExecBlockHtml(tt, ti, ex, ei){
       <div class="pmm-field"><label class="pmm-label">Rhino Break Strength Test Claim (lbs)</label><input class="pmm-input" value="${esc(ex.claim)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].claim=this.value"/></div>
     </div>
     ${cdSamplesHtml(ex.samples, `modal.draft.testTypes[${ti}].execs[${ei}]`, `cdEditAddSample(${ti},${ei})`, si=>`cdEditRemoveSample(${ti},${ei},${si})`)}
-    <div class="pmm-field"><label class="pmm-label">Tensile Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label><input class="pmm-input" value="${esc(ex.report)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].report=this.value"/></div>
+    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label><input class="pmm-input" value="${esc(ex.report)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].report=this.value"/></div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].lab=this.value"/></div>
       <div class="pmm-field"><label class="pmm-label">Cost</label><input class="pmm-input" placeholder="$0.00" value="${esc(ex.cost)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].cost=this.value"/></div>
@@ -3683,29 +3739,9 @@ function cdRenderCompletedTest(){
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
   const allItems=[];
   GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdCompletedTestIds.has(i.id)) allItems.push(i); }));
-  let html=`<div style="max-width:1100px;margin:0 auto;padding:20px 0">`;
-  if(!allItems.length){
-    html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-size:12px">No completed tests yet — mark one completed from Tracking.</div></div>`;
-  } else {
-    html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
-      <table style="width:100%;border-collapse:collapse;font-size:11.5px">
-        <thead><tr style="background:#f2f3f6">
-          ${["SKU","Description","Priority SKU","Test Types","Status Remarks"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
-        </tr></thead>
-        <tbody>
-          ${allItems.map(i=>`<tr onclick="cdOpenItemEdit('${i.id}')" style="border-bottom:0.5px solid #f0f1f3;cursor:pointer">
-            <td style="padding:7px 12px;font-weight:600">${esc(i.name)}</td>
-            <td style="padding:7px 12px;white-space:normal;min-width:220px">${esc(i.description)}</td>
-            <td style="padding:7px 12px">${esc(i.prioritySku)}</td>
-            <td style="padding:7px 12px">${i.subs.length}</td>
-            <td style="padding:7px 12px;white-space:normal;min-width:200px">${esc(i.status)||"—"}</td>
-          </tr>`).join("")}
-        </tbody>
-      </table>
-    </div>`;
-  }
-  html+=`</div>`;
-  wrap.innerHTML=html;
+  wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
+    ${cdItemsTableHtml(allItems, "completedtest", "No completed tests yet — mark one completed from Tracking.")}
+  </div>`;
 }
 
 // ── Monitoring: right-click "Transfer to Tracking" / "Deferred" ────────────
@@ -3733,6 +3769,65 @@ let cdDeferredHydrated = false;
 function cdFindItemById(itemId){
   for(const g of GROUPS){ for(const i of g.items){ if(i.id===itemId) return i; } }
   return null;
+}
+// Same convention as Monitoring's Product/SKU cell: the item's own name, plus
+// any sibling SKUs that share the same Parent SKU listed underneath.
+function cdSiblingNames(item){
+  if(!item.parentSku) return [];
+  const target=item.parentSku.trim().toLowerCase();
+  if(!target) return [];
+  const names=[];
+  GROUPS.forEach(g=>g.items.forEach(i=>{
+    if(i.id!==item.id && (i.parentSku||"").trim().toLowerCase()===target) names.push(i.name);
+  }));
+  return names;
+}
+// Same "Schedule per Test" convention as Monitoring: each test type's name,
+// with its most recent test date underneath (no due-date math here, since
+// that's Monitoring's job -- this is just "what's been tested and when").
+function cdItemScheduleHtml(item){
+  if(!item.subs.length) return `<span style="color:#bbb;font-size:10px">—</span>`;
+  return item.subs.map(s=>{
+    const last=latestTestDate(s);
+    return `<div style="margin-bottom:7px;padding:6px 8px;border-radius:5px;background:#f7f8fa;border:1px solid #e0e0e0">
+      <div style="font-size:10px;font-weight:600;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</div>
+      ${last?`<div style="font-size:9px;color:#888;margin-top:2px">Last tested: ${fmtD(last)}</div>`:`<div style="font-size:9px;color:#bbb;margin-top:2px">No test data yet</div>`}
+    </div>`;
+  }).join("");
+}
+// Shared table used by Tracking, Completed Test, and Deferred Items -- same
+// column format everywhere: Product/SKUs (+ siblings), Description, Priority
+// SKU, Schedule per Test, plus revert/delete actions per row.
+function cdItemsTableHtml(items, tabKey, emptyMessage){
+  if(!items.length){
+    const icon = tabKey==="tracking" ? "📝" : tabKey==="completedtest" ? "✅" : "🔵";
+    return `<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">${icon}</div><div style="font-size:12px">${esc(emptyMessage)}</div></div>`;
+  }
+  return `<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:11.5px">
+      <thead><tr style="background:#f2f3f6">
+        ${["Product / SKUs","Description","Priority SKU","Schedule per Test",""].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+      </tr></thead>
+      <tbody>
+        ${items.map(i=>{
+          const siblings=cdSiblingNames(i);
+          return `<tr onclick="cdOpenItemEdit('${i.id}')" style="border-bottom:0.5px solid #f0f1f3;cursor:pointer">
+            <td style="padding:9px 12px;vertical-align:top;min-width:160px">
+              <div style="font-weight:700;color:#222">${esc(i.name)}</div>
+              ${siblings.map(n=>`<div style="font-size:10px;color:#bbb;margin-top:2px">${esc(n)}</div>`).join("")}
+            </td>
+            <td style="padding:9px 12px;white-space:normal;min-width:200px;vertical-align:top">${esc(i.description)}</td>
+            <td style="padding:9px 12px;vertical-align:top">${i.prioritySku?`<span style="background:#e8f2ff;color:#0055bb;border:1px solid #c0d8f8;border-radius:6px;font-size:11px;font-weight:700;padding:2px 6px">${esc(i.prioritySku)}</span>`:`<span style="color:#ddd;font-size:10px">—</span>`}</td>
+            <td style="padding:9px 12px;min-width:220px;vertical-align:top">${cdItemScheduleHtml(i)}</td>
+            <td style="padding:9px 12px;vertical-align:top;white-space:nowrap">
+              <button onclick="event.stopPropagation();cdPromptRevertItem('${i.id}')" title="Revert to Monitoring" style="background:none;border:none;cursor:pointer;font-size:13px;margin-right:6px;padding:0">↩️</button>
+              <button onclick="event.stopPropagation();cdPromptDeleteItem('${i.id}','${tabKey}')" title="Remove from this list" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;cursor:pointer;font-size:11px;padding:2px 7px">✕</button>
+            </td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  </div>`;
 }
 function cdCloseFromMonitoring(itemId){
   cdMonitoringClosedIds.add(itemId);
@@ -3764,6 +3859,8 @@ async function cdHydrateTrackingSet(){
   }catch(e){ /* best-effort */ }
 }
 // Same idea for "Deferred items" -- also marks those items closed from Monitoring.
+const CD_DEFERRED_ITEMS_LS = "rhino_cd_deferred_items_v1";
+let cdDeferredItemIds = new Set(JSON.parse(localStorage.getItem(CD_DEFERRED_ITEMS_LS)||"[]"));
 async function cdHydrateDeferredSet(){
   if(cdDeferredHydrated || !accessToken) return;
   cdDeferredHydrated=true;
@@ -3776,15 +3873,17 @@ async function cdHydrateDeferredSet(){
     if(!res.ok) return;
     const data=await res.json();
     const rows=data.values||[];
-    let changed=false;
+    let changed=false, changedDeferred=false;
     for(let r=1;r<rows.length;r++){
       const rawId=(rows[r][map["Item ID"]]||"").trim();
-      if(rawId && !cdMonitoringClosedIds.has("i"+rawId)){ cdMonitoringClosedIds.add("i"+rawId); changed=true; }
+      if(!rawId) continue;
+      if(!cdMonitoringClosedIds.has("i"+rawId)){ cdMonitoringClosedIds.add("i"+rawId); changed=true; }
+      if(!cdDeferredItemIds.has("i"+rawId)){ cdDeferredItemIds.add("i"+rawId); changedDeferred=true; }
     }
-    if(changed){
-      localStorage.setItem(CD_MON_CLOSED_LS, JSON.stringify([...cdMonitoringClosedIds]));
-      if(activeTab==="monitoring") renderMonitoring();
-    }
+    if(changed) localStorage.setItem(CD_MON_CLOSED_LS, JSON.stringify([...cdMonitoringClosedIds]));
+    if(changedDeferred) localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
+    if(changed && activeTab==="monitoring") renderMonitoring();
+    if(changedDeferred && activeTab==="deferreditems") cdRenderDeferredItems();
   }catch(e){ /* best-effort */ }
 }
 async function cdAppendTrackingRow(item){
@@ -3818,21 +3917,35 @@ function cdTransferToTracking(){
   const itemId=cdMonContextMenu.itemId;
   cdMonContextMenu=null;
   const item=cdFindItemById(itemId);
+  if(!item) return;
+  // If every annual test this item is tracked on is currently marked "Defer"
+  // in Monitoring (a fully-deferred item, not just a mixed one), send it
+  // straight to Deferred Items instead of Tracking.
+  const trackedSubs=item.subs.filter(s=>(s.p24&&s.p24.length)||(s.p25&&s.p25.length)||(s.p26&&s.p26.length));
+  const allDeferred = trackedSubs.length>0 && trackedSubs.every(s=>getRetestDecision(item.id,s.id)==="next");
+  if(allDeferred){
+    cdDeferItem(item, "All annual tests are currently marked Deferred in Monitoring.");
+    return;
+  }
   cdTrackingTransferredIds.add(itemId);
   localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+  cdDeferredItemIds.delete(itemId);
+  localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
   cdCloseFromMonitoring(itemId);
   switchTab("tracking");
-  if(item && accessToken) cdAppendTrackingRow(item).catch(e=>alert(`Transferred locally, but could not write to the "${CD_TRACKING_SHEET}" sheet: `+e.message));
+  if(accessToken) cdAppendTrackingRow(item).catch(e=>alert(`Transferred locally, but could not write to the "${CD_TRACKING_SHEET}" sheet: `+e.message));
 }
 function cdPromptDefer(){
   const itemId=cdMonContextMenu.itemId;
   cdMonContextMenu=null;
   const item=cdFindItemById(itemId);
   if(!item) return;
-  const reason=prompt(`Why is "${item.name}" being deferred?`);
-  if(reason===null) return;
-  if(!reason.trim()){ alert("Please provide a reason."); return; }
-  cdDeferItem(item, reason.trim());
+  openTextGate({
+    title:"Defer Reason",
+    message:`Why is "${item.name}" being deferred?`,
+    placeholder:"e.g. Awaiting supplier confirmation",
+    onSuccess:(reason)=>cdDeferItem(item, reason),
+  });
 }
 async function cdDeferItem(item, reason){
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
@@ -3854,6 +3967,8 @@ async function cdDeferItem(item, reason){
     if(!res.ok){ const t=await res.text(); throw new Error(`Could not save to "${CD_DEFERRED_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
     cdTrackingTransferredIds.delete(item.id);
     localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+    cdDeferredItemIds.add(item.id);
+    localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
     cdCloseFromMonitoring(item.id);
     switchTab("deferreditems");
     alert(`"${item.name}" moved to Deferred Items.`);
@@ -3864,34 +3979,86 @@ async function cdDeferItem(item, reason){
 function cdRenderDeferredItems(){
   cdHydrateDeferredSet();
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
-  wrap.innerHTML=`<div style="text-align:center;padding:48px;color:#aaa">Loading…</div>`;
-  if(!accessToken){ wrap.innerHTML=`<div style="text-align:center;padding:48px;color:#aaa">Connect &amp; Sync with Google first.</div>`; return; }
-  cdRenderDeferredItemsFetch(wrap);
+  const allItems=[];
+  GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdDeferredItemIds.has(i.id)) allItems.push(i); }));
+  wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
+    ${cdItemsTableHtml(allItems, "deferreditems", `No deferred items yet — right-click an item in Monitoring and choose "Deferred".`)}
+  </div>`;
 }
-async function cdRenderDeferredItemsFetch(wrap){
+
+// ── Delete (✕) / Revert (↩️) -- Tracking, Completed Test, Deferred Items ────
+// Same password gates as everywhere else in the app: "deleteme" to remove a
+// row from just that tab's list, "revertme" to send it all the way back to
+// Monitoring (its original, untouched state) -- useful while trialing the
+// system, since neither touches the underlying Items/Subitems test data.
+async function cdDeleteRowByItemId(sheetName, rawId){
+  if(!accessToken) throw new Error('Please "Connect & Sync" with Google first.');
+  const map=await cdGetHeaderMap(sheetName);
+  if(map["Item ID"]===undefined) return;
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheetName)}?valueRenderOption=FORMATTED_VALUE`;
+  const res=await fetch(url,{headers:{Authorization:"Bearer "+accessToken}});
+  cdCheckAuthError(res);
+  if(!res.ok) throw new Error(`Could not read "${sheetName}" (${res.status})`);
+  const data=await res.json();
+  const rows=data.values||[];
+  const rowIndexes=[];
+  for(let r=1;r<rows.length;r++){ if((rows[r][map["Item ID"]]||"").trim()===String(rawId)) rowIndexes.push(r+1); }
+  if(!rowIndexes.length) return;
+  const gid=await pmmGetSheetGidFor(sheetName);
+  const requests=rowIndexes.sort((a,b)=>b-a).map(r=>({deleteDimension:{range:{sheetId:gid, dimension:"ROWS", startIndex:r-1, endIndex:r}}}));
+  const bres=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({requests})});
+  cdCheckAuthError(bres);
+  if(!bres.ok){ const t=await bres.text(); throw new Error(`Could not delete from "${sheetName}" (${bres.status}): ${t.slice(0,150)}`); }
+}
+function cdPromptDeleteItem(itemId, tabKey){
+  const item=cdFindItemById(itemId);
+  openPwGate({
+    title:"Delete Access",
+    message:`Enter the password to remove ${item?`"${item.name}"`:"this item"} from this list. Its test data in Items/Subitems is not affected.`,
+    hash:PW_DELETE_HASH,
+    onSuccess:()=>cdDeleteFromTab(itemId, tabKey),
+  });
+}
+function cdPromptRevertItem(itemId){
+  const item=cdFindItemById(itemId);
+  openPwGate({
+    title:"Revert Access",
+    message:`Enter the password to send ${item?`"${item.name}"`:"this item"} back to Monitoring (its default tab).`,
+    hash:PW_REVERT_HASH,
+    onSuccess:()=>cdRevertItem(itemId),
+  });
+}
+async function cdDeleteFromTab(itemId, tabKey){
   try{
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_DEFERRED_SHEET)}?valueRenderOption=FORMATTED_VALUE`;
-    const res=await fetch(url,{headers:{Authorization:"Bearer "+accessToken}});
-    cdCheckAuthError(res);
-    if(!res.ok) throw new Error(`Could not read "${CD_DEFERRED_SHEET}" (${res.status})`);
-    const data=await res.json();
-    const rows=rowsToObjects(data.values||[]);
-    if(!rows.length){
-      wrap.innerHTML=`<div style="max-width:1000px;margin:0 auto;padding:20px 0"><div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">🔵</div><div style="font-size:12px">No deferred items yet.</div></div></div>`;
-      return;
-    }
-    const headers=Object.keys(rows[0]).filter(h=>h);
-    let html=`<div style="max-width:1100px;margin:0 auto;padding:20px 0">
-      <div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:11.5px">
-          <thead><tr style="background:#f2f3f6">${headers.map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9;white-space:nowrap">${esc(h)}</th>`).join("")}</tr></thead>
-          <tbody>${rows.map(r=>`<tr style="border-bottom:0.5px solid #f0f1f3">${headers.map(h=>`<td style="padding:7px 12px;white-space:normal">${esc(r[h]||"")}</td>`).join("")}</tr>`).join("")}</tbody>
-        </table>
-      </div>
-    </div>`;
-    wrap.innerHTML=html;
+    const item=cdFindItemById(itemId);
+    const rawId=item?item.rowId:itemId.replace(/^i/,"");
+    const sheetName = tabKey==="tracking"?CD_TRACKING_SHEET : tabKey==="deferreditems"?CD_DEFERRED_SHEET : CD_COMPLETED_TEST_SHEET;
+    await cdDeleteRowByItemId(sheetName, rawId);
+    if(tabKey==="tracking"){ cdTrackingTransferredIds.delete(itemId); localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds])); }
+    else if(tabKey==="deferreditems"){ cdDeferredItemIds.delete(itemId); localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds])); }
+    else if(tabKey==="completedtest"){ cdCompletedTestIds.delete(itemId); localStorage.setItem(CD_COMPLETED_TEST_LS, JSON.stringify([...cdCompletedTestIds])); }
+    switchTab(tabKey);
   }catch(e){
-    wrap.innerHTML=`<div style="text-align:center;padding:48px;color:#e2445c">Could not load Deferred Items: ${esc(e.message)}</div>`;
+    alert("Could not delete: "+e.message);
+  }
+}
+async function cdRevertItem(itemId){
+  try{
+    const item=cdFindItemById(itemId);
+    const rawId=item?item.rowId:itemId.replace(/^i/,"");
+    await Promise.all([
+      cdDeleteRowByItemId(CD_TRACKING_SHEET, rawId).catch(()=>{}),
+      cdDeleteRowByItemId(CD_DEFERRED_SHEET, rawId).catch(()=>{}),
+      cdDeleteRowByItemId(CD_COMPLETED_TEST_SHEET, rawId).catch(()=>{}),
+    ]);
+    cdTrackingTransferredIds.delete(itemId); localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+    cdCompletedTestIds.delete(itemId); localStorage.setItem(CD_COMPLETED_TEST_LS, JSON.stringify([...cdCompletedTestIds]));
+    cdDeferredItemIds.delete(itemId); localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
+    cdMonitoringClosedIds.delete(itemId); localStorage.setItem(CD_MON_CLOSED_LS, JSON.stringify([...cdMonitoringClosedIds]));
+    switchTab("monitoring");
+    alert(`${item?`"${item.name}"`:"Item"} reverted back to Monitoring.`);
+  }catch(e){
+    alert("Could not revert: "+e.message);
   }
 }
 
@@ -5362,6 +5529,25 @@ async function confirmPwGate(){
   const onSuccess=m.onSuccess;
   closeModal();
   if(onSuccess) onSuccess();
+}
+
+// Same styled-modal approach, but for a free-text reason instead of a
+// password (e.g. "why is this being deferred?") -- used wherever the app
+// used to fall back to a plain browser prompt().
+function openTextGate({title, message, placeholder, onSuccess}){
+  openModal({type:"textGate", title, message, placeholder, onSuccess});
+  setTimeout(()=>document.getElementById("textgate-input")?.focus(), 50);
+}
+function confirmTextGate(){
+  const m=modal;
+  if(!m || m.type!=="textGate") return;
+  const input=document.getElementById("textgate-input");
+  const errEl=document.getElementById("textgate-error");
+  const val=(input?.value||"").trim();
+  if(!val){ if(errEl) errEl.textContent="Please enter a reason."; return; }
+  const onSuccess=m.onSuccess;
+  closeModal();
+  if(onSuccess) onSuccess(val);
 }
 
 function pmmRequestSaveCostSavings(){
