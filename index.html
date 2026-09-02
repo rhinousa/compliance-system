@@ -3082,6 +3082,7 @@ let cdFulfilLookupSheetTitle = null;
 let cdFulfilLookupIndex = null; // {SKU: {product, tier, parent}}
 let cdLookupRecommendedSourceItem = null; // item whose test types are being offered
 let cdLookupRecommendedSelected = new Set(); // chosen sub rowIds
+let cdLookupRecommendedSourceIsSameItem = false; // true when the source IS the item being submitted (exact SKU match), not a different sibling
 function cdFindExistingItemBySku(sku){
   const target=sku.trim().toUpperCase();
   if(!target) return null;
@@ -3110,10 +3111,12 @@ function cdApplyItemToDraft(item){
 function cdClearLookupRecommendations(){
   cdLookupRecommendedSourceItem=null;
   cdLookupRecommendedSelected=new Set();
+  cdLookupRecommendedSourceIsSameItem=false;
 }
-function cdOfferTestTypeRecommendations(item){
+function cdOfferTestTypeRecommendations(item, isSameItem){
   cdLookupRecommendedSourceItem = (item.subs && item.subs.length) ? item : null;
   cdLookupRecommendedSelected = new Set();
+  cdLookupRecommendedSourceIsSameItem = !!isSameItem;
 }
 function cdToggleRecommendedSub(subId, checked){
   if(checked) cdLookupRecommendedSelected.add(subId); else cdLookupRecommendedSelected.delete(subId);
@@ -3123,13 +3126,20 @@ function cdApplyRecommendedTestTypes(){
   const chosen=cdLookupRecommendedSourceItem.subs.filter(s=>cdLookupRecommendedSelected.has(s.rowId));
   if(!chosen.length){ alert("Select at least one test type to add."); return; }
   const blankOnly = cdTestTypes.length===1 && !cdTestTypes[0].name.trim() && !cdTestTypes[0].std.trim();
+  const sameItem=cdLookupRecommendedSourceIsSameItem;
   // Only the structural Test Type fields carry over -- never the source item's
-  // execution/results, since this is a brand-new item that hasn't been tested yet.
-  const converted = chosen.map(s=>({
-    name:s.name, std:s.std, criteria:s.criteria, target:s.target,
-    equipment:s.equipment, accreditation:s.accreditation, labs:s.labs,
-    execs:[cdNewExec()],
-  }));
+  // execution/results, since new results haven't been entered yet. When the
+  // recommendation came from this exact item (not a sibling), we keep its
+  // subId so submitting updates that same Subitems row instead of duplicating it.
+  const converted = chosen.map(s=>{
+    const tt={
+      name:s.name, std:s.std, criteria:s.criteria, target:s.target,
+      equipment:s.equipment, accreditation:s.accreditation, labs:s.labs,
+      execs:[cdNewExec()],
+    };
+    if(sameItem) tt.subId=s.rowId;
+    return tt;
+  });
   cdTestTypes = blankOnly ? converted : cdTestTypes.concat(converted);
   cdClearLookupRecommendations();
   cdRenderNewEntry();
@@ -3193,7 +3203,7 @@ async function cdLookupSku(){
   const existing=cdFindExistingItemBySku(sku);
   if(existing){
     cdApplyItemToDraft(existing);
-    cdOfferTestTypeRecommendations(existing);
+    cdOfferTestTypeRecommendations(existing, true);
     cdRenderNewEntry();
     const s=document.getElementById("cd-sku-lookup-status"); if(s) s.textContent="Found in existing items — fields auto-filled.";
     return;
@@ -3208,7 +3218,7 @@ async function cdLookupSku(){
     if(sibling){
       cdApplyItemToDraft(sibling);
       if(match.parent) cdDraft.parentSku=match.parent;
-      cdOfferTestTypeRecommendations(sibling);
+      cdOfferTestTypeRecommendations(sibling, false);
       cdRenderNewEntry();
       const s=document.getElementById("cd-sku-lookup-status"); if(s) s.textContent=`Same parent as "${sibling.name}" — fields & test types auto-filled from it.`;
       return;
@@ -3238,7 +3248,6 @@ async function cdSubmitEntry(){
   if(btn){ btn.disabled=true; btn.style.opacity=".6"; btn.textContent="Submitting…"; }
   try{
     const itemsMap=await cdGetHeaderMap(ITEMS_SHEET);
-    const subsMap=await cdGetHeaderMap(SUBITEMS_SHEET);
     // If this SKU already exists (the SKU lookup would have found it), update
     // that row instead of appending a duplicate item.
     const existing=cdFindExistingItemBySku(cdDraft.sku);
@@ -3292,34 +3301,10 @@ async function cdSubmitEntry(){
       if(!itemsRes.ok){ const t=await itemsRes.text(); throw new Error(`Could not save item (${itemsRes.status}): ${t.slice(0,150)}`); }
     }
 
-    const subRows=[];
-    for(const tt of cdTestTypes){
-      if(!tt.name.trim() && !tt.std.trim()) continue;
-      const yearBlocks={};
-      tt.execs.forEach(ex=>{
-        const hasData=ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||(ex.samples||[]).some(s=>s.value||s.verdict);
-        if(!hasData) return;
-        const yr=cdYearColFor(ex.date);
-        if(!yearBlocks[yr]) yearBlocks[yr]=[];
-        yearBlocks[yr].push(cdFormatExecBlock(ex, yearBlocks[yr].length+1));
-      });
-      const subValues={
-        parent_item_id:newId, s:cdGenerateSubId(), name:tt.name,
-        std:tt.std, criteria:tt.criteria, target:tt.target,
-        equipment:tt.equipment, accreditation:tt.accreditation, labs:tt.labs,
-      };
-      for(const yr of Object.keys(yearBlocks)){
-        await cdEnsureColumn(SUBITEMS_SHEET, yr); // creates the column (e.g. y2027) the first time it's needed
-        subValues[yr]=yearBlocks[yr].join("\n\n");
-      }
-      subRows.push(cdBuildRow(subsMap, subValues));
-    }
-    if(subRows.length){
-      const subsUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SUBITEMS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
-      const subsRes=await fetch(subsUrl,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:subRows})});
-      cdCheckAuthError(subsRes);
-      if(!subsRes.ok){ const t=await subsRes.text(); throw new Error(`Could not save test types (${subsRes.status}): ${t.slice(0,150)}`); }
-    }
+    // Update-in-place or append, same logic used everywhere else -- so
+    // re-submitting an existing SKU (or a recommended test type copied from
+    // this same item) never creates a duplicate Subitems row.
+    await cdWriteTestTypesToSubitems(cdTestTypes, newId);
 
     const wasUpdate=updatedExisting;
     const submittedSku=cdDraft.sku;
@@ -3547,14 +3532,17 @@ async function cdSaveItemFields(){
 // place by their "s" id, or appending new ones for freshly-added Test Types).
 // "Save Changes" alone used to skip this entirely, which is why edits to the
 // Test Type/Execution fields weren't reaching the sheet.
-async function cdSaveTestTypes(){
-  const d=modal.draft;
+// Shared write logic: updates a Test Type's Subitems row in place if it has a
+// known subId (found on that same parent item), or appends a new row
+// otherwise. Used by New Entry submission, Save Changes, and Mark Completed
+// alike, so an existing item never ends up with duplicate Subitems rows.
+async function cdWriteTestTypesToSubitems(testTypes, parentItemId){
   const rawRes=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SUBITEMS_SHEET)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
   cdCheckAuthError(rawRes);
   if(!rawRes.ok) throw new Error(`Could not read "${SUBITEMS_SHEET}" (${rawRes.status})`);
   const rawData=await rawRes.json();
   const rawRows=rawData.values||[];
-  for(const tt of d.testTypes){
+  for(const tt of testTypes){
     const hasAnyExecData=tt.execs.some(ex=>ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||(ex.samples||[]).some(s=>s.value||s.verdict));
     if(!tt.name.trim() && !tt.std.trim() && !hasAnyExecData) continue; // skip a fully-blank "+ Add Test Type" row
     const yearBlocks={};
@@ -3571,7 +3559,11 @@ async function cdSaveTestTypes(){
 
     let rowIndex=-1;
     if(tt.subId && freshMap.s!==undefined){
-      for(let r=1;r<rawRows.length;r++){ if((rawRows[r][freshMap.s]||"").trim()===tt.subId){ rowIndex=r+1; break; } }
+      for(let r=1;r<rawRows.length;r++){
+        if((rawRows[r][freshMap.s]||"").trim()!==tt.subId) continue;
+        if(freshMap.parent_item_id!==undefined && (rawRows[r][freshMap.parent_item_id]||"").trim()!==String(parentItemId)) continue; // safety: must belong to this item
+        rowIndex=r+1; break;
+      }
     }
     if(rowIndex!==-1){
       const gid=await pmmGetSheetGidFor(SUBITEMS_SHEET);
@@ -3588,8 +3580,8 @@ async function cdSaveTestTypes(){
         if(!bres.ok){ const t=await bres.text(); throw new Error(`Could not update "${tt.name}" (${bres.status}): ${t.slice(0,150)}`); }
       }
     } else {
-      const subId=cdGenerateSubId();
-      const subValues={ parent_item_id:d.rowId, s:subId, name:tt.name, std:tt.std, criteria:tt.criteria, target:tt.target, equipment:tt.equipment, accreditation:tt.accreditation, labs:tt.labs };
+      const subId=tt.subId||cdGenerateSubId();
+      const subValues={ parent_item_id:parentItemId, s:subId, name:tt.name, std:tt.std, criteria:tt.criteria, target:tt.target, equipment:tt.equipment, accreditation:tt.accreditation, labs:tt.labs };
       Object.entries(yearBlocks).forEach(([yr,blocks])=>{ subValues[yr]=blocks.join("\n\n"); });
       const row=cdBuildRow(freshMap, subValues);
       const appendUrl=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SUBITEMS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
@@ -3599,6 +3591,9 @@ async function cdSaveTestTypes(){
       tt.subId=subId; // so a second Save in the same session updates this row instead of appending again
     }
   }
+}
+async function cdSaveTestTypes(){
+  await cdWriteTestTypesToSubitems(modal.draft.testTypes, modal.draft.rowId);
 }
 async function cdSaveItemEdit(){
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
