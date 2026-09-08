@@ -6926,7 +6926,10 @@ function pcaComponentRowHtml(c,i){
     </div>
     <input class="pmm-input" placeholder="Component name" value="${esc(c.component)}" oninput="pcaTicketDraftComponents[${i}].component=this.value" style="margin-bottom:10px"/>
     <div id="pca-photo-wrap-${i}">
-      ${c.photoUrl?`<img src="${pmmPhotoDisplayUrl(c.photoUrl)}" style="max-width:100%;max-height:200px;border-radius:6px;display:block;margin-bottom:8px"/><button onclick="pcaTicketDraftComponents[${i}].photoUrl='';pcaRenderTicketForm()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:6px;padding:5px 12px;cursor:pointer">✕ Remove photo</button>`
+      ${c.photoUrl?`<div style="position:relative;display:inline-block;margin-bottom:8px">
+          <img src="${pmmPhotoDisplayUrl(c.photoUrl)}" style="max-width:100%;max-height:200px;border-radius:6px;display:block"/>
+          ${c.photoUploading?`<div style="position:absolute;bottom:6px;left:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:600;padding:3px 8px;border-radius:5px;display:flex;align-items:center;gap:5px"><span class="spin"></span> Saving to Drive…</div>`:""}
+        </div><br/><button onclick="pcaTicketDraftComponents[${i}].photoUrl='';pcaRenderTicketForm()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:6px;padding:5px 12px;cursor:pointer">✕ Remove photo</button>`
         :`<div class="pmm-photo-drop" onclick="document.getElementById('pca-photo-file-${i}').click()">
             <div style="font-size:20px;margin-bottom:4px">📷</div>
             <div style="font-size:11px;color:#555;font-weight:600">Click to upload, or paste an image</div>
@@ -6976,33 +6979,44 @@ function pcaRenderTicketForm(){
   body.innerHTML=html;
 }
 
+// Cached folder-creation promise (not just the result) so two photos pasted
+// in quick succession before the first "ensure folder" call resolves don't
+// each independently create a duplicate Drive folder.
+let pcaFolderCreatePending=null;
 async function pcaEnsureTicketFolder(){
   if(pcaDraftFolderId) return pcaDraftFolderId;
+  if(pcaFolderCreatePending) return pcaFolderCreatePending;
   const r=pcaTicketDraftRow;
   const folderName=`${r.poNumber}-${r.shipmentNumber}-${r.supplierSku} ${r.description}`.replace(/[\\\/:*?"<>|]/g,"-").slice(0,120);
   const metadata={ name:folderName, mimeType:"application/vnd.google-apps.folder", parents:[PCA_DRIVE_FOLDER_ID] };
-  const res=await fetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true",{
-    method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify(metadata),
-  });
-  if(!res.ok){ const t=await res.text(); throw new Error(`Could not create the ticket's Drive folder (${res.status}): ${t.slice(0,150)}`); }
-  const json=await res.json();
-  pcaDraftFolderId=json.id;
-  return pcaDraftFolderId;
+  pcaFolderCreatePending=(async()=>{
+    const res=await fetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true",{
+      method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify(metadata),
+    });
+    if(!res.ok){ const t=await res.text(); throw new Error(`Could not create the ticket's Drive folder (${res.status}): ${t.slice(0,150)}`); }
+    const json=await res.json();
+    pcaDraftFolderId=json.id;
+    return pcaDraftFolderId;
+  })();
+  try{ return await pcaFolderCreatePending; } finally { pcaFolderCreatePending=null; }
 }
 
+// Sends the file as raw bytes instead of base64 -- base64 inflates the
+// payload by ~33% and costs real encode/decode time for nothing, since Drive
+// accepts binary just fine in a multipart body.
 async function pcaUploadPhotoToFolder(file, folderId){
   const metadata={ name:`photo_${Date.now()}_${file.name}`, parents:[folderId] };
   const boundary="pca_boundary_"+Date.now();
-  const base64=await new Promise((resolve,reject)=>{
-    const reader=new FileReader();
-    reader.onload=()=>resolve(reader.result.split(",")[1]);
-    reader.onerror=reject;
-    reader.readAsDataURL(file);
-  });
-  const body=
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`+
-    `--${boundary}\r\nContent-Type: ${file.type||"image/jpeg"}\r\nContent-Transfer-Encoding: base64\r\n\r\n${base64}\r\n`+
-    `--${boundary}--`;
+  const imageBytes=new Uint8Array(await file.arrayBuffer());
+  const metaPart=`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`+
+    `--${boundary}\r\nContent-Type: ${file.type||"image/jpeg"}\r\n\r\n`;
+  const closePart=`\r\n--${boundary}--`;
+  const metaBytes=new TextEncoder().encode(metaPart);
+  const closeBytes=new TextEncoder().encode(closePart);
+  const body=new Uint8Array(metaBytes.length+imageBytes.length+closeBytes.length);
+  body.set(metaBytes, 0);
+  body.set(imageBytes, metaBytes.length);
+  body.set(closeBytes, metaBytes.length+imageBytes.length);
   const res=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id&supportsAllDrives=true",{
     method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":`multipart/related; boundary=${boundary}`}, body,
   });
@@ -7014,18 +7028,34 @@ async function pcaUploadPhotoToFolder(file, folderId){
   return `https://drive.google.com/thumbnail?id=${json.id}&sz=w1000`;
 }
 
+// Shows the photo immediately from a local preview (createObjectURL is
+// synchronous -- no waiting) while the real Drive upload runs in the
+// background, then silently swaps in the Drive URL once it's done. Same
+// end result, but the person never watches a blank spinner.
 async function pcaUploadComponentPhoto(idx, file){
   if(!file) return;
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
-  const wrap=document.getElementById(`pca-photo-wrap-${idx}`);
-  if(wrap) wrap.innerHTML=`<div style="font-size:11px;color:#888"><span class="spin"></span> Uploading…</div>`;
+  const previewUrl=URL.createObjectURL(file);
+  pcaTicketDraftComponents[idx].photoUrl=previewUrl;
+  pcaTicketDraftComponents[idx].photoUploading=true;
+  pcaRenderTicketForm();
   try{
     const folderId=await pcaEnsureTicketFolder();
-    pcaTicketDraftComponents[idx].photoUrl=await pcaUploadPhotoToFolder(file, folderId);
+    const driveUrl=await pcaUploadPhotoToFolder(file, folderId);
+    if(pcaTicketDraftComponents[idx] && pcaTicketDraftComponents[idx].photoUrl===previewUrl){
+      pcaTicketDraftComponents[idx].photoUrl=driveUrl;
+      pcaTicketDraftComponents[idx].photoUploading=false;
+      pcaRenderTicketForm();
+    }
   }catch(e){
     alert("Photo upload failed: "+e.message);
+    if(pcaTicketDraftComponents[idx] && pcaTicketDraftComponents[idx].photoUrl===previewUrl){
+      pcaTicketDraftComponents[idx].photoUrl="";
+      pcaTicketDraftComponents[idx].photoUploading=false;
+      pcaRenderTicketForm();
+    }
   }finally{
-    pcaRenderTicketForm();
+    URL.revokeObjectURL(previewUrl);
   }
 }
 
@@ -7308,7 +7338,8 @@ async function pcaUploadReproducePhoto(ticketId, file){
   if(!t) return;
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
   const wrap=document.getElementById(`pca-reproduce-wrap-${ticketId}`);
-  if(wrap) wrap.innerHTML=`<div style="font-size:11px;color:#888"><span class="spin"></span> Uploading…</div>`;
+  const previewUrl=URL.createObjectURL(file);
+  if(wrap) wrap.innerHTML=`<img src="${previewUrl}" style="max-width:220px;max-height:160px;border-radius:6px;display:block;margin-bottom:6px"/><div style="font-size:11px;color:#888"><span class="spin"></span> Saving to Drive…</div>`;
   try{
     let folderId=PCA_DRIVE_FOLDER_ID;
     if(t.folderLink){ const m=t.folderLink.match(/folders\/([a-zA-Z0-9_-]+)/); if(m) folderId=m[1]; }
@@ -7325,6 +7356,8 @@ async function pcaUploadReproducePhoto(ticketId, file){
     await pcaAdvanceStage(ticketId, "review");
   }catch(e){
     alert("Could not upload reproduced sample: "+e.message);
+  }finally{
+    URL.revokeObjectURL(previewUrl);
   }
 }
 
@@ -7336,8 +7369,8 @@ function pcaMgmtEvidenceUploadHtml(t){
     <div style="font-size:11px;color:#888;margin-bottom:6px">Evidence for this decision (file or photo, or paste an image):</div>
     <div id="pca-mgmt-evidence-preview-${t.id}">
       ${ev?(ev.isImage
-        ? `<div style="position:relative;display:inline-block;margin-bottom:8px"><img src="${pmmPhotoDisplayUrl(ev.url)}" style="max-width:220px;max-height:160px;border-radius:6px;display:block"/><button onclick="pcaClearMgmtEvidence('${t.id}')" title="Remove" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;border:none;cursor:pointer;font-size:11px">🗑️</button></div>`
-        : `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:#333;background:#f7f8fa;border:1px solid #e0e3ea;border-radius:6px;padding:8px 12px;margin-bottom:8px">📎 ${esc(ev.name||"Evidence file")} uploaded<button onclick="pcaClearMgmtEvidence('${t.id}')" style="margin-left:auto;font-size:10px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:2px 8px;cursor:pointer">Remove</button></div>`
+        ? `<div style="position:relative;display:inline-block;margin-bottom:8px"><img src="${pmmPhotoDisplayUrl(ev.url)}" style="max-width:220px;max-height:160px;border-radius:6px;display:block"/>${ev.uploading?`<div style="position:absolute;bottom:6px;left:6px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:600;padding:3px 8px;border-radius:5px;display:flex;align-items:center;gap:5px"><span class="spin"></span> Saving to Drive…</div>`:`<button onclick="pcaClearMgmtEvidence('${t.id}')" title="Remove" style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;border:none;cursor:pointer;font-size:11px">🗑️</button>`}</div>`
+        : `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:#333;background:#f7f8fa;border:1px solid #e0e3ea;border-radius:6px;padding:8px 12px;margin-bottom:8px">📎 ${esc(ev.name||"Evidence file")} ${ev.uploading?`<span class="spin"></span> saving…`:"uploaded"}${ev.uploading?"":`<button onclick="pcaClearMgmtEvidence('${t.id}')" style="margin-left:auto;font-size:10px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:2px 8px;cursor:pointer">Remove</button>`}</div>`
       ):""}
     </div>
     <input type="file" id="pca-mgmt-evidence-file-${t.id}" style="display:none" onchange="pcaUploadMgmtEvidence('${t.id}', this.files[0])"/>
@@ -7349,16 +7382,22 @@ async function pcaUploadMgmtEvidence(ticketId, file){
   const t=pcaTickets.find(x=>x.id===ticketId);
   if(!t) return;
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
-  const wrap=document.getElementById(`pca-mgmt-evidence-preview-${ticketId}`);
-  if(wrap) wrap.innerHTML=`<div style="font-size:11px;color:#888"><span class="spin"></span> Uploading…</div>`;
+  const isImage=(file.type||"").startsWith("image/");
+  const previewUrl=isImage?URL.createObjectURL(file):"";
+  pcaMgmtEvidenceDraft[ticketId]={url:previewUrl, isImage, name:file.name, uploading:true};
+  pcaOpenTicketDetail(ticketId);
   try{
     let folderId=PCA_DRIVE_FOLDER_ID;
     if(t.folderLink){ const m=t.folderLink.match(/folders\/([a-zA-Z0-9_-]+)/); if(m) folderId=m[1]; }
     const url=await pcaUploadPhotoToFolder(file, folderId);
-    pcaMgmtEvidenceDraft[ticketId]={url, isImage:(file.type||"").startsWith("image/"), name:file.name};
+    pcaMgmtEvidenceDraft[ticketId]={url, isImage, name:file.name};
     pcaOpenTicketDetail(ticketId);
   }catch(e){
     alert("Could not upload evidence: "+e.message);
+    delete pcaMgmtEvidenceDraft[ticketId];
+    pcaOpenTicketDetail(ticketId);
+  }finally{
+    if(previewUrl) URL.revokeObjectURL(previewUrl);
   }
 }
 function pcaClearMgmtEvidence(ticketId){
@@ -7594,7 +7633,8 @@ async function pcaReplaceComponentPhoto(ticketId, compIndex, file){
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
   if(!c.rowIndex){ alert("Could not locate this photo's row in the sheet -- try reopening the ticket from the Approval Process tab (this refreshes row data), then try again."); return; }
   const wrap=document.getElementById(`pca-comp-photo-${compIndex}`);
-  if(wrap) wrap.innerHTML=`<div style="font-size:11px;color:#888"><span class="spin"></span> Uploading…</div>`;
+  const previewUrl=URL.createObjectURL(file);
+  if(wrap) wrap.innerHTML=`<img src="${previewUrl}" style="width:100%;max-height:200px;object-fit:cover;border-radius:6px;margin-bottom:6px;display:block"/><div style="font-size:11px;color:#888"><span class="spin"></span> Saving to Drive…</div>`;
   try{
     let folderId=PCA_DRIVE_FOLDER_ID;
     if(t.folderLink){ const m=t.folderLink.match(/folders\/([a-zA-Z0-9_-]+)/); if(m) folderId=m[1]; }
@@ -7615,6 +7655,9 @@ async function pcaReplaceComponentPhoto(ticketId, compIndex, file){
     pcaOpenTicketDetail(ticketId);
   }catch(e){
     alert("Could not upload replacement photo: "+e.message);
+    pcaOpenTicketDetail(ticketId);
+  }finally{
+    URL.revokeObjectURL(previewUrl);
   }
 }
 
