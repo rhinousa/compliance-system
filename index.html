@@ -254,6 +254,17 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
     </div>
   </div>
 
+  <!-- Search bars for Monitoring / Test Expense / Tracking / Completed Test /
+       Deferred Items -- these live here permanently (never rewritten by a
+       tab's render function, same as #search-wrap above for Main Table) so
+       typing never destroys and recreates the input. Shown/hidden per tab by
+       switchTab(), and populated once via cdInitSearchBars(). -->
+  <div id="mon-search-wrap" style="display:none;padding:14px 18px 0;background:#f4f5f7;max-width:1400px;margin:0 auto"></div>
+  <div id="exp-search-wrap" style="display:none;padding:14px 18px 0;background:#f4f5f7;max-width:1400px;margin:0 auto"></div>
+  <div id="trk-search-wrap" style="display:none;padding:14px 18px 0;background:#f4f5f7;max-width:1300px;margin:0 auto"></div>
+  <div id="cmp-search-wrap" style="display:none;padding:14px 18px 0;background:#f4f5f7;max-width:1300px;margin:0 auto"></div>
+  <div id="def-search-wrap" style="display:none;padding:14px 18px 0;background:#f4f5f7;max-width:1300px;margin:0 auto"></div>
+
   <!-- Board body (dynamic) -->
   <div id="board-wrap"></div>
 </div>
@@ -1565,7 +1576,6 @@ function renderMonitoring(){
 
   h+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:10px 14px;margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-      ${cdSearchBarHtml("mon-search-box", monSearchQ, "Search SKU or test name…")}
       ${clearFocusBtn}
       ${(monSearchQ||monFilterStatus!=="ALL"||monFilterDecision!=="ALL"||monFocusParent||monFilterPriority!=="ALL")?`<button onclick="clearMonFilters()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear all</button>`:""}
       <button onclick="exportMonitoringExcel()" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer">📊 Export Excel</button>
@@ -1877,7 +1887,6 @@ function renderExpense(){
   // ── Filter bar ──
   h+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:10px 14px;margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-      ${cdSearchBarHtml("exp-search-box", expSearchQ, "Search products & tests…")}
       <button onclick="exportExpenseCSV()" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer">📊 Export Excel</button>
     </div>
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
@@ -2327,22 +2336,21 @@ function renderModals(){
     const icon=s=>s==="overdue"?"🔴":s==="due_soon"?"🟡":s==="ok"?"🟢":s==="deferred"?"🔵":"⚪";
     const label=s=>s==="overdue"?"Retest Due":s==="due_soon"?"Due Soon":s==="ok"?"On Track":s==="deferred"?"Deferred":"No test data yet";
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
-      <div class="modal-box" style="max-width:460px;background:#141824;border-radius:14px">
+      <div class="modal-box" style="max-width:480px;background:#141824;border-radius:14px">
         <div style="padding:22px 24px 18px">
-          <div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:6px">${modal.allDeferred?"🔵 Moving to Deferred Items":"📝 Tests to Perform"}</div>
-          <div style="color:#8a8f9c;font-size:11.5px;margin-bottom:14px">${modal.allDeferred
-            ? `All annual tests on "${esc(item.name)}" are currently deferred in Monitoring — this item will move to Deferred Items instead of Tracking.`
-            : `"${esc(item.name)}" — based on Monitoring, here's the status per test. Anything marked Deferred stays out of Tracking and shows under Deferred Items instead; the rest move to Tracking:`}</div>
-          <div style="max-height:280px;overflow-y:auto;margin-bottom:16px">
-            ${modal.checklist.length?modal.checklist.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #232838;border-radius:7px;margin-bottom:6px;background:#191d29">
+          <div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:6px">📝 Select Tests to Transfer</div>
+          <div style="color:#8a8f9c;font-size:11.5px;margin-bottom:14px">Check whichever tests on "${esc(item.name)}" should move to Tracking. Anything left unchecked and currently Deferred goes to Deferred Items instead; anything left unchecked and not deferred is simply skipped for now.</div>
+          <div style="max-height:300px;overflow-y:auto;margin-bottom:16px">
+            ${modal.checklist.length?modal.checklist.map((c,idx)=>`<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #232838;border-radius:7px;margin-bottom:6px;background:#191d29;cursor:pointer">
+              <input type="checkbox" ${c.checked?"checked":""} onchange="cdToggleTransferCheck(${idx}, this.checked)"/>
               <span style="font-size:13px">${icon(c.status)}</span>
               <span style="font-size:12px;color:#e4e6ea;flex:1">${esc(c.name)}</span>
               <span style="font-size:9.5px;font-weight:700;color:#8a8f9c">${label(c.status)}</span>
-            </div>`).join(""):`<div style="color:#8a8f9c;font-size:11.5px">No annual test data on file yet for this item.</div>`}
+            </label>`).join(""):`<div style="color:#8a8f9c;font-size:11.5px">No annual test data on file yet for this item — it will transfer as-is.</div>`}
           </div>
           <div style="display:flex;gap:10px;justify-content:flex-end">
             <button onclick="closeModal()" style="padding:9px 16px;font-size:12px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Cancel</button>
-            <button onclick="cdConfirmTransfer('${modal.itemId}', ${modal.allDeferred})" style="padding:9px 20px;font-size:12px;font-weight:700;color:${modal.allDeferred?"#fff":"#0b1f0f"};background:${modal.allDeferred?"#0055bb":"#00e05e"};border:none;border-radius:8px;cursor:pointer">${modal.allDeferred?"Move to Deferred Items":"Confirm Transfer"}</button>
+            <button onclick="cdConfirmTransfer('${modal.itemId}')" style="padding:9px 20px;font-size:12px;font-weight:700;color:#0b1f0f;background:#00e05e;border:none;border-radius:8px;cursor:pointer">Confirm Transfer</button>
           </div>
         </div>
       </div>
@@ -2867,6 +2875,21 @@ cdRegisterSearch("exp-search-box", ()=>expSearchQ, (text)=>{ expSearchQ=text; re
 cdRegisterSearch("trk-search-box", ()=>cdTrackingSearchQ, (text)=>{ cdTrackingSearchQ=text; cdRenderTracking(); });
 cdRegisterSearch("cmp-search-box", ()=>cdCompletedSearchQ, (text)=>{ cdCompletedSearchQ=text; cdRenderCompletedTest(); });
 cdRegisterSearch("def-search-box", ()=>cdDeferredSearchQ, (text)=>{ cdDeferredSearchQ=text; cdRenderDeferredItems(); });
+// Populated exactly once -- these live in static wrapper divs (mon-search-wrap
+// etc.) that switchTab() shows/hides, and are never rewritten again by any
+// tab's render() function, so the input itself is never destroyed and typing
+// never loses focus (same reason Main Table's search already worked).
+let cdSearchBarsInitialized=false;
+function cdInitSearchBars(){
+  if(cdSearchBarsInitialized) return;
+  cdSearchBarsInitialized=true;
+  const set=(wrapId, boxId, q, ph)=>{ const el=document.getElementById(wrapId); if(el) el.innerHTML=cdSearchBarHtml(boxId, q, ph); };
+  set("mon-search-wrap","mon-search-box",monSearchQ,"Search SKU or test name…");
+  set("exp-search-wrap","exp-search-box",expSearchQ,"Search products & tests…");
+  set("trk-search-wrap","trk-search-box",cdTrackingSearchQ,"Search products & tests…");
+  set("cmp-search-wrap","cmp-search-box",cdCompletedSearchQ,"Search products & tests…");
+  set("def-search-wrap","def-search-box",cdDeferredSearchQ,"Search products & tests…");
+}
 
 function tDD(n){
   openDD=openDD===n?null:n;
@@ -2954,6 +2977,12 @@ function switchTab(t){
   if(kpiEl) kpiEl.style.display=t==="table"?"":"none";
   const tbEl=document.getElementById("toolbar-wrap");
   if(tbEl) tbEl.style.display=t==="table"?"flex":"none";
+  cdInitSearchBars();
+  const monSw=document.getElementById("mon-search-wrap"); if(monSw) monSw.style.display=t==="monitoring"?"block":"none";
+  const expSw=document.getElementById("exp-search-wrap"); if(expSw) expSw.style.display=t==="expense"?"block":"none";
+  const trkSw=document.getElementById("trk-search-wrap"); if(trkSw) trkSw.style.display=t==="tracking"?"block":"none";
+  const cmpSw=document.getElementById("cmp-search-wrap"); if(cmpSw) cmpSw.style.display=t==="completedtest"?"block":"none";
+  const defSw=document.getElementById("def-search-wrap"); if(defSw) defSw.style.display=t==="deferreditems"?"block":"none";
   if(t==="table") renderTable();
   else if(t==="monitoring") renderMonitoring();
   else if(t==="newentry") cdRenderNewEntry();
@@ -3545,10 +3574,7 @@ function cdRenderTracking(){
   GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdTrackingTransferredIds.has(i.id)) allItems.push(i); }));
   const filtered=cdFilterItemsBySearch(allItems, cdTrackingSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      ${cdSearchBarHtml("trk-search-box", cdTrackingSearchQ, "Search products & tests…")}
-      ${cdTrackingSearchQ?`<button onclick="cdTrackingSearchQ='';cdRenderTracking()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear</button>`:""}
-    </div>
+    ${cdTrackingSearchQ?`<div style="margin-bottom:12px"><button onclick="cdTrackingSearchQ='';const b=document.getElementById('trk-search-box');if(b)b.value='';cdRenderTracking()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear search</button></div>`:""}
     ${cdItemsTableHtml(filtered, "tracking", allItems.length?"No items match your search.":`Nothing here yet — create an item from "New Entry", or right-click an item in Monitoring and choose "Transfer to Tracking".`)}
     ${allItems.length?`<div style="font-size:10px;color:#aaa;margin-top:8px">Click any row to view/edit full details, set Status Remarks, or mark it completed. ↩️ reverts it back to Monitoring, ✕ removes it from this list.</div>`:""}
   </div>`;
@@ -3880,10 +3906,7 @@ function cdRenderCompletedTest(){
   GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdCompletedTestIds.has(i.id)) allItems.push(i); }));
   const filtered=cdFilterItemsBySearch(allItems, cdCompletedSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      ${cdSearchBarHtml("cmp-search-box", cdCompletedSearchQ, "Search products & tests…")}
-      ${cdCompletedSearchQ?`<button onclick="cdCompletedSearchQ='';cdRenderCompletedTest()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear</button>`:""}
-    </div>
+    ${cdCompletedSearchQ?`<div style="margin-bottom:12px"><button onclick="cdCompletedSearchQ='';const b=document.getElementById('cmp-search-box');if(b)b.value='';cdRenderCompletedTest()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear search</button></div>`:""}
     ${cdItemsTableHtml(filtered, "completedtest", allItems.length?"No items match your search.":"No completed tests yet — mark one completed from Tracking.")}
   </div>`;
 }
@@ -3945,12 +3968,30 @@ function cdSaveItemDeferredSubs(){
   Object.entries(cdItemDeferredSubNames).forEach(([k,v])=>{ obj[k]=[...v]; });
   localStorage.setItem(CD_ITEM_DEFERRED_SUBS_LS, JSON.stringify(obj));
 }
+// Which specific tests the person explicitly checked to appear in Tracking
+// (set via the checklist pop-up on transfer). If an item has no entry here,
+// every test shows in Tracking as before (e.g. items added via New Entry).
+const CD_ITEM_TRACKING_SUBS_LS = "rhino_cd_item_tracking_subs_v1";
+let cdItemTrackingSubNames = {};
+(function(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(CD_ITEM_TRACKING_SUBS_LS)||"{}");
+    Object.entries(raw).forEach(([k,v])=>{ cdItemTrackingSubNames[k]=new Set(v); });
+  }catch(e){}
+})();
+function cdSaveItemTrackingSubs(){
+  const obj={};
+  Object.entries(cdItemTrackingSubNames).forEach(([k,v])=>{ obj[k]=[...v]; });
+  localStorage.setItem(CD_ITEM_TRACKING_SUBS_LS, JSON.stringify(obj));
+}
 function cdItemScheduleHtml(item, tabKey){
   let subs=item.subs;
+  const trackingNames=cdItemTrackingSubNames[item.id];
   const deferredNames=cdItemDeferredSubNames[item.id];
-  if(deferredNames && deferredNames.size){
-    if(tabKey==="deferreditems") subs=subs.filter(s=>deferredNames.has(s.name));
-    else if(tabKey==="tracking") subs=subs.filter(s=>!deferredNames.has(s.name));
+  if(tabKey==="tracking" && trackingNames && trackingNames.size){
+    subs=subs.filter(s=>trackingNames.has(s.name));
+  } else if(tabKey==="deferreditems" && deferredNames && deferredNames.size){
+    subs=subs.filter(s=>deferredNames.has(s.name));
   }
   if(!subs.length) return `<span style="color:#bbb;font-size:10px">—</span>`;
   return subs.map(s=>{
@@ -4085,42 +4126,51 @@ function cdTransferToTracking(){
   cdMonContextMenu=null;
   cdShowTransferChecklist(itemId);
 }
-// Shows what testing is actually needed (per Monitoring's status for each
-// test type) before committing the transfer -- and if every annual test is
-// currently marked Deferred, routes straight to Deferred Items instead.
+// Shows every test that has data on file (per Monitoring's status) as a
+// checkbox checklist -- the person picks exactly what should move to
+// Tracking. Anything left unchecked that's currently Deferred goes to
+// Deferred Items instead; anything left unchecked and not deferred is simply
+// skipped for now (shows in neither tab until reconsidered).
 function cdShowTransferChecklist(itemId){
   const item=cdFindItemById(itemId);
   if(!item) return;
   const trackedSubs=item.subs.filter(s=>(s.p24&&s.p24.length)||(s.p25&&s.p25.length)||(s.p26&&s.p26.length));
   const relevantSubs=trackedSubs.length?trackedSubs:item.subs;
-  const allDeferred = trackedSubs.length>0 && trackedSubs.every(s=>getRetestDecision(item.id,s.id)==="next");
-  const checklist=relevantSubs.map(s=>({
-    name:s.name,
-    status: trackedSubs.length ? (getRetestDecision(item.id,s.id)==="next" ? "deferred" : monStatus(s,item.id)) : "none",
-  }));
-  openModal({type:"cdTransferChecklist", itemId, allDeferred, checklist});
+  const checklist=relevantSubs.map(s=>{
+    const status = trackedSubs.length ? (getRetestDecision(item.id,s.id)==="next" ? "deferred" : monStatus(s,item.id)) : "none";
+    return { name:s.name, status, checked: status!=="deferred" };
+  });
+  openModal({type:"cdTransferChecklist", itemId, checklist});
 }
-function cdConfirmTransfer(itemId, allDeferred){
+function cdToggleTransferCheck(idx, checked){
+  if(!modal || modal.type!=="cdTransferChecklist") return;
+  modal.checklist[idx].checked=checked;
+  renderModals();
+}
+function cdConfirmTransfer(itemId){
+  const m=modal;
+  const checklist=(m && m.checklist) || [];
   closeModal();
   const item=cdFindItemById(itemId);
   if(!item) return;
-  if(allDeferred){
-    cdDeferItem(item, "All annual tests are currently marked Deferred in Monitoring.");
+
+  const checkedNames=new Set(checklist.filter(c=>c.checked).map(c=>c.name));
+  const deferredNames=new Set(checklist.filter(c=>!c.checked && c.status==="deferred").map(c=>c.name));
+
+  // Nothing checked for Tracking -- treat this as a straight defer instead.
+  if(checklist.length && !checkedNames.size){
+    cdDeferItem(item, "No tests were selected for Tracking — deferred instead.");
     return;
   }
-  // Split by test type: anything currently marked "Defer" in Monitoring stays
-  // out of Tracking and shows under Deferred Items instead -- only the
-  // due/retest/on-track tests actually need to appear in Tracking. If nothing
-  // is deferred, the item behaves exactly as before (Tracking only).
-  const trackedSubs=item.subs.filter(s=>(s.p24&&s.p24.length)||(s.p25&&s.p25.length)||(s.p26&&s.p26.length));
-  const deferredNames=new Set(trackedSubs.filter(s=>getRetestDecision(item.id,s.id)==="next").map(s=>s.name));
-  const isMixed = deferredNames.size>0 && deferredNames.size<trackedSubs.length;
 
   cdTrackingTransferredIds.add(itemId);
   localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
   cdCloseFromMonitoring(itemId);
 
-  if(isMixed){
+  if(checklist.length){ cdItemTrackingSubNames[itemId]=checkedNames; } else { delete cdItemTrackingSubNames[itemId]; }
+  cdSaveItemTrackingSubs();
+
+  if(deferredNames.size){
     cdItemDeferredSubNames[itemId]=deferredNames;
     cdSaveItemDeferredSubs();
     cdDeferredItemIds.add(itemId);
@@ -4191,10 +4241,7 @@ function cdRenderDeferredItems(){
   GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdDeferredItemIds.has(i.id)) allItems.push(i); }));
   const filtered=cdFilterItemsBySearch(allItems, cdDeferredSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      ${cdSearchBarHtml("def-search-box", cdDeferredSearchQ, "Search products & tests…")}
-      ${cdDeferredSearchQ?`<button onclick="cdDeferredSearchQ='';cdRenderDeferredItems()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear</button>`:""}
-    </div>
+    ${cdDeferredSearchQ?`<div style="margin-bottom:12px"><button onclick="cdDeferredSearchQ='';const b=document.getElementById('def-search-box');if(b)b.value='';cdRenderDeferredItems()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear search</button></div>`:""}
     ${cdItemsTableHtml(filtered, "deferreditems", allItems.length?"No items match your search.":`No deferred items yet — right-click an item in Monitoring and choose "Deferred".`)}
   </div>`;
 }
@@ -4255,6 +4302,8 @@ async function cdDeleteFromTab(itemId, tabKey){
     if(!cdTrackingTransferredIds.has(itemId) && !cdDeferredItemIds.has(itemId)){
       delete cdItemDeferredSubNames[itemId];
       cdSaveItemDeferredSubs();
+      delete cdItemTrackingSubNames[itemId];
+      cdSaveItemTrackingSubs();
     }
     switchTab(tabKey);
   }catch(e){
@@ -4275,6 +4324,7 @@ async function cdRevertItem(itemId){
     cdDeferredItemIds.delete(itemId); localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
     cdMonitoringClosedIds.delete(itemId); localStorage.setItem(CD_MON_CLOSED_LS, JSON.stringify([...cdMonitoringClosedIds]));
     delete cdItemDeferredSubNames[itemId]; cdSaveItemDeferredSubs();
+    delete cdItemTrackingSubNames[itemId]; cdSaveItemTrackingSubs();
     switchTab("monitoring");
     alert(`${item?`"${item.name}"`:"Item"} reverted back to Monitoring.`);
   }catch(e){
