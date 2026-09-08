@@ -1565,7 +1565,7 @@ function renderMonitoring(){
 
   h+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:10px 14px;margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-      ${cdSearchBarHtml("mon-search-box", monSearchQ, "monSearchQ=this.value;renderMonitoring()", "Search SKU or test name…")}
+      ${cdSearchBarHtml("mon-search-box", monSearchQ, "Search SKU or test name…")}
       ${clearFocusBtn}
       ${(monSearchQ||monFilterStatus!=="ALL"||monFilterDecision!=="ALL"||monFocusParent||monFilterPriority!=="ALL")?`<button onclick="clearMonFilters()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear all</button>`:""}
       <button onclick="exportMonitoringExcel()" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer">📊 Export Excel</button>
@@ -1877,7 +1877,7 @@ function renderExpense(){
   // ── Filter bar ──
   h+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:10px 14px;margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-      ${cdSearchBarHtml("exp-search-box", expSearchQ, "expSearchQ=this.value;renderExpense()", "Search products & tests…")}
+      ${cdSearchBarHtml("exp-search-box", expSearchQ, "Search products & tests…")}
       <button onclick="exportExpenseCSV()" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer">📊 Export Excel</button>
     </div>
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
@@ -2332,7 +2332,7 @@ function renderModals(){
           <div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:6px">${modal.allDeferred?"🔵 Moving to Deferred Items":"📝 Tests to Perform"}</div>
           <div style="color:#8a8f9c;font-size:11.5px;margin-bottom:14px">${modal.allDeferred
             ? `All annual tests on "${esc(item.name)}" are currently deferred in Monitoring — this item will move to Deferred Items instead of Tracking.`
-            : `"${esc(item.name)}" needs testing on the following, based on Monitoring:`}</div>
+            : `"${esc(item.name)}" — based on Monitoring, here's the status per test. Anything marked Deferred stays out of Tracking and shows under Deferred Items instead; the rest move to Tracking:`}</div>
           <div style="max-height:280px;overflow-y:auto;margin-bottom:16px">
             ${modal.checklist.length?modal.checklist.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #232838;border-radius:7px;margin-bottom:6px;background:#191d29">
               <span style="font-size:13px">${icon(c.status)}</span>
@@ -2366,6 +2366,7 @@ function renderModals(){
             <div><strong>Product Description:</strong> ${esc(t.description)}</div>
             <div><strong>Quantity:</strong> ${esc(t.quantity)}</div>
             <div><strong>Updated GRD:</strong> ${esc(t.updatedGrd)}</div>
+            ${t.batchedPOs?`<div><strong>📦 Batched POs:</strong> ${esc(t.batchedPOs)}</div>`:""}
             ${t.qeInCharge?`<div><strong>QE In Charge:</strong> ${esc(pcaDisplayQeName(t.qeInCharge))}</div>`:""}
             ${t.folderLink?`<div><strong>Photo Folder:</strong> <a href="${esc(t.folderLink)}" target="_blank">Open in Drive</a></div>`:""}
             ${t.rejectReason?`<div><strong>Rejection Reason:</strong> ${esc(t.rejectReason)}</div>`:""}
@@ -2806,6 +2807,20 @@ function cdSuggestDropdownHtml(id, query){
     </div>`;
   }).join("");
 }
+// Robust focus/cursor restore after a full innerHTML re-render wipes out the
+// input node -- this is what was missing before, which is why only the first
+// typed character ever showed up (each keystroke re-rendered the whole tab,
+// replacing the <input> with a fresh unfocused one). Tries immediately AND
+// on the next frame, since a single attempt isn't always reliable.
+function cdRestoreFocus(id, cursorPos){
+  const apply=(el)=>{
+    el.focus();
+    if(typeof cursorPos==="number"){ try{ el.setSelectionRange(cursorPos,cursorPos); }catch(e){} }
+  };
+  const el=document.getElementById(id);
+  if(el) apply(el);
+  requestAnimationFrame(()=>{ const e2=document.getElementById(id); if(e2) apply(e2); });
+}
 function cdShowSuggestFor(id){
   const el=document.getElementById(id+"-suggest"); if(!el) return;
   const getQ=CD_SEARCH_QUERY_GETTERS[id]; if(!getQ) return;
@@ -2820,10 +2835,20 @@ function cdSelectSuggestion(id, text){
   const handler=CD_SEARCH_SELECT_HANDLERS[id];
   if(handler) handler(text);
 }
-function cdSearchBarHtml(id, query, oninputExpr, placeholder){
+// Single handler for every cd search box: captures cursor position, runs the
+// registered state-update + re-render, then restores focus/cursor -- so
+// typing multiple characters in a row actually works.
+function cdOnSearchInput(id, inputEl){
+  const cursorPos=inputEl.selectionStart;
+  const handler=CD_SEARCH_SELECT_HANDLERS[id];
+  if(handler) handler(inputEl.value);
+  cdShowSuggestFor(id);
+  cdRestoreFocus(id, cursorPos);
+}
+function cdSearchBarHtml(id, query, placeholder){
   return `<div style="position:relative;flex:1;min-width:200px;max-width:320px">
     <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#aaa" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input id="${id}" value="${esc(query)}" oninput="${oninputExpr};cdShowSuggestFor('${id}')" onfocus="cdShowSuggestFor('${id}')" onblur="cdHideSuggestFor('${id}')" placeholder="${esc(placeholder||"Search products & tests…")}" autocomplete="off" style="width:100%;padding:6px 10px 6px 28px;border:1.5px solid #dde0e7;border-radius:7px;font-size:12px;background:#fafbfc;color:#333;outline:none;height:32px"/>
+    <input id="${id}" value="${esc(query)}" oninput="cdOnSearchInput('${id}', this)" onfocus="cdShowSuggestFor('${id}')" onblur="cdHideSuggestFor('${id}')" placeholder="${esc(placeholder||"Search products & tests…")}" autocomplete="off" style="width:100%;padding:6px 10px 6px 28px;border:1.5px solid #dde0e7;border-radius:7px;font-size:12px;background:#fafbfc;color:#333;outline:none;height:32px"/>
     <div id="${id}-suggest" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:60;max-height:280px;overflow-y:auto"></div>
   </div>`;
 }
@@ -3521,7 +3546,7 @@ function cdRenderTracking(){
   const filtered=cdFilterItemsBySearch(allItems, cdTrackingSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      ${cdSearchBarHtml("trk-search-box", cdTrackingSearchQ, "cdTrackingSearchQ=this.value;cdRenderTracking()", "Search products & tests…")}
+      ${cdSearchBarHtml("trk-search-box", cdTrackingSearchQ, "Search products & tests…")}
       ${cdTrackingSearchQ?`<button onclick="cdTrackingSearchQ='';cdRenderTracking()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear</button>`:""}
     </div>
     ${cdItemsTableHtml(filtered, "tracking", allItems.length?"No items match your search.":`Nothing here yet — create an item from "New Entry", or right-click an item in Monitoring and choose "Transfer to Tracking".`)}
@@ -3856,7 +3881,7 @@ function cdRenderCompletedTest(){
   const filtered=cdFilterItemsBySearch(allItems, cdCompletedSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      ${cdSearchBarHtml("cmp-search-box", cdCompletedSearchQ, "cdCompletedSearchQ=this.value;cdRenderCompletedTest()", "Search products & tests…")}
+      ${cdSearchBarHtml("cmp-search-box", cdCompletedSearchQ, "Search products & tests…")}
       ${cdCompletedSearchQ?`<button onclick="cdCompletedSearchQ='';cdRenderCompletedTest()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear</button>`:""}
     </div>
     ${cdItemsTableHtml(filtered, "completedtest", allItems.length?"No items match your search.":"No completed tests yet — mark one completed from Tracking.")}
@@ -3904,9 +3929,31 @@ function cdSiblingNames(item){
 // Same "Schedule per Test" convention as Monitoring: each test type's name,
 // with its most recent test date underneath (no due-date math here, since
 // that's Monitoring's job -- this is just "what's been tested and when").
-function cdItemScheduleHtml(item){
-  if(!item.subs.length) return `<span style="color:#bbb;font-size:10px">—</span>`;
-  return item.subs.map(s=>{
+// When an item has a mixed transfer (some tests deferred, some not), it can
+// appear in both Tracking and Deferred Items -- tabKey filters which subset
+// of tests shows in each place.
+const CD_ITEM_DEFERRED_SUBS_LS = "rhino_cd_item_deferred_subs_v1";
+let cdItemDeferredSubNames = {}; // itemId -> Set of test-type names deferred for that item
+(function(){
+  try{
+    const raw=JSON.parse(localStorage.getItem(CD_ITEM_DEFERRED_SUBS_LS)||"{}");
+    Object.entries(raw).forEach(([k,v])=>{ cdItemDeferredSubNames[k]=new Set(v); });
+  }catch(e){}
+})();
+function cdSaveItemDeferredSubs(){
+  const obj={};
+  Object.entries(cdItemDeferredSubNames).forEach(([k,v])=>{ obj[k]=[...v]; });
+  localStorage.setItem(CD_ITEM_DEFERRED_SUBS_LS, JSON.stringify(obj));
+}
+function cdItemScheduleHtml(item, tabKey){
+  let subs=item.subs;
+  const deferredNames=cdItemDeferredSubNames[item.id];
+  if(deferredNames && deferredNames.size){
+    if(tabKey==="deferreditems") subs=subs.filter(s=>deferredNames.has(s.name));
+    else if(tabKey==="tracking") subs=subs.filter(s=>!deferredNames.has(s.name));
+  }
+  if(!subs.length) return `<span style="color:#bbb;font-size:10px">—</span>`;
+  return subs.map(s=>{
     const last=latestTestDate(s);
     return `<div style="margin-bottom:7px;padding:6px 8px;border-radius:5px;background:#f7f8fa;border:1px solid #e0e0e0">
       <div style="font-size:10px;font-weight:600;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</div>
@@ -3937,7 +3984,7 @@ function cdItemsTableHtml(items, tabKey, emptyMessage){
             </td>
             <td style="padding:9px 12px;white-space:normal;min-width:200px;vertical-align:top">${esc(i.description)}</td>
             <td style="padding:9px 12px;vertical-align:top">${i.prioritySku?`<span style="background:#e8f2ff;color:#0055bb;border:1px solid #c0d8f8;border-radius:6px;font-size:11px;font-weight:700;padding:2px 6px">${esc(i.prioritySku)}</span>`:`<span style="color:#ddd;font-size:10px">—</span>`}</td>
-            <td style="padding:9px 12px;min-width:220px;vertical-align:top">${cdItemScheduleHtml(i)}</td>
+            <td style="padding:9px 12px;min-width:220px;vertical-align:top">${cdItemScheduleHtml(i, tabKey)}</td>
             <td style="padding:9px 12px;white-space:normal;min-width:180px;vertical-align:top;color:${i.status?"#333":"#bbb"}">${esc(i.status)||"Click to add remarks…"}</td>
             <td style="padding:9px 12px;vertical-align:top;white-space:nowrap">
               <button onclick="event.stopPropagation();cdPromptRevertItem('${i.id}')" title="Revert to Monitoring" style="background:none;border:none;cursor:pointer;font-size:13px;margin-right:6px;padding:0">↩️</button>
@@ -4061,11 +4108,31 @@ function cdConfirmTransfer(itemId, allDeferred){
     cdDeferItem(item, "All annual tests are currently marked Deferred in Monitoring.");
     return;
   }
+  // Split by test type: anything currently marked "Defer" in Monitoring stays
+  // out of Tracking and shows under Deferred Items instead -- only the
+  // due/retest/on-track tests actually need to appear in Tracking. If nothing
+  // is deferred, the item behaves exactly as before (Tracking only).
+  const trackedSubs=item.subs.filter(s=>(s.p24&&s.p24.length)||(s.p25&&s.p25.length)||(s.p26&&s.p26.length));
+  const deferredNames=new Set(trackedSubs.filter(s=>getRetestDecision(item.id,s.id)==="next").map(s=>s.name));
+  const isMixed = deferredNames.size>0 && deferredNames.size<trackedSubs.length;
+
   cdTrackingTransferredIds.add(itemId);
   localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
-  cdDeferredItemIds.delete(itemId);
-  localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
   cdCloseFromMonitoring(itemId);
+
+  if(isMixed){
+    cdItemDeferredSubNames[itemId]=deferredNames;
+    cdSaveItemDeferredSubs();
+    cdDeferredItemIds.add(itemId);
+    localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
+    if(accessToken) cdWriteDeferredRow(item, `Mixed transfer: ${[...deferredNames].join(", ")} deferred; remaining tests moved to Tracking.`).catch(()=>{});
+  } else {
+    delete cdItemDeferredSubNames[itemId];
+    cdSaveItemDeferredSubs();
+    cdDeferredItemIds.delete(itemId);
+    localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
+  }
+
   switchTab("tracking");
   if(accessToken) cdAppendTrackingRow(item).catch(e=>alert(`Transferred locally, but could not write to the "${CD_TRACKING_SHEET}" sheet: `+e.message));
 }
@@ -4081,26 +4148,33 @@ function cdPromptDefer(){
     onSuccess:(reason)=>cdDeferItem(item, reason),
   });
 }
+// Writes the sheet-side record only -- shared by a full defer (cdDeferItem)
+// and a mixed transfer (some tests deferred, some sent to Tracking).
+async function cdWriteDeferredRow(item, reason){
+  await cdEnsureColumn(CD_DEFERRED_SHEET, "Item ID");
+  await cdEnsureColumn(CD_DEFERRED_SHEET, "SKU");
+  await cdEnsureColumn(CD_DEFERRED_SHEET, "Description");
+  await cdEnsureColumn(CD_DEFERRED_SHEET, "Priority SKU");
+  await cdEnsureColumn(CD_DEFERRED_SHEET, "Deferred Reason");
+  await cdEnsureColumn(CD_DEFERRED_SHEET, "Deferred Date");
+  const map=await cdGetHeaderMap(CD_DEFERRED_SHEET);
+  const row=cdBuildRow(map, {
+    "Item ID":item.rowId, SKU:item.name, Description:item.description, "Priority SKU":item.prioritySku,
+    "Deferred Reason":reason, "Deferred Date":new Date().toISOString().slice(0,10),
+  });
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_DEFERRED_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+  const res=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[row]})});
+  cdCheckAuthError(res);
+  if(!res.ok){ const t=await res.text(); throw new Error(`Could not save to "${CD_DEFERRED_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
+}
 async function cdDeferItem(item, reason){
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
   try{
-    await cdEnsureColumn(CD_DEFERRED_SHEET, "Item ID");
-    await cdEnsureColumn(CD_DEFERRED_SHEET, "SKU");
-    await cdEnsureColumn(CD_DEFERRED_SHEET, "Description");
-    await cdEnsureColumn(CD_DEFERRED_SHEET, "Priority SKU");
-    await cdEnsureColumn(CD_DEFERRED_SHEET, "Deferred Reason");
-    await cdEnsureColumn(CD_DEFERRED_SHEET, "Deferred Date");
-    const map=await cdGetHeaderMap(CD_DEFERRED_SHEET);
-    const row=cdBuildRow(map, {
-      "Item ID":item.rowId, SKU:item.name, Description:item.description, "Priority SKU":item.prioritySku,
-      "Deferred Reason":reason, "Deferred Date":new Date().toISOString().slice(0,10),
-    });
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_DEFERRED_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
-    const res=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[row]})});
-    cdCheckAuthError(res);
-    if(!res.ok){ const t=await res.text(); throw new Error(`Could not save to "${CD_DEFERRED_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
+    await cdWriteDeferredRow(item, reason);
     cdTrackingTransferredIds.delete(item.id);
     localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+    delete cdItemDeferredSubNames[item.id];
+    cdSaveItemDeferredSubs();
     cdDeferredItemIds.add(item.id);
     localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
     cdCloseFromMonitoring(item.id);
@@ -4118,7 +4192,7 @@ function cdRenderDeferredItems(){
   const filtered=cdFilterItemsBySearch(allItems, cdDeferredSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      ${cdSearchBarHtml("def-search-box", cdDeferredSearchQ, "cdDeferredSearchQ=this.value;cdRenderDeferredItems()", "Search products & tests…")}
+      ${cdSearchBarHtml("def-search-box", cdDeferredSearchQ, "Search products & tests…")}
       ${cdDeferredSearchQ?`<button onclick="cdDeferredSearchQ='';cdRenderDeferredItems()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear</button>`:""}
     </div>
     ${cdItemsTableHtml(filtered, "deferreditems", allItems.length?"No items match your search.":`No deferred items yet — right-click an item in Monitoring and choose "Deferred".`)}
@@ -4176,6 +4250,12 @@ async function cdDeleteFromTab(itemId, tabKey){
     if(tabKey==="tracking"){ cdTrackingTransferredIds.delete(itemId); localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds])); }
     else if(tabKey==="deferreditems"){ cdDeferredItemIds.delete(itemId); localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds])); }
     else if(tabKey==="completedtest"){ cdCompletedTestIds.delete(itemId); localStorage.setItem(CD_COMPLETED_TEST_LS, JSON.stringify([...cdCompletedTestIds])); }
+    // A mixed-transfer item can be in both Tracking and Deferred Items -- only
+    // clear its test-level split once it's been removed from both.
+    if(!cdTrackingTransferredIds.has(itemId) && !cdDeferredItemIds.has(itemId)){
+      delete cdItemDeferredSubNames[itemId];
+      cdSaveItemDeferredSubs();
+    }
     switchTab(tabKey);
   }catch(e){
     alert("Could not delete: "+e.message);
@@ -4194,6 +4274,7 @@ async function cdRevertItem(itemId){
     cdCompletedTestIds.delete(itemId); localStorage.setItem(CD_COMPLETED_TEST_LS, JSON.stringify([...cdCompletedTestIds]));
     cdDeferredItemIds.delete(itemId); localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
     cdMonitoringClosedIds.delete(itemId); localStorage.setItem(CD_MON_CLOSED_LS, JSON.stringify([...cdMonitoringClosedIds]));
+    delete cdItemDeferredSubNames[itemId]; cdSaveItemDeferredSubs();
     switchTab("monitoring");
     alert(`${item?`"${item.name}"`:"Item"} reverted back to Monitoring.`);
   }catch(e){
@@ -5285,14 +5366,7 @@ function pmmRerenderActiveTab(){
 // user out of the field after the first character. Re-find the (new) input by ID
 // and manually restore focus + cursor position right after rendering.
 function pmmRestoreSearchFocus(cursorPos){
-  requestAnimationFrame(()=>{
-    const el=document.getElementById("pmm-search-input");
-    if(!el) return;
-    el.focus();
-    if(typeof cursorPos==="number"){
-      try{ el.setSelectionRange(cursorPos, cursorPos); }catch(e){}
-    }
-  });
+  cdRestoreFocus("pmm-search-input", cursorPos);
 }
 function pmmSelectSearchSuggestion(text){
   pmmSearchSku=text;
@@ -6324,7 +6398,7 @@ const PCA_COLUMN_HINTS = {
   updatedGrd: ["updated grd","grd","goods ready date"],
 };
 const PCA_STATUS_COL_INDEX = 10; // column K, 0-indexed
-const PCA_EXTRA_COLS = { rejectReason: 13, reviewerNote: 14, managementReason: 15, qcRejectReason: 16, qeInCharge: 17, managementEvidenceUrl: 18 }; // extra columns N,O,P,Q,R,S
+const PCA_EXTRA_COLS = { rejectReason: 13, reviewerNote: 14, managementReason: 15, qcRejectReason: 16, qeInCharge: 17, managementEvidenceUrl: 18, batchedPOs: 19 }; // extra columns N,O,P,Q,R,S,T
 const PCA_CLOSED_STATUSES = ["waived", "qc_approve"]; // "management_decision" only counts as closed once managementReason is filled -- see pcaIsClosed()
 function pcaIsClosed(t){ return t.status==="waived" || t.status==="qc_approve" || (t.status==="management_decision" && !!t.managementReason); }
 
@@ -6549,8 +6623,8 @@ async function pcaEnsureTicketsSheetExists(){
 
 async function pcaEnsureTicketsHeaders(){
   await pcaEnsureTicketsSheetExists();
-  const headers=["Ticket ID","PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status","Created Date","Component","Photo URL","Folder Link","Reject Reason","Reviewer Note","Management Decision Reason","QC Reject Reason","QE In Charge","Management Evidence URL"];
-  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}!A1:S1?valueInputOption=USER_ENTERED`;
+  const headers=["Ticket ID","PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status","Created Date","Component","Photo URL","Folder Link","Reject Reason","Reviewer Note","Management Decision Reason","QC Reject Reason","QE In Charge","Management Evidence URL","Batched POs"];
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}!A1:T1?valueInputOption=USER_ENTERED`;
   const res=await fetch(url,{ method:"PUT", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:[headers]}) });
   if(!res.ok){ const t=await res.text(); throw new Error(`Could not write headers to "${PCA_TICKETS_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
 }
@@ -6578,6 +6652,7 @@ async function pcaSyncTickets(){
           qcRejectReason:pmmPick(row,"QC Reject Reason"),
           qeInCharge:pmmPick(row,"QE In Charge"),
           managementEvidenceUrl:pmmPick(row,"Management Evidence URL"),
+          batchedPOs:pmmPick(row,"Batched POs"),
           components:[], rowIndexes:[],
         };
       }
@@ -6630,10 +6705,7 @@ function pcaOnSearchInput(inputEl){
   pcaSearchQuery=inputEl.value;
   pcaSearchSuggestOpen=!!pcaSearchQuery;
   pcaRenderTracking();
-  requestAnimationFrame(()=>{
-    const el=document.getElementById("pca-search-input");
-    if(el){ el.focus(); try{ el.setSelectionRange(cursorPos,cursorPos); }catch(e){} }
-  });
+  cdRestoreFocus("pca-search-input", cursorPos);
 }
 function pcaSelectSearchSuggestion(text){ pcaSearchQuery=text; pcaSearchSuggestOpen=false; pcaRenderTracking(); }
 function pcaCloseSearchSuggest(){ setTimeout(()=>{ pcaSearchSuggestOpen=false; pcaRenderTracking(); }, 150); }
@@ -6680,6 +6752,61 @@ function pcaStartCreateTicket(){
   pcaContextMenu=null;
   pcaTicketDraftComponents=[{component:"",photoUrl:""}];
   pcaDraftFolderId=null;
+  pcaIsBatchTicket=false;
+  pcaBatchSourceRows=[];
+  pcaActiveTab="newticket";
+  pcaRender();
+}
+
+// ── Batching of POs: consolidate several same-color-variation POs into one
+// ticket, instead of the normal single-PO flow. Reuses the exact same ticket
+// creation/submission machinery -- the batch is just a "merged" draft row
+// (comma-joined PO/Shipment/Supplier/SKU, summed Quantity) so nothing else
+// downstream needs to know it's a batch, aside from a banner in the form and
+// the original PO list preserved in a "Batched POs" column for traceability.
+let pcaBatchMode = false;
+let pcaBatchSelectedKeys = new Set();
+let pcaIsBatchTicket = false;
+let pcaBatchSourceRows = [];
+function pcaToggleBatchMode(){
+  pcaBatchMode=!pcaBatchMode;
+  pcaBatchSelectedKeys=new Set();
+  pcaRenderTracking();
+}
+function pcaToggleBatchRow(key, checked){
+  if(checked) pcaBatchSelectedKeys.add(key); else pcaBatchSelectedKeys.delete(key);
+  pcaRenderTracking();
+}
+function pcaBuildBatchDraftRow(selectedRows){
+  const uniq=(arr)=>[...new Set(arr.filter(Boolean))];
+  const poNumbers=uniq(selectedRows.map(r=>r.poNumber));
+  const shipmentNumbers=uniq(selectedRows.map(r=>r.shipmentNumber));
+  const suppliers=uniq(selectedRows.map(r=>r.supplierName));
+  const skus=uniq(selectedRows.map(r=>r.supplierSku));
+  const descriptions=uniq(selectedRows.map(r=>r.description));
+  const grds=uniq(selectedRows.map(r=>r.updatedGrd));
+  const totalQty=selectedRows.reduce((sum,r)=>sum+(parseFloat(String(r.quantity||"").replace(/[^0-9.\-]/g,""))||0),0);
+  return {
+    poNumber: poNumbers.join(", "),
+    shipmentNumber: shipmentNumbers.join(", "),
+    supplierName: suppliers.join(" / "),
+    supplierSku: skus.join(", "),
+    description: descriptions[0]||"",
+    quantity: totalQty ? String(totalQty) : selectedRows.map(r=>r.quantity).join(" + "),
+    updatedGrd: grds.join(", "),
+  };
+}
+function pcaStartBatchTicket(){
+  const rows=pcaGetFilteredTrackingRows();
+  const selected=rows.filter(r=>pcaBatchSelectedKeys.has(pcaKeyFor(r.poNumber,r.supplierSku)));
+  if(selected.length<2){ alert("Select at least 2 POs to batch (they should share the same color variation)."); return; }
+  pcaTicketDraftRow=pcaBuildBatchDraftRow(selected);
+  pcaIsBatchTicket=true;
+  pcaBatchSourceRows=selected;
+  pcaTicketDraftComponents=[{component:"",photoUrl:""}];
+  pcaDraftFolderId=null;
+  pcaBatchMode=false;
+  pcaBatchSelectedKeys=new Set();
   pcaActiveTab="newticket";
   pcaRender();
 }
@@ -6693,6 +6820,7 @@ function pcaRenderTracking(){
   html+=`<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
     <span style="font-size:10.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">Filter:</span>
     ${["all",...PCA_STATUSES].map(s=>`<button onclick="pcaSetTrackingFilter('${esc(s)}')" style="font-size:11px;font-weight:600;padding:6px 12px;border-radius:20px;cursor:pointer;border:1.5px solid ${pcaTrackingStatusFilter===s?"#0073ea":"#dde0e7"};background:${pcaTrackingStatusFilter===s?"#e8f2ff":"#fff"};color:${pcaTrackingStatusFilter===s?"#0073ea":"#555"}">${s==="all"?"All":esc(s)}</button>`).join("")}
+    <button onclick="pcaToggleBatchMode()" style="margin-left:auto;font-size:11px;font-weight:700;padding:6px 12px;border-radius:20px;cursor:pointer;border:1.5px solid ${pcaBatchMode?"#5b21b6":"#dde0e7"};background:${pcaBatchMode?"#f3e4ff":"#fff"};color:${pcaBatchMode?"#5b21b6":"#555"}">🧺 ${pcaBatchMode?"Cancel Batching":"Batch POs"}</button>
   </div>`;
   html+=`<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
     <div style="position:relative;flex:1;min-width:220px;max-width:340px">
@@ -6702,6 +6830,13 @@ function pcaRenderTracking(){
     <button onclick="pcaSyncTracking()" style="font-size:11px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:6px;padding:8px 14px;cursor:pointer">🔄 Refresh</button>
     <span style="font-size:10.5px;color:#888">${rows.length} item${rows.length!==1?"s":""} awaiting action</span>
   </div>`;
+  if(pcaBatchMode){
+    html+=`<div style="display:flex;align-items:center;gap:10px;background:#f3e4ff;border:1.5px solid #d9bfff;border-radius:8px;padding:10px 14px;margin-bottom:14px">
+      <span style="font-size:11.5px;color:#5b21b6;font-weight:600">🧺 Batch mode: check the POs that share the same color variation, then consolidate them into one ticket.</span>
+      <span style="margin-left:auto;font-size:11px;color:#5b21b6;font-weight:700">${pcaBatchSelectedKeys.size} selected</span>
+      <button onclick="pcaStartBatchTicket()" ${pcaBatchSelectedKeys.size<2?"disabled":""} style="font-size:11.5px;font-weight:700;color:#fff;background:${pcaBatchSelectedKeys.size<2?"#c9a8f0":"#5b21b6"};border:none;border-radius:6px;padding:7px 16px;cursor:${pcaBatchSelectedKeys.size<2?"default":"pointer"}">Create Batched Ticket</button>
+    </div>`;
+  }
 
   if(!rows.length){
     html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">📋</div><div style="font-size:12px">Nothing awaiting action right now, or click Refresh to reload from the tracking sheet.</div></div>`;
@@ -6709,10 +6844,14 @@ function pcaRenderTracking(){
     html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap">
         <thead><tr style="background:#f2f3f6">
-          ${["PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+          ${(pcaBatchMode?[""]:[]).concat(["PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status"]).map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
         </tr></thead>
         <tbody>
-          ${rows.map((r,i)=>`<tr oncontextmenu="pcaShowContextMenu(event, ${i})" style="border-bottom:0.5px solid #f0f1f3;cursor:context-menu">
+          ${rows.map((r,i)=>{
+            const key=pcaKeyFor(r.poNumber,r.supplierSku);
+            const checked=pcaBatchSelectedKeys.has(key);
+            return `<tr ${pcaBatchMode?"":`oncontextmenu="pcaShowContextMenu(event, ${i})"`} style="border-bottom:0.5px solid #f0f1f3;cursor:${pcaBatchMode?"pointer":"context-menu"};${checked?"background:#faf5ff":""}" ${pcaBatchMode?`onclick="pcaToggleBatchRow('${esc(key).replace(/'/g,"\\'")}', ${!checked})"`:""}>
+            ${pcaBatchMode?`<td style="padding:7px 12px"><input type="checkbox" ${checked?"checked":""} onclick="event.stopPropagation();pcaToggleBatchRow('${esc(key).replace(/'/g,"\\'")}', this.checked)"/></td>`:""}
             <td style="padding:7px 12px;font-weight:600">${esc(r.poNumber)}</td>
             <td style="padding:7px 12px">${esc(r.shipmentNumber)}</td>
             <td style="padding:7px 12px">${esc(r.supplierName)}</td>
@@ -6721,11 +6860,12 @@ function pcaRenderTracking(){
             <td style="padding:7px 12px">${esc(r.quantity)}</td>
             <td style="padding:7px 12px">${esc(r.updatedGrd)}</td>
             <td style="padding:7px 12px"><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:#fff3cd;color:#856404">${esc(r.status)}</span></td>
-          </tr>`).join("")}
+          </tr>`;
+          }).join("")}
         </tbody>
       </table>
     </div>
-    <div style="font-size:10px;color:#aaa;margin-top:6px">Right-click a row for options (Create Ticket / Waive).</div>`;
+    <div style="font-size:10px;color:#aaa;margin-top:6px">${pcaBatchMode?"Check the POs to consolidate, then click \"Create Batched Ticket\" above.":"Right-click a row for options (Create Ticket / Waive), or click \"🧺 Batch POs\" above to consolidate several same-color POs into one ticket."}</div>`;
   }
   html+=`</div>`;
   if(pcaContextMenu) html+=pcaContextMenuHtml();
@@ -6759,19 +6899,23 @@ function pcaRenderTicketForm(){
   if(!r){ pcaActiveTab="tracking"; pcaRenderTracking(); return; }
   const html=`<div style="max-width:800px;margin:0 auto">
     <button onclick="pcaConfirmExitTicketForm()" style="background:none;border:none;color:#0073ea;font-size:11px;font-weight:600;cursor:pointer;margin-bottom:12px">← Back to Tracking</button>
+    ${pcaIsBatchTicket?`<div style="background:#f3e4ff;border:1.5px solid #d9bfff;border-radius:8px;padding:12px 16px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:700;color:#5b21b6;margin-bottom:6px">📦 Batched Ticket — ${pcaBatchSourceRows.length} POs consolidated (same color variation)</div>
+      <div style="font-size:11px;color:#5b21b6">${pcaBatchSourceRows.map(row=>`${esc(row.poNumber)} (${esc(row.supplierSku)}, qty ${esc(row.quantity)})`).join(" · ")}</div>
+    </div>`:""}
     <div class="pmm-card">
-      <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">New Pantone Color Ticket</div>
+      <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">${pcaIsBatchTicket?"New Batched Pantone Color Ticket":"New Pantone Color Ticket"}</div>
       <div class="pmm-grid2">
-        <div class="pmm-field"><label class="pmm-label">PO Number</label><input class="pmm-input" value="${esc(r.poNumber)}" disabled/></div>
-        <div class="pmm-field"><label class="pmm-label">Shipment Number</label><input class="pmm-input" value="${esc(r.shipmentNumber)}" disabled/></div>
+        <div class="pmm-field"><label class="pmm-label">PO Number${pcaIsBatchTicket?" (batched)":""}</label><input class="pmm-input" value="${esc(r.poNumber)}" disabled/></div>
+        <div class="pmm-field"><label class="pmm-label">Shipment Number${pcaIsBatchTicket?" (batched)":""}</label><input class="pmm-input" value="${esc(r.shipmentNumber)}" disabled/></div>
       </div>
       <div class="pmm-grid2">
         <div class="pmm-field"><label class="pmm-label">Supplier Name</label><input class="pmm-input" value="${esc(r.supplierName)}" disabled/></div>
-        <div class="pmm-field"><label class="pmm-label">Supplier SKU</label><input class="pmm-input" value="${esc(r.supplierSku)}" disabled/></div>
+        <div class="pmm-field"><label class="pmm-label">Supplier SKU${pcaIsBatchTicket?" (batched)":""}</label><input class="pmm-input" value="${esc(r.supplierSku)}" disabled/></div>
       </div>
       <div class="pmm-field"><label class="pmm-label">Product Description</label><input class="pmm-input" value="${esc(r.description)}" disabled/></div>
       <div class="pmm-grid2">
-        <div class="pmm-field"><label class="pmm-label">Quantity</label><input class="pmm-input" value="${esc(r.quantity)}" disabled/></div>
+        <div class="pmm-field"><label class="pmm-label">Quantity${pcaIsBatchTicket?" (total)":""}</label><input class="pmm-input" value="${esc(r.quantity)}" disabled/></div>
         <div class="pmm-field"><label class="pmm-label">Updated GRD</label><input class="pmm-input" value="${esc(r.updatedGrd)}" disabled/></div>
       </div>
     </div>
@@ -6863,15 +7007,26 @@ async function pcaSubmitTicket(){
     const ticketId="pca_"+Date.now();
     const nowIso=new Date().toISOString();
     const folderLink=pcaDraftFolderId?`https://drive.google.com/drive/folders/${pcaDraftFolderId}`:"";
-    const rows=components.map(c=>[ticketId,r.poNumber,r.shipmentNumber,r.supplierName,r.supplierSku,r.description,r.quantity,r.updatedGrd,"approval",nowIso,c.component,c.photoUrl,folderLink,"","","","",qeName]);
+    const batchedPOsText=pcaIsBatchTicket
+      ? pcaBatchSourceRows.map(row=>`${row.poNumber} (${row.shipmentNumber}, ${row.supplierSku}, qty ${row.quantity})`).join("; ")
+      : "";
+    const rows=components.map(c=>[ticketId,r.poNumber,r.shipmentNumber,r.supplierName,r.supplierSku,r.description,r.quantity,r.updatedGrd,"approval",nowIso,c.component,c.photoUrl,folderLink,"","","","",qeName,"",batchedPOsText]);
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const res=await fetch(url,{ method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({values:rows}) });
     if(!res.ok){ const t=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${t.slice(0,150)}`); }
 
-    pcaHiddenKeys.add(pcaKeyFor(r.poNumber,r.supplierSku));
+    // Hide every batched PO (not just the primary one) from Tracking, since
+    // they're all now consolidated into this single ticket.
+    if(pcaIsBatchTicket && pcaBatchSourceRows.length){
+      pcaBatchSourceRows.forEach(row=>pcaHiddenKeys.add(pcaKeyFor(row.poNumber,row.supplierSku)));
+    } else {
+      pcaHiddenKeys.add(pcaKeyFor(r.poNumber,r.supplierSku));
+    }
     pcaTicketDraftRow=null;
     pcaTicketDraftComponents=[{component:"",photoUrl:""}];
     pcaDraftFolderId=null;
+    pcaIsBatchTicket=false;
+    pcaBatchSourceRows=[];
     await pcaSyncTickets();
     pcaSwitchTab("approval");
   }catch(e){
@@ -7547,12 +7702,13 @@ async function pcaSendRejectEmail(ticketId){
 // ── New ticket form: confirm before discarding an in-progress draft ────────
 function pcaConfirmExitTicketForm(){
   if(pcaHasUnsavedTicketDraft()){ openModal({type:"pcaExitConfirm", target:"tracking"}); }
-  else { pcaTicketDraftRow=null; pcaDoSwitchTab("tracking"); }
+  else { pcaTicketDraftRow=null; pcaIsBatchTicket=false; pcaBatchSourceRows=[]; pcaDoSwitchTab("tracking"); }
 }
 function pcaDiscardTicketForm(){
   const target=(modal && modal.target) || "tracking";
   closeModal();
   pcaTicketDraftRow=null; pcaTicketDraftComponents=[{component:"",photoUrl:""}]; pcaDraftFolderId=null;
+  pcaIsBatchTicket=false; pcaBatchSourceRows=[];
   pcaDoSwitchTab(target);
 }
 </script>
