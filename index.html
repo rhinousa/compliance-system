@@ -294,6 +294,7 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
       </div>
     </div>
 
+    <div id="pmm-search-wrap" style="display:none;padding:14px 18px 0"></div>
     <div id="pmm-body" style="background:#fff;border-left:0.5px solid #dde0e7;border-right:0.5px solid #dde0e7;border-bottom:1px solid #e8eaed;padding:22px 4px"></div>
   </div>
 </div><!-- /panel-pmm -->
@@ -317,6 +318,7 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
       </div>
     </div>
 
+    <div id="pca-search-wrap" style="display:none;padding:14px 18px 0"></div>
     <div id="pca-body" style="background:#fff;border-left:0.5px solid #dde0e7;border-right:0.5px solid #dde0e7;border-bottom:1px solid #e8eaed;padding:22px 4px"></div>
   </div>
 </div><!-- /panel-pca -->
@@ -2330,31 +2332,6 @@ function renderModals(){
         </div>
       </div>
     </div>`;
-  } else if(modal.type==="cdTransferChecklist"){
-    const item=cdFindItemById(modal.itemId);
-    if(!item){ root.innerHTML=""; return; }
-    const icon=s=>s==="overdue"?"🔴":s==="due_soon"?"🟡":s==="ok"?"🟢":s==="deferred"?"🔵":"⚪";
-    const label=s=>s==="overdue"?"Retest Due":s==="due_soon"?"Due Soon":s==="ok"?"On Track":s==="deferred"?"Deferred":"No test data yet";
-    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
-      <div class="modal-box" style="max-width:480px;background:#141824;border-radius:14px">
-        <div style="padding:22px 24px 18px">
-          <div style="color:#fff;font-weight:800;font-size:16px;margin-bottom:6px">📝 Select Tests to Transfer</div>
-          <div style="color:#8a8f9c;font-size:11.5px;margin-bottom:14px">Check whichever tests on "${esc(item.name)}" should move to Tracking. Anything left unchecked and currently Deferred goes to Deferred Items instead; anything left unchecked and not deferred is simply skipped for now.</div>
-          <div style="max-height:300px;overflow-y:auto;margin-bottom:16px">
-            ${modal.checklist.length?modal.checklist.map((c,idx)=>`<label style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #232838;border-radius:7px;margin-bottom:6px;background:#191d29;cursor:pointer">
-              <input type="checkbox" ${c.checked?"checked":""} onchange="cdToggleTransferCheck(${idx}, this.checked)"/>
-              <span style="font-size:13px">${icon(c.status)}</span>
-              <span style="font-size:12px;color:#e4e6ea;flex:1">${esc(c.name)}</span>
-              <span style="font-size:9.5px;font-weight:700;color:#8a8f9c">${label(c.status)}</span>
-            </label>`).join(""):`<div style="color:#8a8f9c;font-size:11.5px">No annual test data on file yet for this item — it will transfer as-is.</div>`}
-          </div>
-          <div style="display:flex;gap:10px;justify-content:flex-end">
-            <button onclick="closeModal()" style="padding:9px 16px;font-size:12px;font-weight:700;color:#dcdfe6;background:#232838;border:none;border-radius:8px;cursor:pointer">Cancel</button>
-            <button onclick="cdConfirmTransfer('${modal.itemId}')" style="padding:9px 20px;font-size:12px;font-weight:700;color:#0b1f0f;background:#00e05e;border:none;border-radius:8px;cursor:pointer">Confirm Transfer</button>
-          </div>
-        </div>
-      </div>
-    </div>`;
   } else if(modal.type==="pcaTicketDetail"){
     const t=pcaTickets.find(x=>x.id===modal.ticketId);
     if(!t){ root.innerHTML=""; return; }
@@ -4121,45 +4098,22 @@ function cdMonContextMenuHtml(){
       <div onclick="cdPromptDefer()" style="padding:10px 16px;font-size:12px;cursor:pointer;color:#0055bb" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">🔵 Deferred</div>
     </div>`;
 }
+// Click "Transfer to Tracking" and it happens immediately, no selection step:
+// tests currently marked Deferred in Monitoring go straight to Deferred Items,
+// everything else (due/retest/on-track) goes straight to Tracking.
 function cdTransferToTracking(){
   const itemId=cdMonContextMenu.itemId;
   cdMonContextMenu=null;
-  cdShowTransferChecklist(itemId);
-}
-// Shows every test that has data on file (per Monitoring's status) as a
-// checkbox checklist -- the person picks exactly what should move to
-// Tracking. Anything left unchecked that's currently Deferred goes to
-// Deferred Items instead; anything left unchecked and not deferred is simply
-// skipped for now (shows in neither tab until reconsidered).
-function cdShowTransferChecklist(itemId){
   const item=cdFindItemById(itemId);
   if(!item) return;
+
   const trackedSubs=item.subs.filter(s=>(s.p24&&s.p24.length)||(s.p25&&s.p25.length)||(s.p26&&s.p26.length));
-  const relevantSubs=trackedSubs.length?trackedSubs:item.subs;
-  const checklist=relevantSubs.map(s=>{
-    const status = trackedSubs.length ? (getRetestDecision(item.id,s.id)==="next" ? "deferred" : monStatus(s,item.id)) : "none";
-    return { name:s.name, status, checked: status!=="deferred" };
-  });
-  openModal({type:"cdTransferChecklist", itemId, checklist});
-}
-function cdToggleTransferCheck(idx, checked){
-  if(!modal || modal.type!=="cdTransferChecklist") return;
-  modal.checklist[idx].checked=checked;
-  renderModals();
-}
-function cdConfirmTransfer(itemId){
-  const m=modal;
-  const checklist=(m && m.checklist) || [];
-  closeModal();
-  const item=cdFindItemById(itemId);
-  if(!item) return;
+  const deferredNames=new Set(trackedSubs.filter(s=>getRetestDecision(item.id,s.id)==="next").map(s=>s.name));
+  const dueNames=new Set(trackedSubs.filter(s=>getRetestDecision(item.id,s.id)!=="next").map(s=>s.name));
 
-  const checkedNames=new Set(checklist.filter(c=>c.checked).map(c=>c.name));
-  const deferredNames=new Set(checklist.filter(c=>!c.checked && c.status==="deferred").map(c=>c.name));
-
-  // Nothing checked for Tracking -- treat this as a straight defer instead.
-  if(checklist.length && !checkedNames.size){
-    cdDeferItem(item, "No tests were selected for Tracking — deferred instead.");
+  // Nothing due -- the whole item is deferred, so it doesn't need a Tracking entry at all.
+  if(trackedSubs.length>0 && deferredNames.size===trackedSubs.length){
+    cdDeferItem(item, "All annual tests are currently marked Deferred in Monitoring.");
     return;
   }
 
@@ -4167,7 +4121,7 @@ function cdConfirmTransfer(itemId){
   localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
   cdCloseFromMonitoring(itemId);
 
-  if(checklist.length){ cdItemTrackingSubNames[itemId]=checkedNames; } else { delete cdItemTrackingSubNames[itemId]; }
+  if(trackedSubs.length){ cdItemTrackingSubNames[itemId]=dueNames; } else { delete cdItemTrackingSubNames[itemId]; }
   cdSaveItemTrackingSubs();
 
   if(deferredNames.size){
@@ -4175,7 +4129,7 @@ function cdConfirmTransfer(itemId){
     cdSaveItemDeferredSubs();
     cdDeferredItemIds.add(itemId);
     localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
-    if(accessToken) cdWriteDeferredRow(item, `Mixed transfer: ${[...deferredNames].join(", ")} deferred; remaining tests moved to Tracking.`).catch(()=>{});
+    if(accessToken) cdWriteDeferredRow(item, `Auto-split transfer: ${[...deferredNames].join(", ")} deferred; remaining tests moved to Tracking.`).catch(()=>{});
   } else {
     delete cdItemDeferredSubNames[itemId];
     cdSaveItemDeferredSubs();
@@ -4551,6 +4505,11 @@ function pmmSwitchTab(t){
   document.getElementById("pmm-tab-database").className="pmm-subtab"+(t==="database"?" active":"");
   document.getElementById("pmm-tab-suppack").className="pmm-subtab"+(t==="suppack"?" active":"");
   document.getElementById("pmm-tab-costsavings").className="pmm-subtab"+(t==="costsavings"?" active":"");
+  const searchWrap=document.getElementById("pmm-search-wrap");
+  if(searchWrap){
+    searchWrap.style.display=(t==="compiled"||t==="database")?"block":"none";
+    pmmInitSearchBar();
+  }
   pmmRender();
 }
 
@@ -5411,39 +5370,52 @@ function pmmRerenderActiveTab(){
   if(pmmActiveTab==="database") pmmRenderDatabase();
   else pmmRenderCompiled();
 }
-// Replacing innerHTML destroys the old <input> node entirely, so the browser can't
-// keep it focused across a re-render — without this, every keystroke would kick the
-// user out of the field after the first character. Re-find the (new) input by ID
-// and manually restore focus + cursor position right after rendering.
-function pmmRestoreSearchFocus(cursorPos){
-  cdRestoreFocus("pmm-search-input", cursorPos);
+// The search box now lives in a permanent static container (#pmm-search-wrap,
+// populated once by pmmInitSearchBar) that neither pmmRenderDatabase nor
+// pmmRenderCompiled ever touches -- so re-rendering the results no longer
+// destroys/recreates the input, and typing never loses focus. Only the
+// suggestion dropdown (#pmm-search-suggest) needs its own targeted update.
+let pmmSearchBarInitialized=false;
+function pmmInitSearchBar(){
+  if(pmmSearchBarInitialized) return;
+  pmmSearchBarInitialized=true;
+  const wrap=document.getElementById("pmm-search-wrap"); if(!wrap) return;
+  wrap.innerHTML=`<div style="position:relative;max-width:320px">
+    <input id="pmm-search-input" value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this)" onfocus="pmmOnSearchFocus()" onblur="pmmCloseSearchSuggest()" placeholder="Search SKU or Supplier…" class="pmm-input"/>
+    <div id="pmm-search-suggest" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto"></div>`;
+}
+function pmmUpdateSuggestDisplay(){
+  const el=document.getElementById("pmm-search-suggest"); if(!el) return;
+  if(pmmSearchSuggestOpen && pmmSearchSku){
+    el.innerHTML=pmmSearchSuggestionsHtml(pmmSearchSku);
+    el.style.display="block";
+  } else {
+    el.style.display="none";
+    el.innerHTML="";
+  }
 }
 function pmmSelectSearchSuggestion(text){
   pmmSearchSku=text;
   pmmSearchSuggestOpen=false;
+  const el=document.getElementById("pmm-search-input"); if(el) el.value=text;
+  pmmUpdateSuggestDisplay();
   pmmRerenderActiveTab();
 }
 function pmmOnSearchInput(inputEl){
-  const cursorPos=inputEl.selectionStart;
   pmmSearchSku=inputEl.value;
   pmmSearchSuggestOpen=!!pmmSearchSku;
+  pmmUpdateSuggestDisplay();
   pmmRerenderActiveTab();
-  pmmRestoreSearchFocus(cursorPos);
 }
 function pmmOnSearchFocus(){
   if(pmmSearchSku){
     pmmSearchSuggestOpen=true;
-    const el=document.getElementById("pmm-search-input");
-    const cursorPos=el?el.selectionStart:null;
-    pmmRerenderActiveTab();
-    pmmRestoreSearchFocus(cursorPos);
+    pmmUpdateSuggestDisplay();
   }
 }
 function pmmCloseSearchSuggest(){
   // Small delay so a click on a suggestion registers before the dropdown disappears.
-  // Intentionally does NOT restore focus -- this fires on blur, i.e. the user is
-  // deliberately clicking away, so re-focusing here would trap them in the field.
-  setTimeout(()=>{ pmmSearchSuggestOpen=false; pmmRerenderActiveTab(); }, 150);
+  setTimeout(()=>{ pmmSearchSuggestOpen=false; pmmUpdateSuggestDisplay(); }, 150);
 }
 
 function pmmSetInsightDateFrom(v){ pmmInsightDateFrom=v; pmmRenderCompiled(); }
@@ -6310,10 +6282,6 @@ function pmmRenderDatabase(){
 
   let html=`<div style="max-width:100%;margin:0 auto">`;
   html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-start">
-    <div style="position:relative;flex:1;min-width:200px;max-width:320px">
-      <input id="pmm-search-input" value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this)" onfocus="pmmOnSearchFocus()" onblur="pmmCloseSearchSuggest()" placeholder="Search SKU or Supplier…" class="pmm-input"/>
-      ${pmmSearchSuggestOpen?`<div style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto">${pmmSearchSuggestionsHtml(pmmSearchSku)}</div>`:""}
-    </div>
     <select onchange="pmmFilterCategory=this.value;pmmRenderDatabase()" class="pmm-input" style="max-width:200px">
       <option value="ALL" ${pmmFilterCategory==="ALL"?"selected":""}>All Categories</option>
       ${PMM_CATEGORIES.map(c=>`<option value="${c}" ${pmmFilterCategory===c?"selected":""}>${c}</option>`).join("")}
@@ -6387,10 +6355,6 @@ function pmmRenderCompiled(){
 
   let html=`<div style="max-width:100%;margin:0 auto">`;
   html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-start">
-    <div style="position:relative;flex:1;min-width:200px;max-width:320px">
-      <input id="pmm-search-input" value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this)" onfocus="pmmOnSearchFocus()" onblur="pmmCloseSearchSuggest()" placeholder="Search SKU or Supplier…" class="pmm-input"/>
-      ${pmmSearchSuggestOpen?`<div style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto">${pmmSearchSuggestionsHtml(pmmSearchSku)}</div>`:""}
-    </div>
     <select onchange="pmmFilterCategory=this.value;pmmRenderCompiled()" class="pmm-input" style="max-width:200px">
       <option value="ALL" ${pmmFilterCategory==="ALL"?"selected":""}>All Categories</option>
       ${PMM_CATEGORIES.map(c=>`<option value="${c}" ${pmmFilterCategory===c?"selected":""}>${c}</option>`).join("")}
@@ -6503,6 +6467,11 @@ function pcaDoSwitchTab(t){
   document.getElementById("pca-tab-approval").className="pmm-subtab"+(t==="approval"?" active":"");
   const completedTab=document.getElementById("pca-tab-completed");
   if(completedTab) completedTab.className="pmm-subtab"+(t==="completed"?" active":"");
+  const searchWrap=document.getElementById("pca-search-wrap");
+  if(searchWrap){
+    searchWrap.style.display=(t==="tracking")?"block":"none";
+    pcaInitSearchBar();
+  }
   pcaRender();
 }
 function pcaSwitchTab(t){
@@ -6530,6 +6499,7 @@ function pcaResetToTracking(){
   pcaDraftFolderId=null;
   pcaSearchQuery="";
   pcaSearchSuggestOpen=false;
+  const searchInput=document.getElementById("pca-search-input"); if(searchInput) searchInput.value="";
   pcaRevertModeEnabled=!pcaRevertModeEnabled;
   const resetBtn=document.getElementById("pca-reset-btn");
   if(resetBtn) resetBtn.textContent = pcaRevertModeEnabled ? "↺ Reset to Tracking (Revert: ON)" : "↺ Reset to Tracking";
@@ -6750,15 +6720,44 @@ function pcaSearchSuggestionsHtml(query){
     </div>`).join("");
 }
 
+// The search box lives in a permanent static container (#pca-search-wrap,
+// populated once by pcaInitSearchBar) that pcaRenderTracking never touches --
+// so re-rendering the results no longer destroys/recreates the input, and
+// typing never loses focus. Only the suggestion dropdown needs its own
+// targeted update.
+let pcaSearchBarInitialized=false;
+function pcaInitSearchBar(){
+  if(pcaSearchBarInitialized) return;
+  pcaSearchBarInitialized=true;
+  const wrap=document.getElementById("pca-search-wrap"); if(!wrap) return;
+  wrap.innerHTML=`<div style="position:relative;max-width:340px">
+    <input id="pca-search-input" value="${esc(pcaSearchQuery)}" oninput="pcaOnSearchInput(this)" onfocus="if(pcaSearchQuery){pcaSearchSuggestOpen=true;pcaUpdateSuggestDisplay()}" onblur="pcaCloseSearchSuggest()" placeholder="Search PO / SS / SKU…" class="pmm-input"/>
+    <div id="pca-search-suggest" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto"></div>`;
+}
+function pcaUpdateSuggestDisplay(){
+  const el=document.getElementById("pca-search-suggest"); if(!el) return;
+  if(pcaSearchSuggestOpen && pcaSearchQuery){
+    el.innerHTML=pcaSearchSuggestionsHtml(pcaSearchQuery);
+    el.style.display="block";
+  } else {
+    el.style.display="none";
+    el.innerHTML="";
+  }
+}
 function pcaOnSearchInput(inputEl){
-  const cursorPos=inputEl.selectionStart;
   pcaSearchQuery=inputEl.value;
   pcaSearchSuggestOpen=!!pcaSearchQuery;
+  pcaUpdateSuggestDisplay();
   pcaRenderTracking();
-  cdRestoreFocus("pca-search-input", cursorPos);
 }
-function pcaSelectSearchSuggestion(text){ pcaSearchQuery=text; pcaSearchSuggestOpen=false; pcaRenderTracking(); }
-function pcaCloseSearchSuggest(){ setTimeout(()=>{ pcaSearchSuggestOpen=false; pcaRenderTracking(); }, 150); }
+function pcaSelectSearchSuggestion(text){
+  pcaSearchQuery=text;
+  pcaSearchSuggestOpen=false;
+  const el=document.getElementById("pca-search-input"); if(el) el.value=text;
+  pcaUpdateSuggestDisplay();
+  pcaRenderTracking();
+}
+function pcaCloseSearchSuggest(){ setTimeout(()=>{ pcaSearchSuggestOpen=false; pcaUpdateSuggestDisplay(); }, 150); }
 
 function pcaShowContextMenu(e, rowIndex){
   e.preventDefault();
@@ -6873,10 +6872,6 @@ function pcaRenderTracking(){
     <button onclick="pcaToggleBatchMode()" style="margin-left:auto;font-size:11px;font-weight:700;padding:6px 12px;border-radius:20px;cursor:pointer;border:1.5px solid ${pcaBatchMode?"#5b21b6":"#dde0e7"};background:${pcaBatchMode?"#f3e4ff":"#fff"};color:${pcaBatchMode?"#5b21b6":"#555"}">🧺 ${pcaBatchMode?"Cancel Batching":"Batch POs"}</button>
   </div>`;
   html+=`<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-    <div style="position:relative;flex:1;min-width:220px;max-width:340px">
-      <input id="pca-search-input" value="${esc(pcaSearchQuery)}" oninput="pcaOnSearchInput(this)" onfocus="if(pcaSearchQuery){pcaSearchSuggestOpen=true;pcaRenderTracking()}" onblur="pcaCloseSearchSuggest()" placeholder="Search PO / SS / SKU…" class="pmm-input"/>
-      ${pcaSearchSuggestOpen?`<div style="position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto">${pcaSearchSuggestionsHtml(pcaSearchQuery)}</div>`:""}
-    </div>
     <button onclick="pcaSyncTracking()" style="font-size:11px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:6px;padding:8px 14px;cursor:pointer">🔄 Refresh</button>
     <span style="font-size:10.5px;color:#888">${rows.length} item${rows.length!==1?"s":""} awaiting action</span>
   </div>`;
