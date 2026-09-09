@@ -6,6 +6,8 @@
 <title>Compliance Dashboard — Rhino USA</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.9/pdfmake.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.9/vfs_fonts.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -378,6 +380,7 @@ let pmmSearchSku = "";
 let pmmMaterialColors = {}; // material text (lowercased) -> hex color, assigned on first sight
 let pmmRemarks = localStorage.getItem("rhino_pmm_remarks_v1") || "";
 let pmmInsightDateFrom = "", pmmInsightDateTo = "";
+let pmmLastConsolidatedSkus = {chem:[], corr:[]}; // populated each time pmmInsightsHtml() runs, read by the click-to-view-SKUs modal
 let pmmExpandedCards = new Set(); // entry ids whose full Item/Component/Material table is expanded
 let pmmAckYear = "ALL";
 let pmmAckSupplier = "";
@@ -2453,6 +2456,40 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="pmmSkuFamilyAllList"){
+    const total=modal.groups.reduce((s,g)=>s+g.skus.length,0);
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:600px;max-height:85vh;display:flex;flex-direction:column">
+        <div style="background:#0073ea;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+          <div style="color:#fff;font-weight:700;font-size:14px">${esc(modal.title)} — ${total} SKUs shared</div>
+          <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+        </div>
+        <div style="padding:18px 20px;overflow-y:auto">
+          ${modal.groups.map(g=>g.skus.length?`<div style="margin-bottom:14px">
+            <div style="font-size:10.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">${esc(g.label)} (${g.skus.length})</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${g.skus.map(s=>`<span style="font-size:11px;font-weight:600;padding:4px 10px;border-radius:14px;background:#f0f2f5;color:#333">${esc(s)}</span>`).join("")}
+            </div>
+          </div>`:"").join("")}
+          ${total?"":`<div style="color:#aaa;font-size:11px">No sibling SKUs on file for this product yet.</div>`}
+        </div>
+      </div>
+    </div>`;
+  } else if(modal.type==="pmmConsolidatedSkuList"){
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:560px;max-height:80vh;display:flex;flex-direction:column">
+        <div style="background:#0e1b3d;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+          <div style="color:#fff;font-weight:700;font-size:14px">${esc(modal.title)} (${modal.items.length})</div>
+          <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+        </div>
+        <div style="padding:18px 20px;overflow-y:auto">
+          ${modal.items.length?`<table style="width:100%;border-collapse:collapse;font-size:11.5px">
+            <thead><tr style="background:#f2f3f6"><th style="text-align:left;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">SKU</th><th style="text-align:left;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Product</th></tr></thead>
+            <tbody>${modal.items.map(it=>`<tr style="border-bottom:0.5px solid #f0f1f3"><td style="padding:6px 10px;font-weight:600;color:#333">${esc(it.sku)}</td><td style="padding:6px 10px;color:#555">${esc(it.name)}</td></tr>`).join("")}</tbody>
+          </table>`:`<div style="color:#aaa;font-size:11px">No SKUs in this scope.</div>`}
+        </div>
+      </div>
+    </div>`;
   } else if(modal.type==="pmmCostSnapshotDetail"){
     const snap=pmmCostSavingsSnapshots.find(s=>s.id===modal.snapshotId);
     if(!snap){ root.innerHTML=""; return; }
@@ -2524,6 +2561,7 @@ function renderModals(){
               <div>${pmmFamilyLineHtml("C SKU Family", e.skuFamilyC, e.id, "skuFamilyC")}</div>
               <div>${pmmFamilyLineHtml("Retail SKU", e.retailSku, e.id, "retailSku")}</div>
             </div>
+            ${pmmSkuTotalSummaryHtml(e)}
             <div style="background:#f0f6ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:10px 12px;font-size:11px;color:#333;line-height:1.7">
               ${e.parentSku?`<div><strong style="color:#0055bb">Parent SKU:</strong> ${esc(e.parentSku)}</div>`:""}
               ${e.supplier?`<div><strong style="color:#0055bb">Supplier:</strong> ${esc(e.supplier)}</div>`:""}
@@ -2556,6 +2594,7 @@ function renderModals(){
       <td style="padding:5px 8px;border-bottom:1px solid #f0f1f3"><input value="${esc(c.item)}" oninput="pmmDetailUpdateComponent('${e.id}',${i},'item',this.value)" style="width:100%;padding:5px 6px;border:1px solid #dde0e7;border-radius:5px;font-size:11px"/></td>
       <td style="padding:5px 8px;border-bottom:1px solid #f0f1f3"><input value="${esc(c.component)}" oninput="pmmDetailUpdateComponent('${e.id}',${i},'component',this.value)" style="width:100%;padding:5px 6px;border:1px solid #dde0e7;border-radius:5px;font-size:11px"/></td>
       <td style="padding:5px 8px;border-bottom:1px solid #f0f1f3"><input value="${esc(c.material)}" oninput="pmmDetailUpdateComponent('${e.id}',${i},'material',this.value)" style="width:100%;padding:5px 6px;border:1px solid #dde0e7;border-radius:5px;font-size:11px"/></td>
+      <td style="padding:5px 8px;border-bottom:1px solid #f0f1f3;text-align:center">${e.components.length>1?`<button onclick="pmmDetailRemoveRow('${e.id}',${i})" style="background:none;border:none;color:#e2445c;cursor:pointer;font-size:13px">✕</button>`:""}</td>
     </tr>`).join("");
     const field=(label,key,val)=>`<div style="margin-bottom:8px"><label style="font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:2px">${label}</label><input value="${esc(val||"")}" oninput="pmmDetailUpdateField('${e.id}','${key}',this.value)" style="width:100%;padding:6px 8px;border:1px solid #dde0e7;border-radius:6px;font-size:11.5px"/></div>`;
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
@@ -2577,14 +2616,31 @@ function renderModals(){
           </div>
           <div style="flex:1;min-width:340px">
             ${field("Product Description","description",e.description)}
-            <table style="width:100%;border-collapse:collapse;margin-top:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">
+              <div style="font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.3px">Components</div>
+              <button onclick="pmmDetailAddRow('${e.id}')" style="font-size:10.5px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:4px 10px;cursor:pointer">+ Add Row</button>
+            </div>
+            <table style="width:100%;border-collapse:collapse;margin-top:6px">
               <thead><tr>
                 <th style="text-align:left;padding:5px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
                 <th style="text-align:left;padding:5px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
                 <th style="text-align:left;padding:5px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Material</th>
+                <th style="width:30px;border-bottom:1.5px solid #e8eaed"></th>
               </tr></thead>
               <tbody>${compRowsHtml}</tbody>
             </table>
+            <div style="margin-top:12px;padding-top:12px;border-top:1px solid #f0f1f3">
+              <div style="font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.3px;margin-bottom:6px">Or paste/import a table (Item, Component, Material)</div>
+              <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
+                <textarea id="pmm-detail-import-paste" style="flex:1;min-width:220px;padding:6px 8px;border:1px solid #dde0e7;border-radius:6px;font-family:monospace;font-size:10.5px" rows="2" placeholder="Paste rows copied from Excel — one row per line, columns separated by tabs or commas"></textarea>
+                <div style="display:flex;flex-direction:column;gap:5px">
+                  <button onclick="pmmDetailImportPaste('${e.id}')" style="font-size:10.5px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:6px 12px;cursor:pointer">Import Pasted Rows</button>
+                  <button onclick="document.getElementById('pmm-detail-import-file').click()" style="font-size:10.5px;font-weight:600;color:#555;background:#f0f2f5;border:1px solid #dde0e7;border-radius:6px;padding:6px 12px;cursor:pointer">Upload Excel File</button>
+                  <input type="file" id="pmm-detail-import-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="pmmDetailImportFile('${e.id}', this.files[0])"/>
+                </div>
+              </div>
+              <div style="font-size:9.5px;color:#aaa;margin-top:4px">Importing replaces every row above with what's pasted/uploaded.</div>
+            </div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:16px">
               ${field("Chemical Test","chemTest",e.chemTest)}${field("Chem. Quotation","chemTestCost",e.chemTestCost)}${field("Chem. Sample","chemTestSample",e.chemTestSample)}
               ${field("Physical Test","physTest",e.physTest)}${field("Phys. Quotation","physTestCost",e.physTestCost)}${field("Phys. Sample","physTestSample",e.physTestSample)}
@@ -4908,6 +4964,45 @@ function pmmDetailUpdateComponent(entryId, idx, field, value){
   const e=pmmEntries.find(x=>x.id===entryId);
   if(e && e.components[idx]) e.components[idx][field]=value;
 }
+function pmmDetailAddRow(entryId){
+  const e=pmmEntries.find(x=>x.id===entryId);
+  if(!e) return;
+  e.components.push({item:String(e.components.length+1), component:"", material:""});
+  renderModals();
+}
+function pmmDetailRemoveRow(entryId, idx){
+  const e=pmmEntries.find(x=>x.id===entryId);
+  if(!e || e.components.length<=1) return;
+  e.components.splice(idx,1);
+  renderModals();
+}
+function pmmDetailImportPaste(entryId){
+  const e=pmmEntries.find(x=>x.id===entryId);
+  if(!e) return;
+  const text=(document.getElementById("pmm-detail-import-paste")?.value||"").trim();
+  if(!text){ alert("Paste some rows first."); return; }
+  const rows=text.split("\n").map(l=>l.split(/\t|,/).map(x=>x.trim())).filter(r=>r.some(Boolean));
+  e.components=rows.map((r,i)=>({item:r[0]||String(i+1), component:r[1]||"", material:r[2]||""}));
+  renderModals();
+}
+function pmmDetailImportFile(entryId, file){
+  if(!file) return;
+  const e=pmmEntries.find(x=>x.id===entryId);
+  if(!e) return;
+  const reader=new FileReader();
+  reader.onload=(ev)=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:"binary"});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1});
+      const dataRows=rows.filter(r=>r.some(v=>v!==undefined&&v!==""));
+      const startIdx=(dataRows[0]||[]).some(v=>/^(item|component|material)$/i.test(String(v).trim()))?1:0;
+      e.components=dataRows.slice(startIdx).map((r,i)=>({item:String(r[0]??i+1), component:String(r[1]??""), material:String(r[2]??"")}));
+      renderModals();
+    }catch(err){ alert("Could not read that file: "+err.message); }
+  };
+  reader.readAsBinaryString(file);
+}
 
 async function pmmSaveEntryDetail(entryId){
   const e=pmmEntries.find(x=>x.id===entryId);
@@ -5464,6 +5559,20 @@ function pmmInsightsHtml(){
   // consolidating by material doesn't reduce how many physical tests are needed.
   const chem=pmmComputeTestingSavings(entries,"chemTestCost","chemTestSample",generalCover);
   const corr=pmmComputeTestingSavings(entries,"corrTestCost","corrTestSample",metalCover);
+  // "Consolidated" = how many SKUs were actually gathered into this test's scope
+  // (chemical applies to every product; corrosion only to the ones with a metal
+  // component) -- and the % column is what share of those ended up needing an
+  // actual representative sample.
+  const chemConsolidatedEntries=entries;
+  const corrConsolidatedEntries=entries.filter(e=>metalCover.productMaterials[e.id] && metalCover.productMaterials[e.id].size>0);
+  const chemConsolidatedCount=chemConsolidatedEntries.length;
+  const corrConsolidatedCount=corrConsolidatedEntries.length;
+  const chemRepPct=chemConsolidatedCount>0?Math.round((chem.repSamples/chemConsolidatedCount)*1000)/10:0;
+  const corrRepPct=corrConsolidatedCount>0?Math.round((corr.repSamples/corrConsolidatedCount)*1000)/10:0;
+  pmmLastConsolidatedSkus={
+    chem: chemConsolidatedEntries.map(e=>({sku:e.sku, name:pmmNormalizeProductName(e.description)||e.sku})),
+    corr: corrConsolidatedEntries.map(e=>({sku:e.sku, name:pmmNormalizeProductName(e.description)||e.sku})),
+  };
   const totalSamplesSaved=chem.samplesSaved+corr.samplesSaved;
   const totalCostSaved=Math.round((chem.costSaved+corr.costSaved)*100)/100;
   const combinedCostBefore=chem.totalCost+corr.totalCost;
@@ -5496,7 +5605,6 @@ function pmmInsightsHtml(){
         <div><div style="font-size:18px;font-weight:700">${reductionPct}%</div><div style="color:#a8b8d8;font-size:9.5px">Products no longer needing review</div></div>
         <div><div style="font-size:18px;font-weight:700">${top1Coverage}%</div><div style="color:#a8b8d8;font-size:9.5px">Top 1 coverage</div></div>
       </div>
-      <div style="font-size:10px;color:#a8b8d8;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.15)">Testing ${totalSamples} representative product${totalSamples!==1?"s":""} instead of all ${totalItems} covers 100% of unique materials.</div>
 
       <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.15)">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
@@ -5516,8 +5624,10 @@ function pmmInsightsHtml(){
         <table style="width:100%;border-collapse:collapse;font-size:10.5px">
           <thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">
             <th style="text-align:left;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Testing Type</th>
+            <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Consolidated</th>
             <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Samples</th>
             <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Rep.</th>
+            <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Rep. %</th>
             <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Saved</th>
             <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Cost</th>
             <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">After</th>
@@ -5526,9 +5636,11 @@ function pmmInsightsHtml(){
           </tr></thead>
           <tbody style="color:#e8ecf5">
             <tr style="border-bottom:1px solid rgba(255,255,255,.1)">
-              <td style="padding:6px 8px;font-weight:600">Chemical</td>
+              <td style="padding:6px 8px;font-weight:600"><span onclick="pmmShowConsolidatedSkus('chem')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Click to see all consolidated SKUs">Chemical</span></td>
+              <td style="padding:6px 8px;text-align:right">${chemConsolidatedCount}</td>
               <td style="padding:6px 8px;text-align:right">${fmtNum(chem.totalSamples)}</td>
               <td style="padding:6px 8px;text-align:right">${fmtNum(chem.repSamples)}</td>
+              <td style="padding:6px 8px;text-align:right;color:#8ab4f8;font-weight:600">${chemRepPct}%</td>
               <td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${fmtNum(chem.samplesSaved)}</td>
               <td style="padding:6px 8px;text-align:right">${fmtUsd(chem.totalCost)}</td>
               <td style="padding:6px 8px;text-align:right">${fmtUsd(chem.repCost)}</td>
@@ -5536,9 +5648,11 @@ function pmmInsightsHtml(){
               <td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${chem.pctSaved}%</td>
             </tr>
             <tr style="border-bottom:1px solid rgba(255,255,255,.2)">
-              <td style="padding:6px 8px;font-weight:600">Corrosion <span style="color:#a8b8d8;font-weight:400">(metal)</span></td>
+              <td style="padding:6px 8px;font-weight:600"><span onclick="pmmShowConsolidatedSkus('corr')" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" title="Click to see all consolidated SKUs">Corrosion</span> <span style="color:#a8b8d8;font-weight:400">(metal)</span></td>
+              <td style="padding:6px 8px;text-align:right">${corrConsolidatedCount}</td>
               <td style="padding:6px 8px;text-align:right">${fmtNum(corr.totalSamples)}</td>
               <td style="padding:6px 8px;text-align:right">${fmtNum(corr.repSamples)}</td>
+              <td style="padding:6px 8px;text-align:right;color:#8ab4f8;font-weight:600">${corrRepPct}%</td>
               <td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${fmtNum(corr.samplesSaved)}</td>
               <td style="padding:6px 8px;text-align:right">${fmtUsd(corr.totalCost)}</td>
               <td style="padding:6px 8px;text-align:right">${fmtUsd(corr.repCost)}</td>
@@ -5547,8 +5661,10 @@ function pmmInsightsHtml(){
             </tr>
             <tr>
               <td style="padding:6px 8px;font-weight:800;color:#fff">Total</td>
+              <td style="padding:6px 8px;text-align:right;font-weight:700">${chemConsolidatedCount+corrConsolidatedCount}</td>
               <td style="padding:6px 8px;text-align:right;font-weight:700">${fmtNum(chem.totalSamples+corr.totalSamples)}</td>
               <td style="padding:6px 8px;text-align:right;font-weight:700">${fmtNum(chem.repSamples+corr.repSamples)}</td>
+              <td style="padding:6px 8px;text-align:right"></td>
               <td style="padding:6px 8px;text-align:right;font-weight:800;color:#7ee8b8">${fmtNum(totalSamplesSaved)}</td>
               <td style="padding:6px 8px;text-align:right;font-weight:700">${fmtUsd(combinedCostBefore)}</td>
               <td style="padding:6px 8px;text-align:right;font-weight:700">${fmtUsd(chem.repCost+corr.repCost)}</td>
@@ -5587,6 +5703,42 @@ function pmmShowSkuFamilyList(entryId, key){
   const value=e[key]||"";
   const skus=value.split(/,\s*/).filter(Boolean);
   openModal({type:"pmmSkuFamilyList", title:labelMap[key]||key, skus});
+}
+
+// Total consolidation across all four tiers for one product family -- "how
+// many SKUs share this same underlying product", broken down by Priority SKU.
+function pmmTotalSkuCount(e){
+  const a=(e.skuFamily||"").split(/,\s*/).filter(Boolean);
+  const b=(e.skuFamilyB||"").split(/,\s*/).filter(Boolean);
+  const c=(e.skuFamilyC||"").split(/,\s*/).filter(Boolean);
+  const r=(e.retailSku||"").split(/,\s*/).filter(Boolean);
+  return {a,b,c,r,total:a.length+b.length+c.length+r.length};
+}
+function pmmSkuTotalSummaryHtml(e){
+  const n=pmmTotalSkuCount(e);
+  if(!n.total) return "";
+  return `<div onclick="event.stopPropagation();pmmShowAllSkuFamilies('${e.id}')" style="margin-top:6px;padding:6px 9px;background:#eaf6ff;border:1px solid #bfe0ff;border-radius:6px;font-size:10px;color:#0055bb;cursor:pointer">
+    <strong>Total SKUs shared: ${n.total}</strong> — A SKU: ${n.a.length}, B SKU: ${n.b.length}, C SKU: ${n.c.length}, Retail SKU: ${n.r.length} <span style="text-decoration:underline">(view all)</span>
+  </div>`;
+}
+function pmmShowAllSkuFamilies(entryId){
+  const e=pmmEntries.find(x=>x.id===entryId);
+  if(!e) return;
+  const n=pmmTotalSkuCount(e);
+  openModal({type:"pmmSkuFamilyAllList", title:pmmNormalizeProductName(e.description)||e.sku, groups:[
+    {label:"A SKU", skus:n.a},
+    {label:"B SKU", skus:n.b},
+    {label:"C SKU", skus:n.c},
+    {label:"RETAIL SKU", skus:n.r},
+  ]});
+}
+// Click-through from the Sample Optimization Summary table's "Chemical" or
+// "Corrosion" row label -- shows every SKU that was gathered into that test's
+// consolidation scope (all products for Chemical; metal-component products only
+// for Corrosion).
+function pmmShowConsolidatedSkus(testType){
+  const items=pmmLastConsolidatedSkus[testType]||[];
+  openModal({type:"pmmConsolidatedSkuList", title: testType==="chem" ? "Chemical Testing — Consolidated SKUs" : "Corrosion Testing — Consolidated SKUs (metal only)", items});
 }
 
 // Amazon-style zoom: a small lens box follows the cursor over the image, and a
@@ -5684,6 +5836,7 @@ function pmmEntryCardHtml(e){
         <div>${pmmFamilyLineHtml("C SKU Family", e.skuFamilyC, e.id, "skuFamilyC")}</div>
         <div>${pmmFamilyLineHtml("Retail SKU", e.retailSku, e.id, "retailSku")}</div>
       </div>
+      ${pmmSkuTotalSummaryHtml(e)}
     </div>
     <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:stretch">
       ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" onclick="pmmOpenViewLarge('${e.id}')" title="Click to view larger" style="width:150px;max-width:100%;border-radius:6px;border:1px solid #eee;flex-shrink:0;object-fit:cover;cursor:zoom-in"/>`:""}
@@ -5880,6 +6033,12 @@ function pmmDataUrlToUint8Array(dataUrl){
   for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
   return bytes;
 }
+function pmmBytesToDataUrl(bytes, type){
+  let binary="";
+  for(let i=0;i<bytes.length;i++) binary+=String.fromCharCode(bytes[i]);
+  const mime = type==="jpg"?"image/jpeg":type==="png"?"image/png":type==="gif"?"image/gif":type==="bmp"?"image/bmp":"image/png";
+  return `data:${mime};base64,${btoa(binary)}`;
+}
 
 function pmmExtractDriveFileId(url){
   if(!url) return null;
@@ -6072,6 +6231,115 @@ async function pmmExportSupplierAckDocx(){
   }
 }
 
+// ── PDF export (US Legal paper, edge-to-edge header/footer) ───────────────
+// Same content as the DOCX version above, rebuilt with pdfmake so the output is
+// a real PDF. pageSize LEGAL = 8.5in x 14in (612 x 1008pt). The header/footer
+// are given their own zero margin so the banner and footer bar print flush to
+// the physical edge of the page instead of sitting inside the body margin.
+const PMM_ACK_PAGE_WIDTH = 612;  // 8.5in @ 72pt/in
+const PMM_ACK_PAGE_HEIGHT = 1008; // 14in @ 72pt/in
+const PMM_ACK_FOOTER_TEXT = "To ensure compliance and manage liability, Rhino-USA, Inc. recommends requiring suppliers to sign off on this documentation, confirming that the materials used in their products have not changed. This provides a formal record of material consistency for future reference and compliance verification.";
+
+async function pmmExportSupplierAckPdf(){
+  if(!pmmAckEntries.length) return;
+  if(typeof window.pdfMake==="undefined"){ alert("The PDF export library hasn't finished loading yet — please wait a moment and try again."); return; }
+  pmmAckExporting=true;
+  pmmRenderSupplierAck();
+  try{
+    const bannerDataUrl=`data:image/png;base64,${PMM_ACK_BANNER_B64}`;
+    const bannerHeight=Math.round((PMM_ACK_PAGE_WIDTH/600)*110); // keep the banner's original ~5.45:1 aspect ratio at full page width
+
+    const generatedStr=new Date().toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"});
+    const periodStr=pmmAckYear==="ALL"?"All available data":`Year: ${pmmAckYear}`;
+
+    const content=[];
+    content.push({ text:"Supplier Material Consistency Acknowledgement", bold:true, fontSize:19, margin:[0,0,0,3] });
+    content.push({ text:pmmAckSupplier, bold:true, fontSize:14, color:"#218C21", margin:[0,0,0,3] });
+    content.push({ text:`${periodStr}  —  Generated ${generatedStr}  ·  ${pmmAckEntries.length} product${pmmAckEntries.length!==1?"s":""}`, fontSize:9, color:"#777777", margin:[0,0,0,10] });
+    content.push({ canvas:[{ type:"line", x1:0, y1:0, x2:PMM_ACK_PAGE_WIDTH-80, y2:0, lineWidth:1.5, lineColor:"#1A1A1A" }], margin:[0,0,0,14] });
+
+    for(let idx=0; idx<pmmAckEntries.length; idx++){
+      const e=pmmAckEntries[idx];
+      const normName=pmmNormalizeProductName(e.description)||e.sku;
+      content.push({ text:normName, bold:true, fontSize:15, margin:[0,0,0,8], pageBreak: idx>0?"before":undefined });
+
+      if(e.photoUrl){
+        const img=await pmmFetchImageBytes(e.photoUrl);
+        if(img){
+          try{ content.push({ image:pmmBytesToDataUrl(img.bytes, img.type), width:260, alignment:"center", margin:[0,0,0,10] }); }
+          catch(err){ /* skip this photo if it can't be embedded, keep going */ }
+        }
+      }
+
+      const infoLines=[`SKU: ${e.sku}`];
+      if(e.skuFamily) infoLines.push(`A SKU Family: ${e.skuFamily}`);
+      if(e.skuFamilyB) infoLines.push(`B SKU Family: ${e.skuFamilyB}`);
+      if(e.skuFamilyC) infoLines.push(`C SKU Family: ${e.skuFamilyC}`);
+      if(e.retailSku) infoLines.push(`Retail SKU: ${e.retailSku}`);
+      if(e.category) infoLines.push(`Category: ${e.category}`);
+      content.push({
+        table:{ widths:["*"], body:[[ { text:infoLines.join("\n"), fontSize:9, color:"#333333", lineHeight:1.3 } ]] },
+        layout:{ fillColor:()=>"#FFF8E0", hLineColor:()=>"#FDE8C0", vLineColor:()=>"#FDE8C0", hLineWidth:()=>1.5, vLineWidth:()=>1.5, paddingLeft:()=>10, paddingRight:()=>10, paddingTop:()=>8, paddingBottom:()=>8 },
+        margin:[0,0,0,12],
+      });
+
+      const compBody=[[ { text:"Item", style:"th" }, { text:"Component", style:"th" }, { text:"Material", style:"th" } ]];
+      (e.components.length?e.components:[{item:"",component:"",material:""}]).forEach(c=>{
+        const col=pmmMaterialColor(c.material);
+        compBody.push([
+          { text:String(c.item||""), fontSize:9 },
+          { text:String(c.component||""), fontSize:9 },
+          { text:String(c.material||""), fontSize:9, bold:true, color:col.text, fillColor:col.bg },
+        ]);
+      });
+      content.push({ table:{ headerRows:1, widths:["12%","44%","44%"], body:compBody }, layout:"lightHorizontalLines", margin:[0,0,0,10] });
+    }
+
+    content.push({ text:`By signing below, ${pmmAckSupplier} acknowledges that the materials listed above for the products covered in this report have not changed and remain consistent with what has been previously reported.`, fontSize:10, margin:[0,0,0,26], pageBreak:"before" });
+    content.push({
+      columns:[
+        { width:"48%", table:{ widths:["*"], heights:[90], body:[[ { text:"COMPANY STAMP", alignment:"center", color:"#AAAAAA", fontSize:8 } ]] }, layout:{ hLineWidth:()=>1, vLineWidth:()=>1, hLineColor:()=>"#AAAAAA", vLineColor:()=>"#AAAAAA", hLineStyle:()=>({ dash:{ length:3 } }), vLineStyle:()=>({ dash:{ length:3 } }) } },
+        { width:"4%", text:"" },
+        { width:"48%", stack:[
+          { canvas:[{ type:"line", x1:0, y1:0, x2:220, y2:0, lineWidth:1, lineColor:"#999999" }], margin:[0,40,0,4] },
+          { text:"AUTHORIZED SIGNATURE & NAME/TITLE", fontSize:7.5, color:"#999999", margin:[0,0,0,30] },
+          { canvas:[{ type:"line", x1:0, y1:0, x2:220, y2:0, lineWidth:1, lineColor:"#999999" }], margin:[0,0,0,4] },
+          { text:"DATE", fontSize:7.5, color:"#999999" },
+        ] },
+      ],
+    });
+
+    const docDefinition={
+      pageSize:"LEGAL", // 8.5in x 14in
+      pageMargins:[40, bannerHeight+14, 40, 56],
+      defaultStyle:{ font:"Roboto" },
+      styles:{ th:{ fontSize:8, bold:true, color:"#888888", fillColor:"#F2F3F6" } },
+      // Header/footer get their OWN zero margin so they print flush to the
+      // physical edge of the paper rather than being inset by pageMargins.
+      header:function(){
+        return { image:bannerDataUrl, width:PMM_ACK_PAGE_WIDTH, margin:[0,0,0,0] };
+      },
+      footer:function(){
+        return {
+          margin:[0,0,0,0],
+          table:{ widths:[PMM_ACK_PAGE_WIDTH], body:[[ { text:PMM_ACK_FOOTER_TEXT, italics:true, fontSize:7.5, color:"#666666", alignment:"center", fillColor:"#F7F7F7", margin:[24,10,24,10] } ]] },
+          layout:{ hLineWidth:()=>0, vLineWidth:()=>0, paddingLeft:()=>0, paddingRight:()=>0, paddingTop:()=>0, paddingBottom:()=>0 },
+        };
+      },
+      content,
+    };
+
+    const supplierSlug=(pmmAckSupplier||"supplier").replace(/[^a-z0-9]+/gi,"_").slice(0,40);
+    window.pdfMake.createPdf(docDefinition).download(`Supplier_Acknowledgement_${supplierSlug}.pdf`);
+  }catch(err){
+    console.error(err);
+    alert("PDF export failed: "+(err&&err.message?err.message:"please try again."));
+  }finally{
+    pmmAckExporting=false;
+    pmmRenderSupplierAck();
+  }
+}
+
 // ── Cost Savings ─────────────────────────────────────────────────────────
 function pmmOpenCostSnapshotDetail(snapshotId){
   openModal({type:"pmmCostSnapshotDetail", snapshotId});
@@ -6175,7 +6443,7 @@ function pmmRenderSupplierAck(){
     </div>
     <div style="display:flex;gap:10px;margin-top:6px">
       <button onclick="pmmGenerateSupplierAck()" style="flex:1;padding:11px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:8px;cursor:pointer">Generate Report</button>
-      <button onclick="pmmExportSupplierAckDocx()" ${canExport?"":"disabled"} style="padding:11px 18px;font-size:13px;font-weight:700;color:${canExport?"#fff":"#aaa"};background:${canExport?"#0a7a46":"#eee"};border:none;border-radius:8px;cursor:${canExport?"pointer":"default"}">${pmmAckExporting?"Exporting…":"⬇ Export DOCX"}</button>
+      <button onclick="pmmExportSupplierAckPdf()" ${canExport?"":"disabled"} style="padding:11px 18px;font-size:13px;font-weight:700;color:${canExport?"#fff":"#aaa"};background:${canExport?"#0a7a46":"#eee"};border:none;border-radius:8px;cursor:${canExport?"pointer":"default"}">${pmmAckExporting?"Exporting…":"⬇ Export PDF (Legal)"}</button>
     </div>
   </div>`;
 
