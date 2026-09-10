@@ -6246,10 +6246,12 @@ async function pmmExportSupplierAckDocx(){
 // print flush to the physical edge, then hand off to the browser's own
 // Print dialog with @page{size:legal} -- the print preview IS the exact PDF
 // preview, and "Save as PDF" in that dialog produces the file.
+const PMM_ACK_FOOTER_NOTE = "To ensure compliance and manage liability, Rhino-USA, Inc. recommends requiring suppliers to sign off on this documentation, confirming that the materials used in their products have not changed. This provides a formal record of material consistency for future reference and compliance verification.";
 function pmmAckPageHtml(bodyHtml){
   return `<div class="pmm-ack-page">
     <img class="pmm-ack-page-header" src="data:image/png;base64,${PMM_ACK_HEADER_B64}"/>
     <div class="pmm-ack-page-body">${bodyHtml}</div>
+    <div class="pmm-ack-footer-note">${esc(PMM_ACK_FOOTER_NOTE)}</div>
     <img class="pmm-ack-page-footer" src="data:image/png;base64,${PMM_ACK_FOOTER_B64}"/>
   </div>`;
 }
@@ -6327,7 +6329,8 @@ function pmmEnsureAckPrintStyle(){
     #pmm-ack-print-root{ display:none; }
     .pmm-ack-page{ width:816px; min-height:1344px; background:#fff; margin:0 auto 30px; box-shadow:0 4px 20px rgba(0,0,0,.15); display:flex; flex-direction:column; overflow:hidden; }
     .pmm-ack-page-header{ width:100%; display:block; }
-    .pmm-ack-page-footer{ width:100%; display:block; margin-top:auto; }
+    .pmm-ack-page-footer{ width:100%; display:block; }
+    .pmm-ack-footer-note{ padding:8px 34px; font-size:8.5px; font-style:italic; color:#777; line-height:1.5; text-align:center; border-top:1px solid #eee; }
     .pmm-ack-page-body{ padding:26px 34px; flex:1; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
     @media print{
       @page{ size:legal; margin:0; }
@@ -6518,52 +6521,14 @@ function pmmAckPreviewHtml(){
   if(!pmmAckEntries.length){
     return `<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:40px;text-align:center;color:#aaa;margin-top:16px">No entries found for "${esc(pmmAckSupplier)}"${pmmAckYear!=="ALL"?` in ${esc(pmmAckYear)}`:""}.</div>`;
   }
-  const generatedStr=new Date().toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"});
-  const periodStr=pmmAckYear==="ALL"?"All available data":`Year: ${pmmAckYear}`;
-
-  // Mirrors the DOCX pagination exactly: page 1 carries the header + first
-  // entry, every entry after that gets its own page, and the sign-off gets a
-  // final page of its own -- same layout as the "PAGE X OF Y" reference report.
-  const totalPages=pmmAckEntries.length+1;
-  const pageBoxOpen=`<div style="background:#fff;border:1px solid #ddd;box-shadow:0 4px 16px rgba(0,0,0,.1);padding:36px;max-width:800px;margin:0 auto">`;
-  const pageLabel=(n)=>`<div style="text-align:center;font-size:10px;color:#999;letter-spacing:1.5px;margin:28px 0 8px;text-transform:uppercase">Page ${n} of ${totalPages}</div>`;
-  const footerNote=`<div style="margin-top:20px;padding-top:12px;border-top:1px solid #eee;font-size:10.5px;font-style:italic;color:#777;line-height:1.6">To ensure compliance and manage liability, Rhino-USA, Inc. recommends requiring suppliers to sign off on this documentation, confirming that the materials used in their products have not changed. This provides a formal record of material consistency for future reference and compliance verification.</div>`;
-
-  let html=`<div style="margin-top:16px">
-    <div style="text-align:center;font-size:10px;color:#999;margin-bottom:8px">PREVIEW — this is what the exported Word document will contain</div>`;
-
-  // Page 1: banner, title, and the first entry.
-  html+=pageLabel(1);
-  html+=`${pageBoxOpen}
-      <img src="data:image/png;base64,${PMM_ACK_BANNER_B64}" style="width:100%;border-radius:6px;margin-bottom:20px;display:block"/>
-      <div style="font-size:19px;font-weight:800;color:#222;margin-bottom:2px">Supplier Material Consistency Acknowledgement</div>
-      <div style="font-size:14px;font-weight:700;color:#0a7a46;margin-bottom:4px">${esc(pmmAckSupplier)}</div>
-      <div style="font-size:11px;color:#888;margin-bottom:18px">${esc(periodStr)} — Generated ${generatedStr} · ${pmmAckEntries.length} product${pmmAckEntries.length!==1?"s":""}</div>
-      <hr style="border:none;border-top:2px solid #222;margin-bottom:18px"/>
-      ${pmmAckEntryBlockHtml(pmmAckEntries[0])}
-    </div>`;
-
-  // One page per remaining entry.
-  for(let i=1;i<pmmAckEntries.length;i++){
-    html+=pageLabel(i+1);
-    html+=`${pageBoxOpen}${pmmAckEntryBlockHtml(pmmAckEntries[i])}</div>`;
-  }
-
-  // Final page: signature / stamp block + footer note.
-  html+=pageLabel(totalPages);
-  html+=`${pageBoxOpen}
-      <div style="font-size:11.5px;color:#333;line-height:1.6;margin-bottom:20px">By signing below, <strong>${esc(pmmAckSupplier)}</strong> acknowledges that the materials listed above for the products covered in this report have not changed and remain consistent with what has been previously reported.</div>
-      <div style="display:flex;gap:24px">
-        <div style="flex:1;border:2px dashed #ccc;border-radius:6px;min-height:90px;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:11px;font-weight:600">COMPANY STAMP</div>
-        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:22px">
-          <div><div style="border-bottom:1.5px solid #999;margin-bottom:4px;height:20px"></div><div style="font-size:9.5px;color:#999">AUTHORIZED SIGNATURE &amp; NAME/TITLE</div></div>
-          <div><div style="border-bottom:1.5px solid #999;margin-bottom:4px;height:20px"></div><div style="font-size:9.5px;color:#999">DATE</div></div>
-        </div>
-      </div>
-      ${footerNote}
-    </div>
+  // Reuses the exact same page-building function the PDF export uses, so the
+  // on-screen preview is pixel-identical to what "Export PDF" produces --
+  // not a separate approximation of it.
+  pmmEnsureAckPrintStyle();
+  return `<div style="margin-top:16px">
+    <div style="text-align:center;font-size:10px;color:#999;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px">Preview — exactly what "Export PDF" will produce</div>
+    ${pmmBuildSupplierAckPrintHtml()}
   </div>`;
-  return html;
 }
 
 function pmmRenderDatabase(){
