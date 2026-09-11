@@ -101,6 +101,8 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
 .pmm-photo-preview{max-width:100%;max-height:220px;border-radius:8px;display:block;margin:0 auto}
 .pmm-entry-card{background:#fff;border:1.5px solid #e0e3ea;border-radius:12px;overflow:hidden}
 .pmm-entry-hdr{padding:14px 20px;background:#f8f9fb;border-bottom:1px solid #e8eaed;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.pmm-entry-photo-section{padding:14px 20px 0 20px;text-align:center;background:#fff}
+.pmm-entry-photo-section img{max-width:420px;max-height:300px;width:100%;border-radius:8px;border:1px solid #ddd;object-fit:contain;cursor:zoom-in}
 .pmm-cat-badge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;background:#e8f2ff;color:#0055bb;border:1px solid #c0d8f8}
 .pmm-tier-badge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;background:#f0efff;color:#5b21b6;border:1px solid #d8d0f8}
 .pmm-mat-swatch{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:6px;flex-shrink:0;vertical-align:middle}
@@ -458,6 +460,73 @@ async function pcaGetCurrentUserIdentity(){
   }
 }
 
+// Remembers (per browser, not per session) that this person has granted
+// access at least once before, so future sign-ins can request silently
+// (prompt:"") instead of forcing the full account-chooser + consent screen
+// every time -- Google itself decides whether that's possible; this just
+// stops the app from needlessly demanding "consent" up front on a returning user.
+const PMM_HAS_GRANTED_KEY = "rhino_google_ever_granted_v1";
+function pmmHasEverGranted(){
+  try{ return localStorage.getItem(PMM_HAS_GRANTED_KEY)==="1"; }catch(e){ return false; }
+}
+function pmmMarkGranted(){
+  try{ localStorage.setItem(PMM_HAS_GRANTED_KEY,"1"); }catch(e){}
+}
+
+// Proactively renews the access token a few minutes before it actually
+// expires, silently (prompt:"") and in the background -- so as long as this
+// tab stays open, editing never hits a stale-token wall mid-session and the
+// person is never bounced back to a sign-in screen. Google access tokens are
+// normally viable for the lifetime it reports in expires_in (~1hr).
+// Uses a per-call callback override so this ONLY swaps in the new token --
+// it must NOT re-run fetchSheetData() or touch the login gate, since that
+// could clobber whatever the person is mid-edit on right now.
+let pmmTokenRefreshTimer=null;
+function pmmScheduleTokenRefresh(expiresInSeconds){
+  if(pmmTokenRefreshTimer){ clearTimeout(pmmTokenRefreshTimer); pmmTokenRefreshTimer=null; }
+  const lifetime=Number(expiresInSeconds||3600);
+  const refreshInMs=Math.max(lifetime-300, 60)*1000; // refresh 5 min before expiry, but never sooner than 1 min out
+  pmmTokenRefreshTimer=setTimeout(()=>{
+    if(!tokenClient || !pmmHasEverGranted()) return;
+    try{
+      tokenClient.requestAccessToken({
+        prompt:"",
+        callback:(resp)=>{
+          if(resp && resp.access_token){
+            accessToken=resp.access_token;
+            pmmScheduleTokenRefresh(resp.expires_in); // chain the next silent refresh
+          }
+          // If this silently fails (e.g. the underlying Google session itself
+          // expired), say nothing -- the next real API call's own 401 handling
+          // is still there as a fallback, and we don't want a background
+          // hiccup to interrupt whatever the person is doing right now.
+        },
+      });
+    }catch(e){ /* ignore -- background attempt only */ }
+  }, refreshInMs);
+}
+
+// Best-effort, fire-and-forget: used from the reactive 401 handlers below so
+// that even if the proactive refresh above missed its window (tab was asleep,
+// throttled in the background, etc.), a fresh token is already on its way by
+// the time the person retries -- without them needing to jump to another tab.
+function pmmKickSilentReauth(){
+  if(!tokenClient || !pmmHasEverGranted()) return;
+  try{
+    tokenClient.requestAccessToken({
+      prompt:"",
+      callback:(resp)=>{ if(resp && resp.access_token){ accessToken=resp.access_token; pmmScheduleTokenRefresh(resp.expires_in); } },
+    });
+  }catch(e){ /* ignore -- background attempt only */ }
+}
+
+function pmmHandleTokenSuccess(resp){
+  accessToken = resp.access_token;
+  pmmMarkGranted();
+  pmmScheduleTokenRefresh(resp.expires_in);
+  fetchSheetData().then(()=>{ if(gatePending){ gatePending=false; hideLoginGate(); } });
+}
+
 function initGis(){
   if(tokenClient) return;
   if(!window.google || !google.accounts || !google.accounts.oauth2){
@@ -475,8 +544,7 @@ function initGis(){
         setSyncUI("error","Google sign-in failed", msg,0);
         return;
       }
-      accessToken = resp.access_token;
-      fetchSheetData().then(()=>{ if(gatePending){ gatePending=false; hideLoginGate(); } });
+      pmmHandleTokenSuccess(resp);
     },
   });
 }
@@ -497,7 +565,21 @@ function gateSignIn(){
     gateShowError("Google sign-in library hasn't loaded yet. Check your connection and try again.");
     return;
   }
-  tokenClient.requestAccessToken({prompt:"consent"});
+  if(pmmHasEverGranted()){
+    // Already granted access before -- try silently first (no account picker,
+    // no consent screen at all, if the browser's Google session is still
+    // valid) and only fall through to the full visible prompt if that doesn't
+    // work, e.g. a fully signed-out browser or a different profile.
+    tokenClient.requestAccessToken({
+      prompt:"",
+      callback:(resp)=>{
+        if(resp && resp.access_token){ pmmHandleTokenSuccess(resp); }
+        else{ tokenClient.requestAccessToken({prompt:"consent"}); }
+      },
+    });
+  } else {
+    tokenClient.requestAccessToken({prompt:"consent"});
+  }
 }
 function gateShowLoading(){
   const btn=document.getElementById("gate-signin-btn");
@@ -569,7 +651,7 @@ function triggerSync(){
       setSyncUI("error","Sign-in window didn't open","Your browser may have blocked the popup. Allow popups for this site and try again.",0);
     }
   }, 12000);
-  tokenClient.requestAccessToken({prompt: accessToken ? "" : "consent"});
+  tokenClient.requestAccessToken({prompt: (accessToken || pmmHasEverGranted()) ? "" : "consent"});
 }
 
 async function fetchSheetData(){
@@ -579,6 +661,7 @@ async function fetchSheetData(){
     const res=await fetch(url,{headers:{Authorization:"Bearer "+accessToken}});
     if(res.status===401){
       accessToken=null;
+      pmmKickSilentReauth();
       throw new Error("Session expired. Click Sync again to reconnect.");
     }
     if(!res.ok){
@@ -2503,11 +2586,11 @@ function renderModals(){
           ${(cover||metalCover)?`<div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
             ${cover?`<div>
               <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:8px">General Material Coverage <span style="color:#aaa;font-weight:400">(recomputed from these ${matchedEntries.length} products as they exist now)</span></div>
-              ${pmmTopNCardsHtml(cover, "#c0d8f8")}
+              ${pmmTopNCardsHtml(cover, "#c0d8f8", "snap-gen")}
             </div>`:""}
             ${metalCover?`<div>
               <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:8px">Corrosion Coverage <span style="color:#aaa;font-weight:400">(metal materials only)</span></div>
-              ${pmmTopNCardsHtml(metalCover, "#fde0d0")}
+              ${pmmTopNCardsHtml(metalCover, "#fde0d0", "snap-corr")}
             </div>`:""}
           </div>`:""}
 
@@ -3096,6 +3179,7 @@ async function cdGetHeaderMap(sheetName){
 function cdCheckAuthError(res){
   if(res && res.status===401){
     accessToken=null; cdHeaderMaps={};
+    pmmKickSilentReauth();
     throw new Error("Your Google session expired. Go to the Compliance Dashboard tab and click Re-sync, then try again.");
   }
 }
@@ -4730,6 +4814,7 @@ async function pmmUploadPhoto(file){
     });
     if(res.status===401){
       accessToken=null;
+      pmmKickSilentReauth();
       throw new Error("Your Google session expired. Go to the Compliance Dashboard tab and click Re-sync, then try the photo again.");
     }
     if(!res.ok){ const t=await res.text(); throw new Error(`Drive upload failed (${res.status}): ${t.slice(0,150)}`); }
@@ -4897,6 +4982,7 @@ async function pmmGetSheetGidFor(sheetName){
   const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
   if(res.status===401){
     accessToken=null;
+    pmmKickSilentReauth();
     throw new Error("Your Google session expired. Go to the Compliance Dashboard tab and click Re-sync, then try saving again.");
   }
   if(!res.ok) throw new Error("Could not look up the sheet tab info.");
@@ -4911,6 +4997,7 @@ async function pmmGetSheetGid(){
   const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
   if(res.status===401){
     accessToken=null;
+    pmmKickSilentReauth();
     throw new Error("Your Google session expired. Go to the Compliance Dashboard tab and click Re-sync, then try saving again.");
   }
   if(!res.ok) throw new Error("Could not look up the sheet tab info.");
@@ -5363,7 +5450,39 @@ function pmmComputeTestingSavings(entries, costKey, sampleKey, setCoverResult){
 
 // Compact Top-N coverage cards, reused for both the general/chemical material
 // list and the corrosion-specific metal-only list.
-function pmmTopNCardsHtml(setCoverResult, accentColor){
+let pmmTopNSkuAggCache = {}; // sectionKey-idx -> {a,b,c,r,total} groups, filled at render time, read by the click-to-view modal
+// For a Top-N "representative" card, the meaningful "Total SKUs shared" isn't
+// that ONE entry's own manually-tagged sibling SKUs -- it's every SKU across
+// the WHOLE analyzed set that shares one of the materials this representative
+// is credited with covering. That's the actual consolidation: testing this
+// one sample stands in for every other SKU containing the same material(s).
+function pmmMaterialCoverageSkuAgg(setCoverResult, sel){
+  const {productMaterials}=setCoverResult;
+  const myMats=(sel.newlyCovered&&sel.newlyCovered.length)?new Set(sel.newlyCovered):(productMaterials[sel.entry.id]||new Set());
+  const relatedEntries=Object.keys(productMaterials)
+    .filter(id=>{ const s=productMaterials[id]; if(!s||!s.size) return false; for(const m of myMats){ if(s.has(m)) return true; } return false; })
+    .map(id=>pmmEntries.find(e=>e.id===id))
+    .filter(Boolean);
+  return pmmAggregateSkuFamilies(relatedEntries);
+}
+function pmmTopNSkuSummaryHtml(setCoverResult, sel, cacheKey){
+  const agg=pmmMaterialCoverageSkuAgg(setCoverResult, sel);
+  pmmTopNSkuAggCache[cacheKey]=agg;
+  if(!agg.total) return "";
+  return `<div onclick="event.stopPropagation();pmmShowTopNSkuAgg('${cacheKey}')" style="margin-top:6px;padding:6px 9px;background:#eaf6ff;border:1px solid #bfe0ff;border-radius:6px;font-size:10px;color:#0055bb;cursor:pointer">
+    <strong>Total SKUs shared: ${agg.total}</strong> — A SKU: ${agg.a.length}, B SKU: ${agg.b.length}, C SKU: ${agg.c.length}, Retail SKU: ${agg.r.length} <span style="text-decoration:underline">(view all)</span>
+  </div>`;
+}
+function pmmShowTopNSkuAgg(cacheKey){
+  const agg=pmmTopNSkuAggCache[cacheKey]||{a:[],b:[],c:[],r:[],total:0};
+  openModal({type:"pmmSkuFamilyAllList", title:"SKUs sharing this material", groups:[
+    {label:"A SKU", skus:agg.a},
+    {label:"B SKU", skus:agg.b},
+    {label:"C SKU", skus:agg.c},
+    {label:"RETAIL SKU", skus:agg.r},
+  ]});
+}
+function pmmTopNCardsHtml(setCoverResult, accentColor, sectionKey){
   const {materialDisplay, materialOccurrences, selected}=setCoverResult;
   if(!selected.length) return `<div style="font-size:10.5px;color:#aaa;padding:8px 0">No materials in this scope yet.</div>`;
   return selected.map((sel,idx)=>{
@@ -5379,7 +5498,7 @@ function pmmTopNCardsHtml(setCoverResult, accentColor){
       </div>
       <div style="font-size:9px;color:#aaa;margin-bottom:4px">SKU: ${esc(sel.entry.sku)}</div>
       <div style="display:flex;flex-wrap:wrap;gap:3px">${chips}</div>
-      ${pmmSkuTotalSummaryHtml(sel.entry)}
+      ${pmmTopNSkuSummaryHtml(setCoverResult, sel, `${sectionKey||"x"}-${idx}`)}
     </div>`;
   }).join("");
 }
@@ -5573,11 +5692,11 @@ function pmmInsightsHtml(){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:14px">
       <div>
         <div style="font-size:10.5px;font-weight:700;color:#333;margin-bottom:6px">General Material Coverage <span style="color:#aaa;font-weight:400">(${totalMaterials} materials, all types)</span></div>
-        ${pmmTopNCardsHtml(generalCover, "#c0d8f8")}
+        ${pmmTopNCardsHtml(generalCover, "#c0d8f8", "gen")}
       </div>
       <div>
         <div style="font-size:10.5px;font-weight:700;color:#333;margin-bottom:6px">Corrosion Coverage <span style="color:#aaa;font-weight:400">(metal materials only)</span></div>
-        ${pmmTopNCardsHtml(metalCover, "#fde0d0")}
+        ${pmmTopNCardsHtml(metalCover, "#fde0d0", "corr")}
       </div>
     </div>
 
@@ -5827,15 +5946,16 @@ function pmmEntryCardHtml(e){
   }).join("");
   const normName=pmmNormalizeProductName(e.description);
   return `<div class="pmm-entry-card">
-    <div class="pmm-entry-hdr" style="padding:9px 14px;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:8px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
-        <div style="font-size:17px;font-weight:800;color:#222">${esc(normName||e.sku)}</div>
-        <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;flex-shrink:0">
-          ${e.category?`<span class="pmm-cat-badge">${esc(e.category)}</span>`:""}
-          <button onclick="pmmRequestEdit('${e.id}')" title="Edit entry" style="background:#e8f2ff;border:1px solid #c0d8f8;color:#0055bb;border-radius:5px;padding:3px 10px;cursor:pointer;font-size:10.5px;font-weight:600">✏ Edit</button>
-          <button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1">✕</button>
-        </div>
+    <div style="padding:14px 20px 10px 20px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;border-bottom:1.5px solid #1a1a1a">
+      <div style="font-size:17px;font-weight:800;color:#222;padding-bottom:8px">${esc(normName||e.sku)}</div>
+      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;flex-shrink:0">
+        ${e.category?`<span class="pmm-cat-badge">${esc(e.category)}</span>`:""}
+        <button onclick="pmmRequestEdit('${e.id}')" title="Edit entry" style="background:#e8f2ff;border:1px solid #c0d8f8;color:#0055bb;border-radius:5px;padding:3px 10px;cursor:pointer;font-size:10.5px;font-weight:600">✏ Edit</button>
+        <button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1">✕</button>
       </div>
+    </div>
+    ${e.photoUrl?`<div class="pmm-entry-photo-section"><img src="${pmmPhotoDisplayUrl(e.photoUrl)}" onclick="pmmOpenViewLarge('${e.id}')" title="Click to view larger"/></div>`:""}
+    <div style="padding:12px 14px">
       <div style="background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:9px 11px;font-size:10px;line-height:1.7;color:#333">
         <div><strong>SKU:</strong> ${esc(e.sku)}</div>
         <div>${pmmFamilyLineHtml("A SKU Family", e.skuFamily, e.id, "skuFamily")}</div>
@@ -5845,8 +5965,7 @@ function pmmEntryCardHtml(e){
       </div>
       ${pmmSkuTotalSummaryHtml(e)}
     </div>
-    <div style="padding:12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:stretch">
-      ${e.photoUrl?`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" onclick="pmmOpenViewLarge('${e.id}')" title="Click to view larger" style="width:150px;max-width:100%;border-radius:6px;border:1px solid #eee;flex-shrink:0;object-fit:cover;cursor:zoom-in"/>`:""}
+    <div style="padding:0 14px 12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:stretch">
       <div style="width:190px;flex-shrink:0;background:#f0f6ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:9px 11px;font-size:9.5px;color:#333;line-height:1.7">
         ${e.parentSku?`<div><strong style="color:#0055bb">Parent SKU:</strong> ${esc(e.parentSku)}</div>`:""}
         ${e.supplier?`<div><strong style="color:#0055bb">Supplier:</strong> ${esc(e.supplier)}</div>`:""}
@@ -6272,7 +6391,7 @@ function pmmBuildSupplierAckPrintHtml(){
     }
     body+=`<div style="font-size:15px;font-weight:800;color:#222;margin-bottom:8px">${esc(normName)}</div>`;
     if(e.photoUrl){
-      body+=`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="max-width:260px;max-height:180px;display:block;margin:0 auto 10px;border-radius:6px;border:1px solid #eee"/>`;
+      body+=`<img src="${pmmPhotoDisplayUrl(e.photoUrl)}" style="max-width:420px;max-height:300px;display:block;margin:0 auto 12px;border-radius:6px;border:1px solid #ddd"/>`;
     }
     const infoLines=[`SKU: ${e.sku}`];
     if(e.skuFamily) infoLines.push(`A SKU Family: ${e.skuFamily}`);
@@ -6327,7 +6446,7 @@ function pmmEnsureAckPrintStyle(){
   // negative-margin trick needed.
   style.textContent = `
     #pmm-ack-print-root{ display:none; }
-    .pmm-ack-page{ width:816px; min-height:1344px; background:#fff; margin:0 auto 30px; box-shadow:0 4px 20px rgba(0,0,0,.15); display:flex; flex-direction:column; overflow:hidden; }
+    .pmm-ack-page{ width:816px; min-height:1344px; background:#fff; margin:0 auto 30px; border:1px solid #ddd; box-shadow:0 4px 20px rgba(0,0,0,.15); display:flex; flex-direction:column; overflow:hidden; }
     .pmm-ack-page-header{ width:100%; display:block; }
     .pmm-ack-page-footer{ width:100%; display:block; }
     .pmm-ack-footer-note{ padding:8px 34px; font-size:8.5px; font-style:italic; color:#777; line-height:1.5; text-align:center; border-top:1px solid #eee; }
@@ -6844,7 +6963,7 @@ async function pcaSyncTracking(){
     const title=await pcaResolveTrackingSheetTitle();
     const range=`${title}!A1:Z5000`;
     const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${PCA_TRACKING_SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
-    if(res.status===401){ accessToken=null; throw new Error("Your Google session expired. Re-sync from the Compliance Dashboard tab, then try again."); }
+    if(res.status===401){ accessToken=null; pmmKickSilentReauth(); throw new Error("Your Google session expired. Re-sync from the Compliance Dashboard tab, then try again."); }
     if(!res.ok) throw new Error(`Could not load the tracking sheet (${res.status}). Confirm your Google account has viewer access to it.`);
     const data=await res.json();
     const rows=data.values||[];
