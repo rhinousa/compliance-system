@@ -6766,7 +6766,7 @@ function pmmRenderCompiled(){
 
 // ── Config ───────────────────────────────────────────────────────────────
 const PCA_TRACKING_SPREADSHEET_ID = "1X8I3P3goF2whT919bMvfAaRu6a5xXuRdOtMFc6-gMiE"; // Fulfil-linked tracking database — READ ONLY, never written to
-const PCA_TRACKING_GID = "1173080992"; // the specific tab referenced
+const PCA_TRACKING_SHEET_NAME = "Database"; // matched by NAME, not gid — recreating this tab changes its gid every time, but the name stays put
 const PCA_TICKETS_SHEET = "Pantone Tickets"; // our own tab, in the same spreadsheet as Product Matrix
 const PCA_DRIVE_FOLDER_ID = "1KVHpmpbiUFuYfsBwnxdVOQKmyLEWFHvl";
 const PCA_STATUSES = ["In Production", "Pending PP Sample Approval", "Goods Ready"]; // column K values to include -- must match the sheet's exact wording/casing
@@ -6794,7 +6794,7 @@ function pcaIsClosed(t){ return t.status==="waived" || t.status==="qc_approve" |
 // ── State ────────────────────────────────────────────────────────────────
 let pcaActiveTab = "tracking";
 let pcaTrackingRows = []; // rows from the Fulfil-linked sheet, already filtered to the 3 statuses
-let pcaTrackingSheetTitle = null; // resolved from PCA_TRACKING_GID once
+let pcaTrackingSheetTitle = null; // resolved from PCA_TRACKING_SHEET_NAME once
 let pcaTrackingStatusFilter = "all"; // "all" or one of PCA_STATUSES, filters the Tracking table
 let pcaTickets = []; // our own submitted tickets, grouped by Ticket ID
 let pcaHiddenKeys = new Set(); // "PO||SKU" combos already ticketed or waived -- hidden from Tracking
@@ -6939,9 +6939,11 @@ async function pcaResolveTrackingSheetTitle(){
   const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${PCA_TRACKING_SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
   if(!res.ok) throw new Error(`Could not access the tracking sheet (${res.status}). Confirm your Google account has viewer access to it.`);
   const data=await res.json();
-  const gidNum=parseInt(PCA_TRACKING_GID,10);
-  const sheet=(data.sheets||[]).find(s=>s.properties.sheetId===gidNum);
-  if(!sheet) throw new Error("Could not find the specified tracking tab (gid mismatch).");
+  // Matched by tab NAME rather than gid: recreating/duplicating the "Database"
+  // tab gives it a brand new gid every time, but as long as it's still named
+  // "Database" this keeps finding it with no code change needed.
+  const sheet=(data.sheets||[]).find(s=>s.properties.title===PCA_TRACKING_SHEET_NAME);
+  if(!sheet) throw new Error(`Could not find a sheet tab named "${PCA_TRACKING_SHEET_NAME}" in the tracking spreadsheet. If it's been renamed, update PCA_TRACKING_SHEET_NAME in the code to match.`);
   pcaTrackingSheetTitle=sheet.properties.title;
   return pcaTrackingSheetTitle;
 }
