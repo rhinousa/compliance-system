@@ -2437,20 +2437,21 @@ function renderModals(){
             <div><strong>Product Description:</strong> ${esc(t.description)}</div>
             <div><strong>Quantity:</strong> ${esc(t.quantity)}</div>
             <div><strong>Updated GRD:</strong> ${esc(t.updatedGrd)}</div>
-            ${t.batchedPOs?`<div><strong>📦 Batched POs:</strong> ${esc(t.batchedPOs)}</div>`:""}
+            ${t.batchedPOs?`<div><strong>📦 Batched POs:</strong> ${esc(pcaFormatBatchedPOsForDisplay(pcaParseBatchedPOs(t.batchedPOs)))}</div>`:""}
             ${t.qeInCharge?`<div><strong>QE In Charge:</strong> ${esc(pcaDisplayQeName(t.qeInCharge))}</div>`:""}
             ${t.folderLink?`<div><strong>Photo Folder:</strong> <a href="${esc(t.folderLink)}" target="_blank">Open in Drive</a></div>`:""}
             ${t.rejectReason?`<div><strong>Rejection Reason:</strong> ${esc(t.rejectReason)}</div>`:""}
             ${t.reviewerNote?`<div><strong>Reviewer Note:</strong> ${esc(t.reviewerNote)}</div>`:""}
             ${t.managementReason?`<div><strong>Management Decision:</strong> ${esc(t.managementReason)}</div>`:""}
             ${t.managementEvidenceUrl?`<div><strong>Decision Evidence:</strong> <a href="${esc(t.managementEvidenceUrl)}" target="_blank">View file</a></div>`:""}
+            <div style="margin-top:6px"><button onclick="pcaOpenAddPoToBatch('${t.id}')" style="font-size:10.5px;font-weight:600;color:#5b21b6;background:#f3e4ff;border:1px solid #d9bfff;border-radius:6px;padding:4px 11px;cursor:pointer">📦 + Add PO to Batch</button></div>
           </div>
           <div style="margin-top:16px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="margin-bottom:8px">
               <div style="font-size:11px;font-weight:700;color:#333">Components <span style="font-weight:400;color:#999">(click a photo to enlarge, or paste an image to fill the next empty one)</span></div>
-              <button onclick="pcaPromptAddComponent('${t.id}')" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:5px 12px;cursor:pointer">+ Add Component</button>
             </div>
             ${pcaComponentsGridHtml(t)}
+            <button onclick="pcaPromptAddComponent('${t.id}')" style="margin-top:10px;width:100%;font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:8px 12px;cursor:pointer">+ Add Component</button>
           </div>
           <div style="margin-top:20px;padding-top:16px;border-top:1px solid #eee">
             ${pcaActionsHtmlFor(t)}
@@ -2524,6 +2525,47 @@ function renderModals(){
         <div style="padding:14px 20px;border-top:1px solid #eee;display:flex;justify-content:flex-end;gap:10px;flex-shrink:0">
           <button onclick="closeModal()" style="padding:9px 18px;font-size:12px;font-weight:700;color:#555;background:#f0f1f3;border:none;border-radius:8px;cursor:pointer">Cancel</button>
           <button id="pca-email-send-btn" onclick="pcaSendRejectEmail('${t.id}')" style="padding:9px 18px;font-size:12px;font-weight:700;color:#fff;background:#5b21b6;border:none;border-radius:8px;cursor:pointer">Send Email</button>
+        </div>
+      </div>
+    </div>`;
+  } else if(modal.type==="pcaAddPoToBatch"){
+    const t=pcaTickets.find(x=>x.id===modal.ticketId);
+    if(!t){ root.innerHTML=""; return; }
+    const q=(modal.search||"").toLowerCase();
+    let rows=pcaTrackingRows.filter(r=>!pcaHiddenKeys.has(pcaKeyFor(r.poNumber,r.supplierSku)));
+    if(q) rows=rows.filter(r=>(r.poNumber||"").toLowerCase().includes(q)||(r.shipmentNumber||"").toLowerCase().includes(q)||(r.supplierSku||"").toLowerCase().includes(q)||(r.description||"").toLowerCase().includes(q));
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:640px;max-height:85vh;display:flex;flex-direction:column">
+        <div style="background:#5b21b6;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+          <div style="color:#fff;font-weight:800;font-size:14px">📦 Add PO to Batch — ${esc(t.poNumber)}</div>
+          <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+        </div>
+        <div style="padding:14px 20px 0 20px;flex-shrink:0">
+          <div style="font-size:11px;color:#666;margin-bottom:10px">Find any PO or SS still sitting in Tracking that should have been included in this ticket's batch, and add it here without creating a new ticket.</div>
+          <input class="pmm-input" placeholder="Search PO Number, Shipment Number, Supplier SKU, or Description…" value="${esc(modal.search||"")}" oninput="modal.search=this.value;renderModals()" style="margin-bottom:10px"/>
+        </div>
+        <div style="padding:0 20px;overflow-y:auto;flex:1">
+          ${rows.length?`<table style="width:100%;border-collapse:collapse;font-size:11px">
+            <thead><tr style="background:#f2f3f6"><th style="width:30px"></th><th style="text-align:left;padding:6px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">PO Number</th><th style="text-align:left;padding:6px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Shipment</th><th style="text-align:left;padding:6px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Supplier SKU</th><th style="text-align:left;padding:6px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Qty</th></tr></thead>
+            <tbody>${rows.map(r=>{
+              const key=pcaKeyFor(r.poNumber,r.supplierSku);
+              const checked=modal.selectedKeys.has(key);
+              return `<tr onclick="pcaAddPoBatchToggleRow('${esc(key).replace(/'/g,"\\'")}', ${!checked})" style="cursor:pointer;border-bottom:0.5px solid #f0f1f3;${checked?"background:#faf5ff":""}">
+                <td style="padding:6px 8px"><input type="checkbox" ${checked?"checked":""} onclick="event.stopPropagation();pcaAddPoBatchToggleRow('${esc(key).replace(/'/g,"\\'")}', this.checked)"/></td>
+                <td style="padding:6px 8px;font-weight:600">${esc(r.poNumber)}</td>
+                <td style="padding:6px 8px">${esc(r.shipmentNumber)}</td>
+                <td style="padding:6px 8px">${esc(r.supplierSku)}</td>
+                <td style="padding:6px 8px">${esc(r.quantity)}</td>
+              </tr>`;
+            }).join("")}</tbody>
+          </table>`:`<div style="text-align:center;padding:30px;color:#aaa;font-size:11.5px">No unprocessed Tracking rows match${q?" your search":""}.</div>`}
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid #eee;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+          <span style="font-size:11px;color:#5b21b6;font-weight:700">${modal.selectedKeys.size} selected</span>
+          <div style="display:flex;gap:10px">
+            <button onclick="closeModal()" style="padding:9px 18px;font-size:12px;font-weight:700;color:#555;background:#f0f1f3;border:none;border-radius:8px;cursor:pointer">Cancel</button>
+            <button id="pca-add-po-batch-confirm" onclick="pcaConfirmAddPoToBatch('${t.id}')" ${modal.selectedKeys.size?"":"disabled"} style="padding:9px 18px;font-size:12px;font-weight:700;color:#fff;background:${modal.selectedKeys.size?"#5b21b6":"#c9a8f0"};border:none;border-radius:8px;cursor:${modal.selectedKeys.size?"pointer":"default"}">Add to Batch</button>
+          </div>
         </div>
       </div>
     </div>`;
@@ -4728,9 +4770,9 @@ function pmmRenderNewEntry(){
       <div class="pmm-card">
         <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:12px">Product Photo</div>
         ${pmmDraftPhotoUrl
-          ? `<img src="${pmmDraftPhotoUrl}" class="pmm-photo-preview"/><div style="text-align:center;margin-top:10px"><button onclick="pmmDraftPhotoUrl='';pmmRenderNewEntry()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:6px;padding:5px 12px;cursor:pointer">✕ Remove photo</button></div>`
+          ? `<div style="position:relative;display:inline-block"><img src="${pmmDraftPhotoUrl}" class="pmm-photo-preview"/>${pmmDraftPhotoUploading?`<div style="position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,.65);color:#fff;font-size:10px;font-weight:600;padding:3px 8px;border-radius:5px;display:flex;align-items:center;gap:5px"><span class="spin"></span> Saving to Drive…</div>`:""}</div><div style="text-align:center;margin-top:10px"><button onclick="pmmDraftPhotoUrl='';pmmRenderNewEntry()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:6px;padding:5px 12px;cursor:pointer">✕ Remove photo</button></div>`
           : `<div class="pmm-photo-drop" onclick="document.getElementById('pmm-photo-file').click()">
-               ${pmmDraftPhotoUploading?`<span class="spin"></span> Uploading to Google Drive…`:`<div style="font-size:24px;margin-bottom:6px">📷</div><div style="font-size:12px;color:#555;font-weight:600">Click to upload a photo</div><div style="font-size:10px;color:#aaa;margin-top:3px">Or paste an image (Ctrl+V / ⌘V) — uploads directly into your Drive folder</div>`}
+               <div style="font-size:24px;margin-bottom:6px">📷</div><div style="font-size:12px;color:#555;font-weight:600">Click to upload a photo</div><div style="font-size:10px;color:#aaa;margin-top:3px">Or paste an image (Ctrl+V / ⌘V) — uploads directly into your Drive folder</div>
              </div>`
         }
         <input type="file" id="pmm-photo-file" accept="image/*" style="display:none" onchange="pmmOnPhotoSelected(this.files[0])"/>
@@ -4793,20 +4835,28 @@ document.addEventListener("paste", (e)=>{
 });
 
 async function pmmUploadPhoto(file){
-  pmmDraftPhotoUploading=true; pmmRenderNewEntry();
+  if(!file) return;
+  // Same technique as the Pantone component-photo upload: show the photo
+  // immediately from a local preview (createObjectURL is synchronous, no
+  // waiting) while the real Drive upload -- as raw bytes, not base64, to
+  // avoid the ~33% payload inflation -- runs in the background.
+  const previewUrl=URL.createObjectURL(file);
+  pmmDraftPhotoUrl=previewUrl;
+  pmmDraftPhotoUploading=true;
+  pmmRenderNewEntry();
   try{
     const metadata={name:`pmm_${Date.now()}_${file.name}`, parents:[PMM_DRIVE_FOLDER_ID]};
     const boundary="pmm_boundary_"+Date.now();
-    const base64=await new Promise((resolve,reject)=>{
-      const reader=new FileReader();
-      reader.onload=()=>resolve(reader.result.split(",")[1]);
-      reader.onerror=reject;
-      reader.readAsDataURL(file);
-    });
-    const body=
-      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`+
-      `--${boundary}\r\nContent-Type: ${file.type||"image/jpeg"}\r\nContent-Transfer-Encoding: base64\r\n\r\n${base64}\r\n`+
-      `--${boundary}--`;
+    const imageBytes=new Uint8Array(await file.arrayBuffer());
+    const metaPart=`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`+
+      `--${boundary}\r\nContent-Type: ${file.type||"image/jpeg"}\r\n\r\n`;
+    const closePart=`\r\n--${boundary}--`;
+    const metaBytes=new TextEncoder().encode(metaPart);
+    const closeBytes=new TextEncoder().encode(closePart);
+    const body=new Uint8Array(metaBytes.length+imageBytes.length+closeBytes.length);
+    body.set(metaBytes, 0);
+    body.set(imageBytes, metaBytes.length);
+    body.set(closeBytes, metaBytes.length+imageBytes.length);
     const res=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink&supportsAllDrives=true",{
       method:"POST",
       headers:{Authorization:"Bearer "+accessToken,"Content-Type":`multipart/related; boundary=${boundary}`},
@@ -4821,8 +4871,9 @@ async function pmmUploadPhoto(file){
     const json=await res.json();
     // Make it viewable by teammates — drive.file scope only grants access to files THIS app
     // created, so without a public "anyone with the link can view" permission, only the
-    // uploader's own token could ever load the image.
-    await fetch(`https://www.googleapis.com/drive/v3/files/${json.id}/permissions?supportsAllDrives=true`,{
+    // uploader's own token could ever load the image. Not awaited: the file is already
+    // usable, and this shouldn't hold up clearing the "uploading" state.
+    fetch(`https://www.googleapis.com/drive/v3/files/${json.id}/permissions?supportsAllDrives=true`,{
       method:"POST",
       headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
       body:JSON.stringify({role:"reader",type:"anyone"}),
@@ -4830,12 +4881,20 @@ async function pmmUploadPhoto(file){
     // Google's uc?export=view URL frequently fails to render inline in <img> tags
     // (redirects to an interstitial, especially for larger files). The thumbnail
     // endpoint is built for exactly this and works reliably as a direct image source.
-    pmmDraftPhotoUrl=`https://drive.google.com/thumbnail?id=${json.id}&sz=w1000`;
+    if(pmmDraftPhotoUrl===previewUrl){
+      pmmDraftPhotoUrl=`https://drive.google.com/thumbnail?id=${json.id}&sz=w1000`;
+      pmmDraftPhotoUploading=false;
+      pmmRenderNewEntry();
+    }
   }catch(e){
     alert("Photo upload failed: "+e.message);
+    if(pmmDraftPhotoUrl===previewUrl){
+      pmmDraftPhotoUrl="";
+      pmmDraftPhotoUploading=false;
+      pmmRenderNewEntry();
+    }
   }finally{
-    pmmDraftPhotoUploading=false;
-    pmmRenderNewEntry();
+    URL.revokeObjectURL(previewUrl);
   }
 }
 
@@ -7026,6 +7085,29 @@ async function pcaEnsureTicketsHeaders(){
   if(!res.ok){ const t=await res.text(); throw new Error(`Could not write headers to "${PCA_TICKETS_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
 }
 
+// batchedPOs is stored as a JSON array in the sheet (not just display text) so
+// it can be parsed back on sync -- otherwise there'd be no way to know which
+// Tracking rows are already covered by an existing batch, and they'd quietly
+// reappear in Tracking after every reload. Old tickets saved before this had
+// a human-readable "PO (ship, sku, qty); PO (...)" string instead of JSON, so
+// this falls back to parsing that format when JSON.parse fails.
+function pcaParseBatchedPOs(raw){
+  if(!raw) return [];
+  try{
+    const parsed=JSON.parse(raw);
+    if(Array.isArray(parsed)) return parsed;
+  }catch(e){ /* fall through to legacy text parsing */ }
+  return raw.split(";").map(s=>s.trim()).filter(Boolean).map(s=>{
+    const m=s.match(/^(.*?)\s*\(([^,]*),\s*([^,]*),\s*qty\s*([^)]*)\)$/i);
+    if(m) return {poNumber:m[1].trim(), shipmentNumber:m[2].trim(), supplierSku:m[3].trim(), quantity:m[4].trim()};
+    return {poNumber:s, shipmentNumber:"", supplierSku:"", quantity:""};
+  });
+}
+function pcaFormatBatchedPOsForSheet(list){ return JSON.stringify(list); }
+function pcaFormatBatchedPOsForDisplay(list){
+  return list.map(row=>`${row.poNumber} (${row.shipmentNumber}, ${row.supplierSku}, qty ${row.quantity})`).join("; ");
+}
+
 async function pcaSyncTickets(){
   try{
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}?valueRenderOption=FORMATTED_VALUE`;
@@ -7058,7 +7140,14 @@ async function pcaSyncTickets(){
       if(comp||photo) byId[id].components.push({component:comp, photoUrl:photo, rowIndex:row.__rowIndex});
     });
     pcaTickets=Object.values(byId).sort((a,b)=>String(b.createdDate||"").localeCompare(String(a.createdDate||"")));
-    pcaHiddenKeys=new Set(pcaTickets.map(t=>pcaKeyFor(t.poNumber,t.supplierSku)));
+    // Every batched PO must stay hidden from Tracking too, not just the
+    // ticket's own primary PO+SKU -- otherwise the other rows folded into a
+    // batch would silently reappear in Tracking after every resync.
+    pcaHiddenKeys=new Set();
+    pcaTickets.forEach(t=>{
+      pcaHiddenKeys.add(pcaKeyFor(t.poNumber,t.supplierSku));
+      pcaParseBatchedPOs(t.batchedPOs).forEach(b=>{ if(b.poNumber && b.supplierSku) pcaHiddenKeys.add(pcaKeyFor(b.poNumber,b.supplierSku)); });
+    });
   }catch(e){
     pcaTickets=[]; pcaHiddenKeys=new Set();
   }
@@ -7199,6 +7288,14 @@ function pcaToggleBatchMode(){
   pcaBatchSelectedKeys=new Set();
   pcaRenderTracking();
 }
+function pcaToggleSelectAllBatch(){
+  const rows=pcaGetFilteredTrackingRows();
+  const allKeys=rows.map(r=>pcaKeyFor(r.poNumber,r.supplierSku));
+  const allSelected=allKeys.length>0 && allKeys.every(k=>pcaBatchSelectedKeys.has(k));
+  if(allSelected){ allKeys.forEach(k=>pcaBatchSelectedKeys.delete(k)); }
+  else{ allKeys.forEach(k=>pcaBatchSelectedKeys.add(k)); }
+  pcaRenderTracking();
+}
 function pcaToggleBatchRow(key, checked){
   if(checked) pcaBatchSelectedKeys.add(key); else pcaBatchSelectedKeys.delete(key);
   pcaRenderTracking();
@@ -7222,6 +7319,51 @@ function pcaBuildBatchDraftRow(selectedRows){
     updatedGrd: grds.join(", "),
   };
 }
+// ── Add PO to an already-created ticket's batch (for a PO/SS missed during
+// the original batching, from Approval Process or Ticket Completed) ────────
+function pcaOpenAddPoToBatch(ticketId){
+  openModal({type:"pcaAddPoToBatch", ticketId, search:"", selectedKeys:new Set()});
+}
+async function pcaConfirmAddPoToBatch(ticketId){
+  const t=pcaTickets.find(x=>x.id===ticketId);
+  if(!t){ alert("Could not find this ticket."); return; }
+  if(!modal || modal.type!=="pcaAddPoToBatch" || !modal.selectedKeys.size){ return; }
+  if(!t.rowIndexes || !t.rowIndexes.length){ alert("Could not locate this ticket's rows in the sheet -- try reopening it (this refreshes row data), then try again."); return; }
+  const selectedRows=pcaTrackingRows.filter(r=>modal.selectedKeys.has(pcaKeyFor(r.poNumber,r.supplierSku)));
+  if(!selectedRows.length) return;
+  const btn=document.getElementById("pca-add-po-batch-confirm");
+  if(btn){ btn.disabled=true; btn.textContent="Adding…"; }
+  try{
+    const existing=pcaParseBatchedPOs(t.batchedPOs);
+    const newList=existing.concat(selectedRows.map(row=>({poNumber:row.poNumber, shipmentNumber:row.shipmentNumber, supplierSku:row.supplierSku, quantity:row.quantity})));
+    const newText=pcaFormatBatchedPOsForSheet(newList);
+    const gid=await pmmGetSheetGidFor(PCA_TICKETS_SHEET);
+    const requests=t.rowIndexes.map(ri=>({
+      updateCells:{
+        range:{ sheetId:gid, startRowIndex:ri-1, endRowIndex:ri, startColumnIndex:PCA_EXTRA_COLS.batchedPOs, endColumnIndex:PCA_EXTRA_COLS.batchedPOs+1 },
+        rows:[{ values:[{ userEnteredValue:{ stringValue:newText } }] }],
+        fields:"userEnteredValue",
+      },
+    }));
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{
+      method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({requests}),
+    });
+    if(!res.ok){ const tx=await res.text(); throw new Error(`Sheet update failed (${res.status}): ${tx.slice(0,150)}`); }
+    t.batchedPOs=newText;
+    selectedRows.forEach(row=>pcaHiddenKeys.add(pcaKeyFor(row.poNumber,row.supplierSku)));
+    closeModal();
+    pcaOpenTicketDetail(ticketId);
+  }catch(e){
+    alert("Could not add PO to batch: "+e.message);
+    if(btn){ btn.disabled=false; btn.textContent="Add to Batch"; }
+  }
+}
+function pcaAddPoBatchToggleRow(key, checked){
+  if(!modal || modal.type!=="pcaAddPoToBatch") return;
+  if(checked) modal.selectedKeys.add(key); else modal.selectedKeys.delete(key);
+  renderModals();
+}
+
 function pcaStartBatchTicket(){
   const rows=pcaGetFilteredTrackingRows();
   const selected=rows.filter(r=>pcaBatchSelectedKeys.has(pcaKeyFor(r.poNumber,r.supplierSku)));
@@ -7255,6 +7397,7 @@ function pcaRenderTracking(){
   if(pcaBatchMode){
     html+=`<div style="display:flex;align-items:center;gap:10px;background:#f3e4ff;border:1.5px solid #d9bfff;border-radius:8px;padding:10px 14px;margin-bottom:14px">
       <span style="font-size:11.5px;color:#5b21b6;font-weight:600">🧺 Batch mode: check the POs that share the same color variation, then consolidate them into one ticket.</span>
+      <button onclick="pcaToggleSelectAllBatch()" style="font-size:10.5px;font-weight:700;color:#5b21b6;background:#fff;border:1.5px solid #d9bfff;border-radius:6px;padding:5px 12px;cursor:pointer">${rows.length>0 && rows.every(r=>pcaBatchSelectedKeys.has(pcaKeyFor(r.poNumber,r.supplierSku)))?"Deselect All":"Select All"}</button>
       <span style="margin-left:auto;font-size:11px;color:#5b21b6;font-weight:700">${pcaBatchSelectedKeys.size} selected</span>
       <button onclick="pcaStartBatchTicket()" ${pcaBatchSelectedKeys.size<2?"disabled":""} style="font-size:11.5px;font-weight:700;color:#fff;background:${pcaBatchSelectedKeys.size<2?"#c9a8f0":"#5b21b6"};border:none;border-radius:6px;padding:7px 16px;cursor:${pcaBatchSelectedKeys.size<2?"default":"pointer"}">Create Batched Ticket</button>
     </div>`;
@@ -7266,7 +7409,8 @@ function pcaRenderTracking(){
     html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap">
         <thead><tr style="background:#f2f3f6">
-          ${(pcaBatchMode?[""]:[]).concat(["PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status"]).map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+          ${pcaBatchMode?`<th style="padding:8px 12px;border-bottom:1.5px solid #dde0e9"><input type="checkbox" ${rows.length>0 && rows.every(r=>pcaBatchSelectedKeys.has(pcaKeyFor(r.poNumber,r.supplierSku)))?"checked":""} onclick="pcaToggleSelectAllBatch()" title="Select all"/></th>`:""}
+          ${["PO Number","Shipment Number","Supplier Name","Supplier SKU","Product Description","Quantity","Updated GRD","Status"].map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
         </tr></thead>
         <tbody>
           ${rows.map((r,i)=>{
@@ -7347,9 +7491,9 @@ function pcaRenderTicketForm(){
     <div class="pmm-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div style="font-size:13px;font-weight:700;color:#333">Components</div>
-        <button onclick="pcaAddComponentRow()" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:5px 12px;cursor:pointer">+ Add Component</button>
       </div>
       ${pcaTicketDraftComponents.map((c,i)=>pcaComponentRowHtml(c,i)).join("")}
+      <button onclick="pcaAddComponentRow()" style="width:100%;font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:8px 12px;cursor:pointer">+ Add Component</button>
     </div>
     <button id="pca-submit-btn" onclick="pcaConfirmSubmitTicket()" style="width:100%;padding:13px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:9px;cursor:pointer">✓ Submit Ticket</button>
   </div>`;
@@ -7399,7 +7543,11 @@ async function pcaUploadPhotoToFolder(file, folderId){
   });
   if(!res.ok){ const t=await res.text(); throw new Error(`Drive upload failed (${res.status}): ${t.slice(0,150)}`); }
   const json=await res.json();
-  await fetch(`https://www.googleapis.com/drive/v3/files/${json.id}/permissions?supportsAllDrives=true`,{
+  // Don't block on this -- the file is already usable via its Drive thumbnail
+  // URL for anyone with the OAuth session that uploaded it; making it public
+  // to teammates can finish in the background instead of adding a second
+  // full network round-trip before the "Saving to Drive…" badge can clear.
+  fetch(`https://www.googleapis.com/drive/v3/files/${json.id}/permissions?supportsAllDrives=true`,{
     method:"POST", headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, body:JSON.stringify({role:"reader",type:"anyone"}),
   }).catch(()=>{});
   return `https://drive.google.com/thumbnail?id=${json.id}&sz=w1000`;
@@ -7460,7 +7608,7 @@ async function pcaSubmitTicket(){
     const nowIso=new Date().toISOString();
     const folderLink=pcaDraftFolderId?`https://drive.google.com/drive/folders/${pcaDraftFolderId}`:"";
     const batchedPOsText=pcaIsBatchTicket
-      ? pcaBatchSourceRows.map(row=>`${row.poNumber} (${row.shipmentNumber}, ${row.supplierSku}, qty ${row.quantity})`).join("; ")
+      ? pcaFormatBatchedPOsForSheet(pcaBatchSourceRows.map(row=>({poNumber:row.poNumber, shipmentNumber:row.shipmentNumber, supplierSku:row.supplierSku, quantity:row.quantity})))
       : "";
     const rows=components.map(c=>[ticketId,r.poNumber,r.shipmentNumber,r.supplierName,r.supplierSku,r.description,r.quantity,r.updatedGrd,"approval",nowIso,c.component,c.photoUrl,folderLink,"","","","",qeName,"",batchedPOsText]);
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PCA_TICKETS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
