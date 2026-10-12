@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>TEST — Compliance Dashboard — Rhino USA</title>
+<title>Compliance Dashboard — Rhino USA</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -115,6 +115,8 @@ input:not(:placeholder-shown) ~ .sc-clear{display:block}
 .yc-overall{display:inline-flex;font-size:9.5px;font-weight:800;padding:2px 10px;border-radius:5px;margin-bottom:7px;background:#f3f5f9;color:#555}
 .yc-overall.pass{background:#e3f9ee;color:#0a7a46}.yc-overall.fail{background:#ffe8e8;color:#c0392b}
 .yc-empty{color:#b3bacb;font-size:11px;font-style:italic}
+/* long text in editors: wraps onto as many lines as it needs (grows as you type) */
+textarea.pmm-input.cd-ta{display:block;resize:none;overflow:hidden;min-height:38px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 /* guided setup */
 .wz-steps{display:flex;align-items:center;margin:0 0 16px;padding:12px 16px;background:#fff;border:1px solid #e3e8f0;border-radius:10px;overflow-x:auto}
 .wz-step{display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -134,7 +136,7 @@ input:not(:placeholder-shown) ~ .sc-clear{display:block}
 .wz-tbl th{text-align:left;padding:7px 9px;font-size:9.5px;font-weight:800;color:#8a93a6;text-transform:uppercase;letter-spacing:.4px;background:#f4f5f9;border-bottom:1.5px solid #e3e8f0}
 .wz-tbl td{padding:8px 9px;border-bottom:1px solid #eef0f4;vertical-align:top;color:#333}
 .wz-tbl tr.pick{cursor:pointer}.wz-tbl tr.pick:hover td{background:#f7faff}.wz-tbl tr.on td{background:#eaf3ff}
-.wz-clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;line-height:1.45}
+.wz-clamp{display:block;line-height:1.45;overflow-wrap:anywhere}   /* full text, never cut off */
 .wz-info{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
 .wz-info>div{background:#f7f8fa;border-radius:8px;padding:8px 11px;min-width:0}
 .wz-info .k{font-size:9px;font-weight:800;color:#8a93a6;text-transform:uppercase;letter-spacing:.4px}
@@ -408,28 +410,10 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
 <div id="modal-root"></div>
 
 <script>
-/* ===== TEST COPY ONLY =====
-   Browser storage is shared by every page on rhinousa.github.io, so prefix every key
-   this copy reads or writes. That keeps its cached data, retest decisions and
-   Tracking/Deferred lists completely separate from the live dashboard's. */
-(function(){
-  var P="TEST_", g=Storage.prototype.getItem, st=Storage.prototype.setItem, r=Storage.prototype.removeItem;
-  Storage.prototype.getItem=function(k){return g.call(this,P+k)};
-  Storage.prototype.setItem=function(k,v){return st.call(this,P+k,v)};
-  Storage.prototype.removeItem=function(k){return r.call(this,P+k)};
-  document.addEventListener("DOMContentLoaded",function(){
-    var b=document.createElement("div");
-    b.textContent="TEST COPY \u00b7 DRAFT 2 SHEET (not live data)";
-    b.style.cssText="position:fixed;left:12px;bottom:12px;z-index:99999;background:#c0392b;color:#fff;font:700 11px -apple-system,Segoe UI,sans-serif;padding:6px 12px;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.3);pointer-events:none;letter-spacing:.3px";
-    document.body.appendChild(b);
-  });
-})();
-</script>
-<script>
 // ── CONFIG ─────────────────────────────────────────────────────────────────
 // ▼▼▼ REQUIRED: fill these in before deploying ▼▼▼
 const GOOGLE_CLIENT_ID = "494765023704-ts4f0c3845oskpr0vpg1iu682adrbjva.apps.googleusercontent.com"; // Google Cloud Console → Credentials → OAuth client ID (type: Web application)
-const SPREADSHEET_ID   = "1GSr5w_8wMZPTEzcRuMefa7NV1bN5FZ3tMBSzlvoWSRA"; /* TEST COPY: DRAFT 2 workbook, not the live sheet */           // From the sheet's URL: /d/{SPREADSHEET_ID}/edit
+const SPREADSHEET_ID   = "1eYfFCCz3OhwVcXhaQAXbHf7SsYs3Jef2FgDhVLxPLWc";           // From the sheet's URL: /d/{SPREADSHEET_ID}/edit
 const PMM_DRIVE_FOLDER_ID = "1F7VLrzZ6Kfj9xrqJWCcTy2YAuwzisor1"; // Google Drive folder photos get uploaded into
 // ▲▲▲ ──────────────────────────────────────────── ▲▲▲
 const ITEMS_SHEET      = "Items";      // tab name for the parent-product rows
@@ -1016,7 +1000,7 @@ function parsePBlocks(raw){
       target:pbClean(get("Expected Target Performance")),
       equipment:pbClean(get("Required Lab Equipment")),
       accreditation:pbClean(get("Required Lab Accreditation")),
-      wwl:get("Rhino Test WWL")||get("WWL"),
+      wwl:get("Rhino Test WLL")||get("Rhino Test WWL")||get("WLL")||get("WWL"),
       claim:get("Rhino Break Strength Test Claim")||get("Break Claim"),
       result:get("Test Result")||get("Result"),
       date:get("Test Completion Date")||get("Test Completion")||get("Date"),
@@ -1048,7 +1032,7 @@ function parsePBlocks(raw){
       const rm=raw.match(/https?:\/\/[^\s\n"')]+/);
       if(rm&&rm[0]!==evidenceUrl) reports.push({label:"Report",url:rm[0].replace(/&amp;/g,"&")});
     }
-    blocks.push({priority:1,supplier:get("Supplier"),method:pbClean(get("Tensile Standard/ Test Method")||get("Standard/ Test Method")||get("Test Method")||get("Tensile Test Method")),criteria:pbClean(get("Specific Evaluation Criteria")),target:pbClean(get("Expected Target Performance")),equipment:pbClean(get("Required Lab Equipment")),accreditation:pbClean(get("Required Lab Accreditation")),wwl:get("Rhino Test WWL"),claim:get("Rhino Break Strength Test Claim"),result:rl?rl.replace(/^[^:]+:\s*/,"").trim():get("Result"),date:get("Test Completion Date")||get("Test Completion")||get("Date"),lab:get("Test Lab"),cost:get("Cost"),reports,report:reports[0]?.url||null,cap:getM("Supplier CAP")||getM("CAP"),evidence:evidenceVal,evidenceLink:evX.evidenceLink,remarks:getM("Remarks")});
+    blocks.push({priority:1,supplier:get("Supplier"),method:pbClean(get("Tensile Standard/ Test Method")||get("Standard/ Test Method")||get("Test Method")||get("Tensile Test Method")),criteria:pbClean(get("Specific Evaluation Criteria")),target:pbClean(get("Expected Target Performance")),equipment:pbClean(get("Required Lab Equipment")),accreditation:pbClean(get("Required Lab Accreditation")),wwl:get("Rhino Test WLL")||get("Rhino Test WWL"),claim:get("Rhino Break Strength Test Claim"),result:rl?rl.replace(/^[^:]+:\s*/,"").trim():get("Result"),date:get("Test Completion Date")||get("Test Completion")||get("Date"),lab:get("Test Lab"),cost:get("Cost"),reports,report:reports[0]?.url||null,cap:getM("Supplier CAP")||getM("CAP"),evidence:evidenceVal,evidenceLink:evX.evidenceLink,remarks:getM("Remarks")});
   }
   return blocks;
 }
@@ -1199,7 +1183,7 @@ function ycell(blocks){
     h+=`<div class="yc-head">${pBadge(b.priority)}${b.supplier?`<span class="yc-sup">${esc(b.supplier)}</span>`:""}${st?`<span class="yc-pill ${st}">${bf?"FAIL":"PASS"}</span>`:""}</div>`;
     // the full result text (sample figures etc.) -- skipped when it is only the word PASS / FAIL
     if(b.result && !/^\s*(PASS|FAIL)\s*$/i.test(b.result)) h+=`<div class="yc-res ${st}">${esc(b.result)}</div>`;
-    const chips=[b.wwl?`<span class="yc-chip">WWL <b>${esc(b.wwl)}</b></span>`:"", b.claim?`<span class="yc-chip">Claim <b>${esc(b.claim)}</b></span>`:""].join("");
+    const chips=[b.wwl?`<span class="yc-chip">WLL <b>${esc(b.wwl)}</b></span>`:"", b.claim?`<span class="yc-chip">Claim <b>${esc(b.claim)}</b></span>`:""].join("");
     if(chips) h+=`<div class="yc-meta">${chips}</div>`;
     if(b.date||b.lab) h+=`<div class="yc-sub">${[b.date,b.lab].filter(Boolean).map(esc).join(" · ")}</div>`;
     const reportList=b.reports&&b.reports.length?b.reports:(b.report?[{label:"Report",url:b.report}]:[]);
@@ -2432,7 +2416,7 @@ function renderModals(){
             ${b.result?`<span style="margin-left:auto;font-size:10.5px;font-weight:800;color:${bc};${pill};padding:3px 11px;border-radius:12px;max-width:55%;text-align:right">${esc(b.result)}</span>`:""}
           </div>
           <div style="padding:11px 13px;font-size:11px;color:#333;line-height:1.65">`;
-        const stats=[["Test Method",b.method],["Rhino Test WWL",b.wwl],["Break Strength Claim",b.claim],["Completed",b.date],["Test Lab",b.lab]].filter(([,v])=>v);
+        const stats=[["Test Method",b.method],["Rhino Test WLL",b.wwl],["Break Strength Claim",b.claim],["Completed",b.date],["Test Lab",b.lab]].filter(([,v])=>v);
         if(stats.length) inner+=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px">${stats.map(([l,v])=>`<div style="background:#f7f8fa;border-radius:6px;padding:7px 10px"><div style="font-size:9px;font-weight:700;color:#8a93a6;text-transform:uppercase;letter-spacing:.4px">${l}</div><div style="font-size:11px;color:#222;font-weight:600;margin-top:2px">${esc(v)}</div></div>`).join("")}</div>`;
         const rptList=b.reports&&b.reports.length?b.reports:(b.report?[{label:"Report",url:b.report}]:[]);
         if(rptList.length){
@@ -2738,11 +2722,11 @@ function renderModals(){
           </div>
           <div style="display:flex;gap:8px;margin-bottom:14px">${seg("cap","Corrective Action Plan (CAP)")}${seg("remarks","Remarks only")}</div>
           ${capMode?`
-            <div class="pmm-field"><label class="pmm-label">Supplier CAP</label><textarea class="pmm-input" rows="2" oninput="modal.draft.cap=this.value" placeholder="e.g. Perform 3 samples testing internally.">${esc(d.cap)}</textarea></div>
-            <div class="pmm-field"><label class="pmm-label">Evidence</label><textarea class="pmm-input" rows="2" oninput="modal.draft.evidence=this.value" placeholder="e.g. Completed. Passed three samples.">${esc(d.evidence)}</textarea></div>
+            <div class="pmm-field"><label class="pmm-label">Supplier CAP</label>${cdTa(d.cap,"modal.draft.cap=this.value",'placeholder="e.g. Perform 3 samples testing internally."')}</div>
+            <div class="pmm-field"><label class="pmm-label">Evidence</label>${cdTa(d.evidence,"modal.draft.evidence=this.value",'placeholder="e.g. Completed. Passed three samples."')}</div>
             <div class="pmm-field"><label class="pmm-label">Evidence link</label><input class="pmm-input" value="${esc(d.evidenceLink)}" oninput="modal.draft.evidenceLink=this.value" placeholder="https://drive.google.com/…"/></div>`
           :`
-            <div class="pmm-field"><label class="pmm-label">Remarks</label><textarea class="pmm-input" rows="3" oninput="modal.draft.remarks=this.value" placeholder="e.g. Supplier informed us not to perform a retest because of the packaging warnings.">${esc(d.remarks)}</textarea></div>`}
+            <div class="pmm-field"><label class="pmm-label">Remarks</label>${cdTa(d.remarks,"modal.draft.remarks=this.value",'placeholder="e.g. Supplier informed us not to perform a retest because of the packaging warnings."')}</div>`}
           <div style="font-size:10px;color:#999;margin:2px 0 12px">Saved straight to this test's cell in the Google Sheet and the main table. Switching type replaces the other type's text; leaving everything empty removes it.</div>
           ${modal.error?`<div style="background:#fdecec;border:1px solid #f5c2c2;color:#b42318;font-size:11px;border-radius:7px;padding:8px 10px;margin-bottom:10px">${esc(modal.error)}</div>`:""}
           <div style="display:flex;justify-content:flex-end;gap:10px">
@@ -3002,7 +2986,7 @@ function renderModals(){
         <div style="padding:20px;overflow-y:auto">
           <div class="pmm-card">
             <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:10px">Status Remarks</div>
-            <div class="pmm-field"><textarea class="pmm-input" rows="2" oninput="modal.draft.statusRemarks=this.value" placeholder="What's the real status of this test item?">${esc(d.statusRemarks)}</textarea></div>
+            <div class="pmm-field">${cdTa(d.statusRemarks,"modal.draft.statusRemarks=this.value",'placeholder="What\'s the real status of this test item?"')}</div>
           </div>
           <div class="pmm-card">
             <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">Product Details</div>
@@ -3010,7 +2994,7 @@ function renderModals(){
               <div class="pmm-field"><label class="pmm-label">SKU (Name)</label><input class="pmm-input" value="${esc(d.sku)}" oninput="modal.draft.sku=this.value"/></div>
               <div class="pmm-field"><label class="pmm-label">Parent SKU</label><input class="pmm-input" value="${esc(d.parentSku)}" oninput="modal.draft.parentSku=this.value"/></div>
             </div>
-            <div class="pmm-field"><label class="pmm-label">Description</label><textarea class="pmm-input" rows="2" oninput="modal.draft.description=this.value">${esc(d.description)}</textarea></div>
+            <div class="pmm-field"><label class="pmm-label">Description</label>${cdTa(d.description,"modal.draft.description=this.value")}</div>
             <div class="pmm-grid2">
               <div class="pmm-field"><label class="pmm-label">Priority SKU</label>
                 <select class="pmm-input" onchange="modal.draft.prioritySku=this.value">
@@ -3018,7 +3002,7 @@ function renderModals(){
                   ${CD_PRIORITY_SKU_OPTIONS.map(o=>`<option value="${o}" ${d.prioritySku===o?"selected":""}>${o}</option>`).join("")}
                 </select>
               </div>
-              <div class="pmm-field"><label class="pmm-label">Website</label><input class="pmm-input" value="${esc(d.website)}" oninput="modal.draft.website=this.value"/></div>
+              <div class="pmm-field"><label class="pmm-label">Website</label>${cdTa(d.website,"modal.draft.website=this.value")}</div>
             </div>
             <div class="pmm-grid2">
               <div class="pmm-field"><label class="pmm-label">Meet Claim</label>
@@ -3038,14 +3022,14 @@ function renderModals(){
               </div>
             </div>
             <div class="pmm-grid2">
-              <div class="pmm-field"><label class="pmm-label">Mechanical Test</label><input class="pmm-input" value="${esc(d.mechTesting)}" oninput="modal.draft.mechTesting=this.value"/></div>
-              <div class="pmm-field"><label class="pmm-label">Chemical Test</label><input class="pmm-input" value="${esc(d.chemTesting)}" oninput="modal.draft.chemTesting=this.value"/></div>
+              <div class="pmm-field"><label class="pmm-label">Mechanical Test</label>${cdTa(d.mechTesting,"modal.draft.mechTesting=this.value")}</div>
+              <div class="pmm-field"><label class="pmm-label">Chemical Test</label>${cdTa(d.chemTesting,"modal.draft.chemTesting=this.value")}</div>
             </div>
             <div class="pmm-grid2">
-              <div class="pmm-field"><label class="pmm-label">Corrosion Test</label><input class="pmm-input" value="${esc(d.corrTesting)}" oninput="modal.draft.corrTesting=this.value"/></div>
-              <div class="pmm-field"><label class="pmm-label">Sale Country</label><input class="pmm-input" value="${esc(d.country)}" oninput="modal.draft.country=this.value"/></div>
+              <div class="pmm-field"><label class="pmm-label">Corrosion Test</label>${cdTa(d.corrTesting,"modal.draft.corrTesting=this.value")}</div>
+              <div class="pmm-field"><label class="pmm-label">Sale Country</label>${cdTa(d.country,"modal.draft.country=this.value")}</div>
             </div>
-            <div class="pmm-field"><label class="pmm-label">Colors</label><input class="pmm-input" value="${esc(d.colors)}" oninput="modal.draft.colors=this.value"/></div>
+            <div class="pmm-field"><label class="pmm-label">Colors</label>${cdTa(d.colors,"modal.draft.colors=this.value")}</div>
           </div>
           <div class="pmm-card">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -3439,8 +3423,8 @@ function cdNewExec(){ return {supplier:"",method:"",wwl:"",claim:"",report:"",la
 function cdNewTestType(){ return {name:"",std:"",criteria:"",target:"",equipment:"",accreditation:"",labs:"",execs:[cdNewExec()]}; }
 let cdTestTypes = [cdNewTestType()];
 // Guided setup for "Rhino-USA 3rd Party Test": find product -> parent SKU -> review -> choose tests -> form
-let cdWizard={active:true,done:false,step:1,query:"",matches:[],motherId:"",selSubs:new Set(),sug:[],sugIdx:-1,msg:""};
-function cdWzReset(){ cdWizard={active:true,done:false,step:1,query:"",matches:[],motherId:"",selSubs:new Set(),sug:[],sugIdx:-1,msg:""}; }
+let cdWizard={active:true,done:false,step:1,query:"",matches:[],motherId:"",selSubs:new Set(),sug:[],sugIdx:-1,msg:"",refMode:"original",manual:0};
+function cdWzReset(){ cdWizard={active:true,done:false,step:1,query:"",matches:[],motherId:"",selSubs:new Set(),sug:[],sugIdx:-1,msg:"",refMode:"original",manual:0}; }
 let cdSubmitting = false;
 
 // Auto-creates a tab if it doesn't exist yet -- but only for the sheets this
@@ -3555,6 +3539,64 @@ function cdNormalizeReportLabel(label){
 // suppliers, the block's own result lines, its original wording -- is left exactly as is.
 // Format (CAP): ... Test Lab / Supplier CAP / Evidence / Evidence link / Cost
 // Format (Remarks only): ... Test Lab / Remarks / Cost
+// Physical (tensile / strength) tests record WLL, break strength and results in lbs. Every other test
+// (chemical, coating, colour...) records only PASS or FAIL. Guessed from the test name, and always
+// overridable with the "Physical / tensile test" tick box on the test.
+const CD_PHYS_RE=/tensile|strength|break|proof|load|capacity|physical|mechanical|\bWLL\b|\bWWL\b|\bMBS\b|\bUBS\b|\bUTS\b/i;
+function cdIsPhysicalTest(tt){
+  if(typeof tt.physical==="boolean") return tt.physical;
+  return CD_PHYS_RE.test(tt.name||"") || (tt.execs||[]).some(e=>e.wwl||e.claim||(e.samples||[]).some(s=>s.value));
+}
+function cdSetPhysical(ti,on,edit){
+  const tt=edit?modal.draft.testTypes[ti]:cdTestTypes[ti]; if(!tt) return;
+  tt.physical=!!on; tt.physicalManual=true;
+  if(edit) renderModals(); else cdRenderNewEntry();
+}
+// Typing a name re-checks the guess (only until the tick box has been set by hand).
+function cdNameChanged(ti,edit){
+  const tt=edit?modal.draft.testTypes[ti]:cdTestTypes[ti]; if(!tt||tt.physicalManual) return;
+  const p=CD_PHYS_RE.test(tt.name||"");
+  if(cdIsPhysicalTest(tt)!==p){ tt.physical=p; if(edit) renderModals(); else cdRenderNewEntry(); }
+}
+function cdPhysToggleHtml(tt,ti,edit){
+  return `<label style="display:flex;align-items:flex-start;gap:7px;margin:-4px 0 12px;font-size:11px;color:#555;cursor:pointer" title="Physical tests record WLL, break strength and results in lbs. Other tests record PASS / FAIL only.">
+    <input type="checkbox" style="margin-top:2px" ${cdIsPhysicalTest(tt)?"checked":""} onchange="cdSetPhysical(${ti},this.checked,${edit?"true":"false"})"/>
+    <span><b>Physical / tensile test</b> <span style="color:#999">— shows WLL, break strength and results in lbs. Untick for chemical, coating, colour… tests (PASS / FAIL only).</span></span></label>`;
+}
+// The result part of a test execution. Physical test: WLL + break strength + samples (lbs). Otherwise: just PASS / FAIL.
+// (If an older execution already holds figures, they stay visible so nothing is hidden or lost.)
+function cdExecPhysHtml(tt,ex,path,addFn,removeFn){
+  const hasNum=!!(ex.wwl||ex.claim||(ex.samples||[]).some(s=>s.value)||(ex.samples||[]).length>1);
+  if(cdIsPhysicalTest(tt)||hasNum){
+    return `<div class="pmm-grid2">
+      <div class="pmm-field"><label class="pmm-label">Rhino Test WLL (lbs.) <span style="color:#aaa;font-weight:400">— kg auto-added</span></label><input class="pmm-input" value="${esc(ex.wwl)}" oninput="${path}.wwl=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Rhino Break Strength Test Claim (lbs) <span style="color:#aaa;font-weight:400">— kg auto-added</span></label><input class="pmm-input" value="${esc(ex.claim)}" oninput="${path}.claim=this.value"/></div>
+    </div>
+    ${cdSamplesHtml(ex.samples,path,addFn,removeFn)}`;
+  }
+  if(!ex.samples||!ex.samples.length) ex.samples=[{value:"",verdict:""}];
+  const v=(ex.samples[0]||{}).verdict||"";
+  return `<div class="pmm-field"><label class="pmm-label">Test Result</label>
+    <select class="pmm-input" onchange="${path}.samples=[{value:'',verdict:this.value}]">
+      <option value="">Verdict…</option>
+      <option value="PASS" ${v==="PASS"?"selected":""}>PASS</option>
+      <option value="FAIL" ${v==="FAIL"?"selected":""}>FAIL</option>
+    </select></div>`;
+}
+
+function cdAutoGrow(el){ if(!el) return; el.style.height="auto"; el.style.height=(el.scrollHeight+2)+"px"; }
+function cdAutoGrowAll(){ document.querySelectorAll("textarea.cd-ta").forEach(cdAutoGrow); }
+// A text box that wraps and grows. Enter is blocked so a value stays one paragraph (a stray line
+// break would end up inside a Google Sheet cell).
+function cdTa(value,onInput,extra){
+  return `<textarea class="pmm-input cd-ta" rows="1" ${extra||""} onkeydown="if(event.key==='Enter')event.preventDefault()" oninput="${onInput};cdAutoGrow(this)">${esc(value)}</textarea>`;
+}
+(function(){
+  const run=()=>{ clearTimeout(window.__cdAG); window.__cdAG=setTimeout(cdAutoGrowAll,0); };
+  const start=()=>{ const obs=new MutationObserver(run); ["board-wrap","modal-root"].forEach(id=>{ const el=document.getElementById(id); if(el) obs.observe(el,{childList:true,subtree:true}); }); run(); };
+  if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",start); else start();
+  window.addEventListener("resize",run);
+})();
 function cdOneLine(v){ return String(v==null?"":v).replace(/\s*\n\s*/g," ").trim(); }
 function cdApplyFailureDetails(cellText, blockIdx, d){
   const HDR=/^\s*(?:Priority Supplier|Supplier Priority)\s*\d+\s*:/i;
@@ -3598,9 +3640,9 @@ function cdApplyFailureDetails(cellText, blockIdx, d){
 function cdFormatExecBlock(ex, n){
   const lines=[`Priority Supplier ${n}: ${ex.supplier||""}`];
   lines.push(`Test Method: ${ex.method||"Not Specified/Lab Proprietary"}`);
-  // WWL and Break Strength Claim only belong to tensile / physical tests -- written only when filled in,
+  // WLL (Work Load Limit) and Break Strength Claim only belong to tensile / physical tests -- written only when filled in,
   // so a chemical, coating or colour test never gets two empty lines.
-  if(ex.wwl){ const wwlKg=cdLbsToKg(ex.wwl); lines.push(`Rhino Test WWL (lbs.): ${cdFmtNum(ex.wwl)}${wwlKg?` (${cdFmtNum(wwlKg)} kg)`:""}`); }
+  if(ex.wwl){ const wwlKg=cdLbsToKg(ex.wwl); lines.push(`Rhino Test WLL (lbs.): ${cdFmtNum(ex.wwl)}${wwlKg?` (${cdFmtNum(wwlKg)} kg)`:""}`); }
   if(ex.claim){ const claimKg=cdLbsToKg(ex.claim); lines.push(`Rhino Break Strength Test Claim (lbs): ${cdFmtNum(ex.claim)}${claimKg?` (${cdFmtNum(claimKg)} kg)`:""}`); }
   const filled=(ex.samples||[]).filter(s=>s.value||s.verdict);
   const sampleTexts=filled.map((s,i)=>s.value?`Sample ${i+1} = ${cdFmtNum(s.value)} lbs${s.verdict?` (${s.verdict})`:""}`:`Sample ${i+1} = ${s.verdict}`);
@@ -3736,15 +3778,11 @@ function cdExecBlockHtml(tt, ti, ex, ei){
       ${tt.execs.length>1?`<button onclick="cdRemoveExec(${ti},${ei})" style="font-size:10px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:2px 7px;cursor:pointer">Remove</button>`:""}
     </div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Priority Supplier</label><input class="pmm-input" value="${esc(ex.supplier)}" oninput="cdTestTypes[${ti}].execs[${ei}].supplier=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Test Method</label><input class="pmm-input" value="${esc(ex.method)}" oninput="cdTestTypes[${ti}].execs[${ei}].method=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Priority Supplier</label>${cdTa(ex.supplier,"cdTestTypes[${ti}].execs[${ei}].supplier=this.value")}</div>
+      <div class="pmm-field"><label class="pmm-label">Test Method</label>${cdTa(ex.method,"cdTestTypes[${ti}].execs[${ei}].method=this.value")}</div>
     </div>
-    <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Rhino Test WWL (lbs.) <span style="color:#aaa;font-weight:400">— kg auto-added</span></label><input class="pmm-input" value="${esc(ex.wwl)}" oninput="cdTestTypes[${ti}].execs[${ei}].wwl=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Rhino Break Strength Test Claim (lbs) <span style="color:#aaa;font-weight:400">— kg auto-added</span></label><input class="pmm-input" value="${esc(ex.claim)}" oninput="cdTestTypes[${ti}].execs[${ei}].claim=this.value"/></div>
-    </div>
-    ${cdSamplesHtml(ex.samples, `cdTestTypes[${ti}].execs[${ei}]`, `cdAddSample(${ti},${ei})`, si=>`cdRemoveSample(${ti},${ei},${si})`)}
-    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label><input class="pmm-input" value="${esc(ex.report)}" oninput="cdTestTypes[${ti}].execs[${ei}].report=this.value"/></div>
+    ${cdExecPhysHtml(tt, ex, `cdTestTypes[${ti}].execs[${ei}]`, `cdAddSample(${ti},${ei})`, si=>`cdRemoveSample(${ti},${ei},${si})`)}
+    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label>${cdTa(ex.report,"cdTestTypes[${ti}].execs[${ei}].report=this.value")}</div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="cdTestTypes[${ti}].execs[${ei}].lab=this.value"/></div>
       <div class="pmm-field"><label class="pmm-label">Cost</label><input class="pmm-input" placeholder="$0.00" value="${esc(ex.cost)}" oninput="cdTestTypes[${ti}].execs[${ei}].cost=this.value"/></div>
@@ -3758,12 +3796,13 @@ function cdTestTypeBlockHtml(tt, ti){
       <div style="font-size:11.5px;font-weight:700;color:#0073ea">Test Type ${ti+1}${tt.fromWizard?` <span style="margin-left:8px;font-size:9.5px;font-weight:700;color:#0a7a46;background:#e3f6ec;border:1px solid #b8e6cf;border-radius:9px;padding:1px 9px">Existing test · new results are added to ${new Date().getFullYear()}</span>`:""}</div>
       ${cdTestTypes.length>1?`<button onclick="cdRemoveTestType(${ti})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
     </div>
-    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label><input class="pmm-input" value="${esc(tt.name)}" oninput="cdTestTypes[${ti}].name=this.value"/></div>
-    <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label><input class="pmm-input" value="${esc(tt.criteria)}" oninput="cdTestTypes[${ti}].criteria=this.value"/></div>
-    <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label><input class="pmm-input" value="${esc(tt.target)}" oninput="cdTestTypes[${ti}].target=this.value"/></div>
+    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label>${cdTa(tt.name,"cdTestTypes[${ti}].name=this.value",`onchange="cdNameChanged(${ti},false)"`)}</div>
+    ${cdPhysToggleHtml(tt,ti,false)}
+    <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label>${cdTa(tt.criteria,"cdTestTypes[${ti}].criteria=this.value")}</div>
+    <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label>${cdTa(tt.target,"cdTestTypes[${ti}].target=this.value")}</div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Required Lab Equipment <span style="color:#aaa;font-weight:400">(optional)</span></label><input class="pmm-input" value="${esc(tt.equipment)}" oninput="cdTestTypes[${ti}].equipment=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Lab Accreditation <span style="color:#aaa;font-weight:400">(optional)</span></label><input class="pmm-input" value="${esc(tt.accreditation)}" oninput="cdTestTypes[${ti}].accreditation=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Required Lab Equipment <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.equipment,"cdTestTypes[${ti}].equipment=this.value")}</div>
+      <div class="pmm-field"><label class="pmm-label">Lab Accreditation <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.accreditation,"cdTestTypes[${ti}].accreditation=this.value")}</div>
     </div>
     <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #dde0e7">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -3806,7 +3845,7 @@ function cdSupUpdateStatus(){
 function cdRenderSupplierEntry(wrap){
   const d=cdSupDraft;
   const fld=(i,key,label,type,ph)=>`<div class="pmm-field"><label class="pmm-label">${label}</label>${type==="area"
-    ?`<textarea class="pmm-input" rows="2" oninput="cdSupDraft.entries[${i}].${key}=this.value" placeholder="${ph||""}">${esc(d.entries[i][key])}</textarea>`
+    ?cdTa(d.entries[i][key],`cdSupDraft.entries[${i}].${key}=this.value`,`placeholder="${ph||""}"`)
     :`<input class="pmm-input" type="${type}" value="${esc(d.entries[i][key])}" oninput="cdSupDraft.entries[${i}].${key}=this.value" placeholder="${ph||""}"/>`}</div>`;
   wrap.innerHTML=`<div style="max-width:900px;margin:0 auto;padding:20px 0">${cdNewModeBarHtml()}
     <div class="pmm-card">
@@ -4041,7 +4080,7 @@ function cdWzToggleSub(id,checked){ if(checked) cdWizard.selSubs.add(id); else c
 function cdWzSelectAll(on){ const m=cdWzMother(); cdWizard.selSubs=new Set(on?(m.subs||[]).map(s=>s.rowId):[]); cdRenderNewEntry(); }
 function cdWzStep4Html(){
   const m=cdWzMother(); if(!m) return "";
-  const subs=m.subs||[], yr=new Date().getFullYear(), n=cdWizard.selSubs.size;
+  const subs=m.subs||[], yr=new Date().getFullYear(), n=cdWizard.selSubs.size, man=cdWizard.manual||0;
   const cell=v=>v?`<div class="wz-clamp" title="${esc(v)}">${esc(v)}</div>`:`<span style="color:#bbb">—</span>`;
   return `<div class="pmm-card">
     <div style="font-size:14px;font-weight:800;color:#222;margin-bottom:3px">Which tests get new results?</div>
@@ -4050,22 +4089,32 @@ function cdWzStep4Html(){
     <div style="overflow-x:auto;border:1px solid #e3e8f0;border-radius:8px"><table class="wz-tbl"><thead><tr><th></th><th>Test</th><th>Criteria</th><th>Target</th><th>Latest results</th><th>New results go to</th></tr></thead><tbody>
     ${subs.map(sub=>{ const on=cdWizard.selSubs.has(sub.rowId); return `<tr class="pick ${on?"on":""}" onclick="cdWzToggleSub('${esc(sub.rowId)}',${!on})"><td style="width:28px"><input type="checkbox" ${on?"checked":""} onclick="event.stopPropagation();cdWzToggleSub('${esc(sub.rowId)}',this.checked)"/></td><td style="font-weight:700;min-width:160px">${esc(sub.name)}</td><td style="min-width:180px">${cell(sub.criteria)}</td><td style="min-width:150px">${cell(sub.target)}</td><td style="min-width:130px">${cdWzResultChips(sub)}</td><td><span style="font-size:10px;font-weight:800;color:#0055bb;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:2px 9px">${yr}</span></td></tr>`; }).join("")}
     </tbody></table></div>`:`<div style="color:#999;font-size:12px">No tests on file for this SKU. Continue to add test types manually in the next step.</div>`}
+    <div style="margin-top:14px;padding:12px 14px;border:1.5px dashed #c0d8f8;border-radius:8px;background:#f8fbff;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px;font-size:11.5px;color:#444;line-height:1.5"><b>Test not listed?</b> Add it manually — it is created under the same reference as the tests above.${man?` <span style="color:#0a7a46;font-weight:700">${man} manual test${man!==1?"s":""} added.</span>`:""}</div>
+      ${man?`<button class="wz-btn sec" style="font-size:11px;padding:7px 12px" onclick="cdWzRemoveManual()">Remove last</button>`:""}
+      <button class="wz-btn sec" style="background:#fff;border:1px solid #c0d8f8;color:#0055bb" onclick="cdWzAddManual()">+ Add a test manually</button>
+    </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
       <button class="wz-btn sec" onclick="cdWzBack()">← Back</button>
-      <button class="wz-btn pri" ${(n||!subs.length)?"":"disabled"} onclick="cdWzApply()">${subs.length?`Continue with ${n} test${n!==1?"s":""} →`:"Continue →"}</button>
+      <button class="wz-btn pri" ${(n||man||!subs.length)?"":"disabled"} onclick="cdWzApply()">${(n+man)?`Continue with ${n+man} test${(n+man)!==1?"s":""} →`:"Continue →"}</button>
     </div>
   </div>`;
 }
+function cdWzAddManual(){ cdWizard.manual++; cdRenderNewEntry(); }
+function cdWzRemoveManual(){ if(cdWizard.manual>0) cdWizard.manual--; cdRenderNewEntry(); }
 // ---- hand-off into the existing entry form ----
 function cdWzApply(){
   const m=cdWzMother(); if(!m) return;
+  const man=cdWizard.manual||0;
   const chosen=(m.subs||[]).filter(sub=>cdWizard.selSubs.has(sub.rowId));
-  if((m.subs||[]).length && !chosen.length){ alert("Tick at least one test to add new results to."); return; }
+  if((m.subs||[]).length && !chosen.length && !man){ alert("Tick at least one test, or add a test manually."); return; }
   cdDraft={sku:"",parentSku:cdWzParentKey(m),description:"",prioritySku:m.prioritySku||"",website:m.websiteUrl||"",meetsClaim:m.meetsClaim||"",mechTesting:m.mechTesting||"",chemTesting:m.chemTesting||"",corrTesting:m.corrTesting||"",country:m.country||"",colors:m.colors||"",channel:m.channel?String(m.channel).split(",").map(x=>x.trim()).filter(Boolean):[]};
-  cdTestTypes=chosen.length?chosen.map(sub=>({subId:sub.rowId,name:sub.name||"",std:sub.std||"",criteria:sub.criteria||"",target:sub.target||"",equipment:sub.equipment||"",accreditation:sub.accreditation||"",labs:sub.labs||"",execs:[cdNewExec()],fromWizard:true,appendToExisting:true}))
-                          :[cdNewTestType()];
+  const tts=chosen.map(sub=>({subId:sub.rowId,name:sub.name||"",std:sub.std||"",criteria:sub.criteria||"",target:sub.target||"",equipment:sub.equipment||"",accreditation:sub.accreditation||"",labs:sub.labs||"",execs:[cdNewExec()],fromWizard:true,appendToExisting:true,
+    physical:CD_PHYS_RE.test(sub.name||"")||Object.values(sub.yearBlocks||{}).flat().some(b=>b.wwl||b.claim)}));
+  for(let k=0;k<man;k++){ const t=cdNewTestType(); t.newUnderReference=true; tts.push(t); }     // a test that isn't listed: created as a NEW row under the same reference
+  cdTestTypes=tts.length?tts:[cdNewTestType()];
   cdClearLookupRecommendations();
-  cdWizard.done=true; cdWizard.active=true;
+  cdWizard.done=true; cdWizard.active=true; cdWizard.refMode="original";
   cdRenderNewEntry();
   window.scrollTo&&window.scrollTo(0,0);
 }
@@ -4076,15 +4125,41 @@ function cdWzRestart(){
   cdTestTypes=[cdNewTestType()]; cdClearLookupRecommendations(); cdWzReset(); cdRenderNewEntry();
 }
 function cdWzUseGuided(){ cdWzReset(); cdRenderNewEntry(); }
+// ---- "Original reference" support ----
+// Fields that belong to the MOTHER SKU (shared by every linked SKU). Everything else on the form
+// (parent SKU, description, priority SKU, website, sale country, colors, channel) belongs to the SKU typed.
+const CD_INHERITED_FIELDS=["meetsClaim","mechTesting","chemTesting","corrTesting"];
+function cdWzTypedIsMother(){ const m=cdWzMother(); return !!m && String(cdDraft.sku||"").trim().toLowerCase()===String(m.name||"").trim().toLowerCase(); }
+// True when the SKU being entered is a linked SKU that saves under the mother's reference.
+function cdWzInheritActive(){ return cdWizard.done && cdWizard.refMode==="original" && !!cdWzMother() && !cdWzTypedIsMother(); }
+function cdWzSyncInherited(){ const m=cdWzMother(); if(!m||!cdWzInheritActive()) return; CD_INHERITED_FIELDS.forEach(f=>{ cdDraft[f]=m[f]||""; }); }
+function cdWzMotherGroupName(){ const g=GROUPS.find(g=>g.items.some(i=>i.id===cdWizard.motherId)); return g?g.title:""; }
+function cdWzSetRefMode(mode){ cdWizard.refMode=mode; if(mode==="original") cdWzSyncInherited(); cdRenderNewEntry(); }
+function cdInhTag(){
+  if(!cdWzInheritActive()) return "";
+  return ` <span style="font-size:9px;font-weight:700;color:#6d28d9;background:#f3e8ff;border:1px solid #ddc8fb;border-radius:8px;padding:1px 7px;margin-left:6px;text-transform:none;letter-spacing:0">shared with ${esc(cdWzMother().name)}</span>`;
+}
+function cdIdNoteHtml(){
+  const m=cdWzMother();
+  if(cdWzInheritActive()) return `<div style="margin-top:12px;background:#f6f0ff;border:1px solid #ddc8fb;border-radius:8px;padding:10px 13px;font-size:11px;color:#4c1d95;line-height:1.6">Results are saved under reference <b>#${esc(m.rowId)}</b> (${esc(m.name)}). This SKU gets its own item row that links to it. <b>Meet Claim and the Mechanical, Chemical and Corrosion tests</b> belong to ${esc(m.name)} — if you change them here, the change is saved to that SKU in the Google Sheet.</div>`;
+  if(cdWizard.done && m && cdWizard.refMode==="original") return `<div style="margin-top:12px;background:#f6f0ff;border:1px solid #ddc8fb;border-radius:8px;padding:10px 13px;font-size:11px;color:#4c1d95">This is the mother SKU itself (reference <b>#${esc(m.rowId)}</b>) — everything you change here is saved to it.</div>`;
+  return `<div style="font-size:10.5px;color:#999;margin-top:6px">ID will be generated automatically (12 digits) on submit.</div>`;
+}
 // what shows above the existing form
 function cdWzFormTopHtml(){
   if(cdWizard.done){
-    const m=cdWzMother(), n=cdTestTypes.filter(t=>t.fromWizard).length;
+    const m=cdWzMother(), n=cdTestTypes.filter(t=>t.fromWizard).length, man=cdTestTypes.filter(t=>t.newUnderReference).length;
+    const opt=(mode,title,desc)=>{ const on=cdWizard.refMode===mode; return `<label style="flex:1;min-width:290px;display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border-radius:10px;cursor:pointer;border:1.5px solid ${on?"#0073ea":"#dde0e7"};background:${on?"#eef6ff":"#fff"}"><input type="radio" name="cd-ref-mode" style="margin-top:3px" ${on?"checked":""} onchange="cdWzSetRefMode('${mode}')"/><span><div style="font-size:12px;font-weight:800;color:${on?"#0055bb":"#333"}">${title}</div><div style="font-size:10.5px;color:#666;margin-top:3px;line-height:1.55">${desc}</div></span></label>`; };
     return `${cdWzStepperHtml()}<div style="background:#eef6ff;border:1.5px solid #c0d8f8;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
       <div style="flex:1;min-width:260px"><div style="font-size:12.5px;font-weight:800;color:#0055bb">Setup complete — now enter the new results</div>
-      <div style="font-size:11px;color:#555;margin-top:3px;line-height:1.5">Parent SKU <b>${esc(cdDraft.parentSku)}</b> · mother SKU <b>${esc(m?m.name:"")}</b> · ${n} test${n!==1?"s":""} carried over. Type the SKU name below — its description and priority SKU are filled in from Items, then the Master Data sheet.</div></div>
+      <div style="font-size:11px;color:#555;margin-top:3px;line-height:1.5">Parent SKU <b>${esc(cdDraft.parentSku)}</b> · mother SKU <b>${esc(m?m.name:"")}</b> · ${n} existing test${n!==1?"s":""}${man?` + ${man} added manually`:""}. Type the SKU name below — its description, colour and priority SKU are filled in from Items, then the Master Data sheet.</div></div>
       ${m?`<button onclick="cdWzUseMotherSku()" class="wz-btn sec" style="font-size:11px;padding:7px 14px;background:#fff;border:1px solid #c0d8f8;color:#0055bb">Use ${esc(m.name)} (retest this SKU)</button>`:""}
-      <button onclick="cdWzRestart()" class="wz-btn sec" style="font-size:11px;padding:7px 14px">↺ Change selection</button></div>`;
+      <button onclick="cdWzRestart()" class="wz-btn sec" style="font-size:11px;padding:7px 14px">↺ Change selection</button></div>
+    ${m?`<div class="pmm-card" style="padding:14px 16px"><div style="font-size:12.5px;font-weight:800;color:#222;margin-bottom:9px">Where should the results be saved?</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${opt("original",`Original reference · #${esc(m.rowId)} · ${esc(m.name)} <span style="font-size:9px;font-weight:700;color:#0a7a46;background:#e3f6ec;border-radius:8px;padding:1px 7px;margin-left:6px">recommended</span>`,`All results and test edits are saved once, under the mother SKU. The SKU you type links to it. Only its parent SKU, description, priority SKU, website, sale country, colors and channel belong to that SKU — the rest comes from the mother, and changes to those fields update the mother in the Google Sheet.`)}
+        ${opt("new","Create a new reference",`The SKU you type becomes its own item with its own reference number and its own copy of these tests.`)}
+      </div></div>`:""}`;
   }
   if(!cdWizard.active) return `<div style="margin-bottom:12px"><button onclick="cdWzUseGuided()" style="background:#e8f2ff;border:1px solid #c0d8f8;color:#0055bb;font-size:11.5px;font-weight:700;border-radius:8px;padding:7px 14px;cursor:pointer">🧭 Use the guided setup (find an existing product first)</button></div>`;
   return "";
@@ -4113,7 +4188,7 @@ function cdRenderNewEntry(){
       </div>
       <div class="pmm-field"><label class="pmm-label">Parent SKU</label><input class="pmm-input" value="${esc(d.parentSku)}" oninput="cdDraft.parentSku=this.value"/></div>
     </div>
-    <div class="pmm-field"><label class="pmm-label">Description</label><textarea class="pmm-input" rows="2" oninput="cdDraft.description=this.value">${esc(d.description)}</textarea></div>
+    <div class="pmm-field"><label class="pmm-label">Description</label>${cdTa(d.description,"cdDraft.description=this.value")}</div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Priority SKU</label>
         <select class="pmm-input" onchange="cdDraft.prioritySku=this.value">
@@ -4121,10 +4196,10 @@ function cdRenderNewEntry(){
           ${CD_PRIORITY_SKU_OPTIONS.map(o=>`<option value="${o}" ${d.prioritySku===o?"selected":""}>${o}</option>`).join("")}
         </select>
       </div>
-      <div class="pmm-field"><label class="pmm-label">Website</label><input class="pmm-input" placeholder="https://…" value="${esc(d.website)}" oninput="cdDraft.website=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Website</label>${cdTa(d.website,"cdDraft.website=this.value",'placeholder="https://…"')}</div>
     </div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Meet Claim</label>
+      <div class="pmm-field"><label class="pmm-label">Meet Claim${cdInhTag()}</label>
         <select class="pmm-input" onchange="cdDraft.meetsClaim=this.value">
           <option value="">Select…</option>
           <option value="Yes" ${d.meetsClaim==="Yes"?"selected":""}>Yes</option>
@@ -4141,15 +4216,15 @@ function cdRenderNewEntry(){
       </div>
     </div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Mechanical Test</label><input class="pmm-input" value="${esc(d.mechTesting)}" oninput="cdDraft.mechTesting=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Chemical Test</label><input class="pmm-input" value="${esc(d.chemTesting)}" oninput="cdDraft.chemTesting=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Mechanical Test${cdInhTag()}</label>${cdTa(d.mechTesting,"cdDraft.mechTesting=this.value")}</div>
+      <div class="pmm-field"><label class="pmm-label">Chemical Test${cdInhTag()}</label>${cdTa(d.chemTesting,"cdDraft.chemTesting=this.value")}</div>
     </div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Corrosion Test</label><input class="pmm-input" value="${esc(d.corrTesting)}" oninput="cdDraft.corrTesting=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Sale Country</label><input class="pmm-input" value="${esc(d.country)}" oninput="cdDraft.country=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Corrosion Test${cdInhTag()}</label>${cdTa(d.corrTesting,"cdDraft.corrTesting=this.value")}</div>
+      <div class="pmm-field"><label class="pmm-label">Sale Country</label>${cdTa(d.country,"cdDraft.country=this.value")}</div>
     </div>
-    <div class="pmm-field"><label class="pmm-label">Colors</label><input class="pmm-input" value="${esc(d.colors)}" oninput="cdDraft.colors=this.value"/></div>
-    <div style="font-size:10.5px;color:#999;margin-top:6px">ID will be generated automatically (12 digits) on submit.</div>
+    <div class="pmm-field"><label class="pmm-label">Colors</label>${cdTa(d.colors,"cdDraft.colors=this.value")}</div>
+    ${cdIdNoteHtml()}
   </div>`;
   html+=cdRecommendedTestTypesHtml();
   html+=`<div class="pmm-card">
@@ -4305,7 +4380,7 @@ async function cdLoadFulfilLookup(){
 }
 // ── Master Data sheet: used when a typed SKU is not in Items yet ─────────────
 // "Master Data IMPORTRANGE" (first tab): Column A = SKU, B = SKU Family, D = Description,
-// E = Tier (the current priority SKU). Read once per page load.
+// E = Tier (the current priority SKU), H = Color. Read once per page load.
 const CD_MASTERDATA_SPREADSHEET_ID="1ZUrFW3zYJlz_f6UFxIJmMKLa_EOy378f8YO9-njtctU";
 let cdMasterDataIndex=null, cdMasterDataError="";
 async function cdLoadMasterData(){
@@ -4319,14 +4394,19 @@ async function cdLoadMasterData(){
     const sheets=((await mres.json()).sheets||[]).map(x=>x.properties);
     const tab=sheets.find(x=>x.sheetId===0)||sheets[0];       // the tab in the link you gave is gid=0
     if(!tab) throw new Error("Master Data sheet has no tabs.");
-    const rres=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CD_MASTERDATA_SPREADSHEET_ID}/values/${encodeURIComponent(tab.title)}!A:E?valueRenderOption=FORMATTED_VALUE`,H);
+    const rres=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CD_MASTERDATA_SPREADSHEET_ID}/values/${encodeURIComponent(tab.title)}!A:H?valueRenderOption=FORMATTED_VALUE`,H);
     cdCheckAuthError(rres);
     if(!rres.ok) throw new Error(`Could not read Master Data (${rres.status}).`);
+    const vals=(await rres.json()).values||[];
+    const head=(vals[0]||[]).map(h=>String(h||"").trim().toLowerCase());
+    const col=(re,fb)=>{ const i=head.findIndex(h=>re.test(h)); return i>=0?i:fb; };
+    const cSku=col(/^sku$/,0), cFam=col(/sku family/,1), cDesc=col(/^description$/,3), cTier=col(/^tier/,4), cColor=col(/^colou?r$/,7);
+    const clean=v=>{ v=String(v||"").trim(); return /^[-\u2013\u2014]+$/.test(v)?"":v; };     // "-" means blank in that sheet
     const idx={};
-    ((await rres.json()).values||[]).forEach((r,i)=>{
-      if(i===0) return;                                         // header row
-      const sku=String(r[0]||"").trim().toUpperCase();
-      if(sku && !idx[sku]) idx[sku]={family:String(r[1]||"").trim(), description:String(r[3]||"").trim(), tier:String(r[4]||"").trim()};
+    vals.forEach((r,i)=>{
+      if(i===0) return;
+      const sku=String(r[cSku]||"").trim().toUpperCase();
+      if(sku && !idx[sku]) idx[sku]={family:clean(r[cFam]), description:clean(r[cDesc]), tier:clean(r[cTier]), color:clean(r[cColor])};
     });
     cdMasterDataIndex=idx; cdMasterDataError="";
     return idx;
@@ -4351,6 +4431,7 @@ async function cdLookupSku(){
   if(existing){
     cdApplyItemToDraft(existing);
     if(!cdWizard.done) cdOfferTestTypeRecommendations(existing, true);   // guided setup has already chosen the tests
+    cdWzSyncInherited();                                                // shared fields always come from the mother SKU
     cdRenderNewEntry();
     setStatus("Found in Items — description & priority SKU auto-filled.");
     return;
@@ -4361,12 +4442,13 @@ async function cdLookupSku(){
   const hit=md[sku.toUpperCase()];
   if(hit){
     if(hit.description) cdDraft.description=hit.description;
+    if(hit.color) cdDraft.colors=hit.color;
     const pr=cdTierToPriority(hit.tier); if(pr) cdDraft.prioritySku=pr;
     if(!cdDraft.parentSku && hit.family) cdDraft.parentSku=hit.family;
     cdRenderNewEntry();
     const tierNote=hit.tier?` (Tier ${hit.tier}${pr&&pr!==hit.tier?` → ${pr}`:""}${hit.tier&&!pr?" — no matching priority option, set it manually":""})`:"";
     const famNote=(cdWizard.done&&hit.family&&cdDraft.parentSku&&hit.family.toUpperCase()!==cdDraft.parentSku.toUpperCase())?` Note: Master Data lists this SKU under family “${hit.family}”, not “${cdDraft.parentSku}”.`:"";
-    setStatus(`Found in Master Data — description & priority SKU${tierNote} auto-filled.${famNote}`);
+    setStatus(`Found in Master Data — description, colour & priority SKU${tierNote} auto-filled.${famNote}`);
     return;
   }
   // 3) older Fulfil lookup (kept as the last fallback)
@@ -4402,6 +4484,28 @@ function cdConfirmSubmitEntry(){
   if(!cdDraft.sku.trim()){ alert("Please enter a SKU (Name)."); return; }
   if(confirm("Submit this new test entry?")) cdSubmitEntry();
 }
+// Updates only the given fields of one Items row (found by its reference number).
+async function cdUpdateItemFields(rowId, fields){
+  const itemsMap=await cdGetHeaderMap(ITEMS_SHEET);
+  if(itemsMap.id===undefined) throw new Error(`The "${ITEMS_SHEET}" sheet has no "id" column.`);
+  const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
+  cdCheckAuthError(res);
+  if(!res.ok) throw new Error(`Could not read "${ITEMS_SHEET}" (${res.status})`);
+  const rows=(await res.json()).values||[];
+  let rowIndex=-1;
+  for(let r=1;r<rows.length;r++){ if((rows[r][itemsMap.id]||"").trim()===String(rowId)){ rowIndex=r+1; break; } }
+  if(rowIndex===-1) throw new Error(`Could not find item #${rowId} in the "${ITEMS_SHEET}" sheet.`);
+  const gid=await pmmGetSheetGidFor(ITEMS_SHEET);
+  const requests=[];
+  Object.entries(fields).forEach(([key,val])=>{
+    if(itemsMap[key]===undefined) return;
+    requests.push({updateCells:{range:{sheetId:gid,startRowIndex:rowIndex-1,endRowIndex:rowIndex,startColumnIndex:itemsMap[key],endColumnIndex:itemsMap[key]+1},rows:[{values:[{userEnteredValue:{stringValue:String(val==null?"":val)}}]}],fields:"userEnteredValue"}});
+  });
+  if(!requests.length) return;
+  const b=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({requests})});
+  cdCheckAuthError(b);
+  if(!b.ok){ const t=await b.text(); throw new Error(`Could not update item #${rowId} (${b.status}): ${t.slice(0,150)}`); }
+}
 async function cdSubmitEntry(){
   if(cdSubmitting) return;
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
@@ -4413,8 +4517,30 @@ async function cdSubmitEntry(){
     // If this SKU already exists (the SKU lookup would have found it), update
     // that row instead of appending a duplicate item.
     const existing=cdFindExistingItemBySku(cdDraft.sku);
-    let newId, updatedExisting=false;
-    if(existing){
+    let newId, updatedExisting=false, customMsg="", trackName=null;
+    const wzOrig=cdWzInheritActive();      // a linked SKU saving under the mother's reference
+    if(wzOrig){
+      // ── "Original reference": results and test edits go under the MOTHER's reference number ──
+      const mother=cdWzMother();
+      const own={ parentSku:(cdDraft.parentSku||"").trim()||cdWzParentKey(mother), description:cdDraft.description, prioritySku:cdDraft.prioritySku,
+                  website:cdDraft.website, country:cdDraft.country, colors:cdDraft.colors,
+                  channel:Array.isArray(cdDraft.channel)?cdDraft.channel.join(", "):cdDraft.channel };
+      // 1) this SKU's own Items row -- only its own fields; the shared fields stay with the mother
+      if(existing){
+        await cdUpdateItemFields(existing.rowId,{name:cdDraft.sku,...own});
+      } else {
+        const linkRow=cdBuildRow(itemsMap,{id:cdGenerateId(), name:cdDraft.sku, group:cdWzMotherGroupName()||"Uncategorized", ...own});
+        const lr=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[linkRow]})});
+        cdCheckAuthError(lr);
+        if(!lr.ok){ const t=await lr.text(); throw new Error(`Could not save item (${lr.status}): ${t.slice(0,150)}`); }
+      }
+      // 2) the mother's row: only the shared fields that were changed here
+      const shared={};
+      CD_INHERITED_FIELDS.forEach(f=>{ if(String(cdDraft[f]||"")!==String(mother[f]||"")) shared[f]=cdDraft[f]||""; });
+      if(Object.keys(shared).length) await cdUpdateItemFields(mother.rowId,shared);
+      newId=mother.rowId; trackName=mother.name;
+      customMsg=`Saved under the original reference #${mother.rowId} (${mother.name}); ${cdDraft.sku} is linked to it.`+(Object.keys(shared).length?` The shared fields you changed were updated on ${mother.name} in the Google Sheet.`:"");
+    } else if(existing){
       newId=existing.rowId;
       if(itemsMap.id!==undefined){
         const rowsRes=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
@@ -4449,7 +4575,7 @@ async function cdSubmitEntry(){
     } else {
       newId=cdGenerateId();
       const itemValues={
-        id:newId, name:cdDraft.sku, group:"Uncategorized",
+        id:newId, name:cdDraft.sku, group:(cdWizard.done?(cdWzMotherGroupName()||"Uncategorized"):"Uncategorized"),
         parentSku:cdDraft.parentSku, description:cdDraft.description, prioritySku:cdDraft.prioritySku,
         website:cdDraft.website, meetsClaim:cdDraft.meetsClaim,
         mechTesting:cdDraft.mechTesting, chemTesting:cdDraft.chemTesting, corrTesting:cdDraft.corrTesting,
@@ -4470,7 +4596,7 @@ async function cdSubmitEntry(){
     // item, update its rows in place (new results appended). Anything else becomes a new item, so
     // its tests are created as new rows -- never re-using the mother's row IDs.
     if(cdWizard.done){
-      const same=!!existing && existing.id===cdWizard.motherId;
+      const same=wzOrig || (!!existing && existing.id===cdWizard.motherId);   // original reference = the mother's own rows
       cdTestTypes.forEach(tt=>{ if(tt.fromWizard && !same){ tt.subId=""; tt.appendToExisting=false; } });
     }
     await cdWriteTestTypesToSubitems(cdTestTypes, newId);
@@ -4486,9 +4612,9 @@ async function cdSubmitEntry(){
     // item as transferred so it shows up in the curated Tracking list.
     cdTrackingTransferredIds.add("i"+newId);
     localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
-    cdAppendTrackingRow({rowId:newId, name:submittedSku}).catch(()=>{});
+    cdAppendTrackingRow({rowId:newId, name:trackName||submittedSku}).catch(()=>{});
     switchTab("tracking");
-    alert(wasUpdate ? "This SKU already existed — updated the existing item instead of creating a duplicate." : "Entry saved. You can now set its status in Tracking.");
+    alert(customMsg || (wasUpdate ? "This SKU already existed — updated the existing item instead of creating a duplicate." : "Entry saved. You can now set its status in Tracking."));
   }catch(e){
     alert("Could not submit: "+e.message);
   }finally{
@@ -4603,15 +4729,11 @@ function cdEditExecBlockHtml(tt, ti, ex, ei){
       ${tt.execs.length>1?`<button onclick="cdEditRemoveExec(${ti},${ei})" style="font-size:10px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:2px 7px;cursor:pointer">Remove</button>`:""}
     </div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Priority Supplier</label><input class="pmm-input" value="${esc(ex.supplier)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].supplier=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Test Method</label><input class="pmm-input" value="${esc(ex.method)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].method=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Priority Supplier</label>${cdTa(ex.supplier,"modal.draft.testTypes[${ti}].execs[${ei}].supplier=this.value")}</div>
+      <div class="pmm-field"><label class="pmm-label">Test Method</label>${cdTa(ex.method,"modal.draft.testTypes[${ti}].execs[${ei}].method=this.value")}</div>
     </div>
-    <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Rhino Test WWL (lbs.)</label><input class="pmm-input" value="${esc(ex.wwl)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].wwl=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Rhino Break Strength Test Claim (lbs)</label><input class="pmm-input" value="${esc(ex.claim)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].claim=this.value"/></div>
-    </div>
-    ${cdSamplesHtml(ex.samples, `modal.draft.testTypes[${ti}].execs[${ei}]`, `cdEditAddSample(${ti},${ei})`, si=>`cdEditRemoveSample(${ti},${ei},${si})`)}
-    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label><input class="pmm-input" value="${esc(ex.report)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].report=this.value"/></div>
+    ${cdExecPhysHtml(tt, ex, `modal.draft.testTypes[${ti}].execs[${ei}]`, `cdEditAddSample(${ti},${ei})`, si=>`cdEditRemoveSample(${ti},${ei},${si})`)}
+    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label>${cdTa(ex.report,"modal.draft.testTypes[${ti}].execs[${ei}].report=this.value")}</div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].lab=this.value"/></div>
       <div class="pmm-field"><label class="pmm-label">Cost</label><input class="pmm-input" placeholder="$0.00" value="${esc(ex.cost)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].cost=this.value"/></div>
@@ -4625,12 +4747,13 @@ function cdEditTestTypeBlockHtml(tt, ti){
       <div style="font-size:11.5px;font-weight:700;color:#0073ea">${esc(tt.name)||`Test Type ${ti+1}`}</div>
       ${modal.draft.testTypes.length>1?`<button onclick="cdEditRemoveTestType(${ti})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
     </div>
-    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label><input class="pmm-input" value="${esc(tt.name)}" oninput="modal.draft.testTypes[${ti}].name=this.value"/></div>
-    <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label><input class="pmm-input" value="${esc(tt.criteria)}" oninput="modal.draft.testTypes[${ti}].criteria=this.value"/></div>
-    <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label><input class="pmm-input" value="${esc(tt.target)}" oninput="modal.draft.testTypes[${ti}].target=this.value"/></div>
+    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label>${cdTa(tt.name,"modal.draft.testTypes[${ti}].name=this.value",`onchange="cdNameChanged(${ti},true)"`)}</div>
+    ${cdPhysToggleHtml(tt,ti,true)}
+    <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label>${cdTa(tt.criteria,"modal.draft.testTypes[${ti}].criteria=this.value")}</div>
+    <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label>${cdTa(tt.target,"modal.draft.testTypes[${ti}].target=this.value")}</div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Required Lab Equipment <span style="color:#aaa;font-weight:400">(optional)</span></label><input class="pmm-input" value="${esc(tt.equipment)}" oninput="modal.draft.testTypes[${ti}].equipment=this.value"/></div>
-      <div class="pmm-field"><label class="pmm-label">Lab Accreditation <span style="color:#aaa;font-weight:400">(optional)</span></label><input class="pmm-input" value="${esc(tt.accreditation)}" oninput="modal.draft.testTypes[${ti}].accreditation=this.value"/></div>
+      <div class="pmm-field"><label class="pmm-label">Required Lab Equipment <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.equipment,"modal.draft.testTypes[${ti}].equipment=this.value")}</div>
+      <div class="pmm-field"><label class="pmm-label">Lab Accreditation <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.accreditation,"modal.draft.testTypes[${ti}].accreditation=this.value")}</div>
     </div>
     <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #dde0e7">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
