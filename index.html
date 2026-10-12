@@ -115,6 +115,16 @@ input:not(:placeholder-shown) ~ .sc-clear{display:block}
 .yc-overall{display:inline-flex;font-size:9.5px;font-weight:800;padding:2px 10px;border-radius:5px;margin-bottom:7px;background:#f3f5f9;color:#555}
 .yc-overall.pass{background:#e3f9ee;color:#0a7a46}.yc-overall.fail{background:#ffe8e8;color:#c0392b}
 .yc-empty{color:#b3bacb;font-size:11px;font-style:italic}
+/* one tab per test type: Test Type 1 | Test Type 2 | ... | + Add */
+.tt-tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;border-bottom:2px solid #dde5f2;margin:0 0 14px}
+.tt-tab{display:flex;flex-direction:column;align-items:flex-start;gap:1px;max-width:230px;padding:8px 16px 7px;border:1.5px solid #dde0e7;border-bottom:none;border-radius:9px 9px 0 0;background:#f2f4f9;color:#6b7385;cursor:pointer;margin-bottom:-2px;text-align:left}
+.tt-tab:hover{background:#e9f1fd;color:#0055bb}
+.tt-tab.on{background:#fff;color:#0055bb;border-color:#0073ea;border-bottom:2px solid #fff;box-shadow:0 -2px 6px rgba(0,115,234,.12)}
+.tt-n{font-size:12px;font-weight:800;white-space:nowrap}
+.tt-sub{font-size:9.5px;font-weight:500;color:#8a93a6;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:12px}
+.tt-tab.on .tt-sub{color:#5b8fd6}
+.tt-add{margin:0 0 6px 6px;font-size:11px;font-weight:700;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:7px;padding:6px 13px;cursor:pointer}
+.tt-add:hover{background:#d6e8fd}
 /* long text in editors: wraps onto as many lines as it needs (grows as you type) */
 textarea.pmm-input.cd-ta{display:block;resize:none;overflow:hidden;min-height:38px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word}
 /* guided setup */
@@ -684,25 +694,9 @@ function gateContinueCached(){ hideLoginGate(); }
 let lastSyncPromptAt = 0;
 const SYNC_PROMPT_COOLDOWN_MS = 10*60*1000; // don't ask again within 10 minutes of the last prompt
 
-function promptSync(){
-  const gate=document.getElementById("login-gate");
-  if(gate && gate.style.display!=="none") return; // still on the sign-in screen
-  const compliancePanelActive=document.getElementById("panel-compliance")?.classList.contains("active");
-  if(!compliancePanelActive) return; // don't interrupt someone working in Product Material Matrix
-  if(!GROUPS.length || isSyncing || modal) return; // nothing cached yet, already syncing, or another dialog is open
-  const now=Date.now();
-  if(now-lastSyncPromptAt < SYNC_PROMPT_COOLDOWN_MS) return;
-  lastSyncPromptAt=now;
-  openModal({type:"syncPrompt"});
-}
-
-// Ask once shortly after opening the page (if there's cached data to potentially refresh),
-// again if the person switches back to this tab after being away, and periodically while
-// the tab stays open — all of these just show the same one-click prompt, never a silent attempt.
-setInterval(()=>{ promptSync(); }, SYNC_PROMPT_COOLDOWN_MS);
-document.addEventListener("visibilitychange", ()=>{
-  if(document.visibilityState==="visible") promptSync();
-});
+// The "Check for updates?" pop-up that used to appear on a timer and whenever you came back to the tab is gone.
+// Google asks you to sign in again by itself when a session runs out, and the Re-sync button is still one click away.
+function promptSync(){ /* intentionally does nothing */ }
 
 // ── SYNC ─────────────────────────────────────────────────────────────────────
 let syncAttemptCounter=0;
@@ -816,7 +810,7 @@ function parseSupplierTestData(raw){
   return t.split(/\n\s*\n/).map(chunk=>{
     const lines=chunk.split("\n").map(l=>l.trim()).filter(Boolean);
     const get=re=>{ const l=lines.find(x=>re.test(x)); return l?l.replace(/^[^:]+:\s*/,"").trim():""; };
-    return { description:get(/^test\s*type\s*description\s*:/i), link:get(/^test\s*report\s*link\s*:/i), date:get(/^tested\s*date\s*:/i), supplier:get(/^supplier\s*:/i) };
+    return { description:get(/^test\s*type(\s*description)?\s*:/i), link:get(/^test\s*report\s*link\s*:/i), date:get(/^tested\s*date\s*:/i), supplier:get(/^supplier\s*:/i) };
   }).filter(e=>e.description||e.link||e.date||e.supplier);
 }
 function buildGroups(itemRows, subRows){
@@ -881,7 +875,7 @@ function buildGroups(itemRows, subRows){
       channel:row.channel||"",
       status:row["Status Remarks"]||row.Status||"",
       subs:subMap[rid]||[],
-      supplierTests:supMap[rid]||[],
+      supplierTests:[...parseSupplierTestData(row["Supplier Test Data"]),...(supMap[rid]||[])],   // Items-row column first; older Subitems-row entries still show
     });
   });
 
@@ -936,6 +930,8 @@ function applyReplication(groups){
         if(!item.websiteUrl)  item.websiteUrl=donor.websiteUrl;
         // replicate prioritySku if blank
         if(!item.prioritySku) item.prioritySku=donor.prioritySku;
+        // a linked SKU shows its mother's supplier test data too
+        if(!(item.supplierTests&&item.supplierTests.length)) item.supplierTests=donor.supplierTests||[];
         item._replicatedFrom=donor.name;
       }
     });
@@ -1810,8 +1806,8 @@ function renderMonitoring(){
     });
   });
 
-  const cg="minmax(180px,1.5fr) minmax(200px,2fr) minmax(300px,2fr) 190px";
-  const hdrs=["Product / SKUs","Annual Test Requirements","Schedule per Test","Management Decision"];
+  const cg="minmax(180px,1.5fr) minmax(200px,2fr) minmax(300px,2fr)";
+  const hdrs=["Product / SKUs","Annual Test Requirements","Schedule per Test"];
 
   let h=`<div style="padding:14px 18px">`;
 
@@ -1825,7 +1821,8 @@ function renderMonitoring(){
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
       ${clearFocusBtn}
       ${(monSearchQ||monFilterStatus!=="ALL"||monFilterDecision!=="ALL"||monFocusParent||monFilterPriority!=="ALL")?`<button onclick="clearMonFilters()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear all</button>`:""}
-      <button onclick="exportMonitoringExcel()" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer">📊 Export Excel</button>
+      ${(()=>{ const lg=cdLegacyDeferCandidates(); return lg.cands.length?`<button onclick="cdOpenLegacyDefer()" title="Items you earlier ticked Defer in the old Management Decision column" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1.5px solid #c0d8f8;border-radius:8px;cursor:pointer">🔵 Move deferred items (${lg.cands.length})</button>`:""; })()}
+      <button onclick="exportMonitoringExcel()" style="${cdLegacyDeferCandidates().cands.length?"":"margin-left:auto;"}display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer">📊 Export Excel</button>
     </div>
     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">
       <span style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">Priority:</span>
@@ -1842,10 +1839,6 @@ function renderMonitoring(){
       ${sBtn("due_soon","🟡 Due Soon","#b07000")}
       ${sBtn("ok","🟢 On Track","#0a7a46")}
       ${sBtn("deferred","🔵 Deferred","#0055bb")}
-      <span style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px;margin-left:8px">Decision:</span>
-      ${dBtn("ALL","All")}
-      ${dBtn("now","✓ Retest Now")}
-      ${dBtn("next","🔵 Deferred")}
     </div>
   </div>`;
 
@@ -1929,37 +1922,12 @@ function renderMonitoring(){
         }).join("")}
       </div>`;
 
-      // Management Decision cell
-      const decisionCell=`<div style="padding:10px 12px">
-        ${subsWith2024.length===0?`<span style="color:#bbb;font-size:10px">—</span>`:subsWith2024.map(s=>{
-          const dec=getRetestDecision(donor.id,s.id);
-          const lastD=latestTestDate(s);
-          const lastYear=lastD?lastD.getFullYear():null;
-          const addYears=lastYear&&lastYear<=2024?2:1;
-          const retestYear=lastYear?lastYear+addYears:"—";
-          const standardDue=lastD?new Date(new Date(lastD).setFullYear(lastD.getFullYear()+addYears)):null;
-          const deferDate=standardDue?new Date(new Date(standardDue).setMonth(standardDue.getMonth()+12)):null;
-          const deferLabel=deferDate?fmtD(deferDate):"next year";
-          return `<div style="margin-bottom:8px;padding-bottom:8px;border-bottom:0.5px dashed #e0e0e0">
-            <div style="font-size:9px;font-weight:600;color:#555;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</div>
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:4px;padding:4px 7px;border-radius:6px;border:1px solid ${dec==="now"?"#ffc0c0":"#e0e3ea"};background:${dec==="now"?"#fff0f0":"#fafbfc"}">
-              <input type="checkbox" ${dec==="now"?"checked":""} onchange="toggleRetestNow('${donor.id}','${s.id}',this.checked)" onclick="event.stopPropagation()" style="width:12px;height:12px;cursor:pointer;accent-color:#c0392b"/>
-              <div style="font-size:10px"><div style="color:${dec==="now"?"#c0392b":"#555"};font-weight:${dec==="now"?"700":"500"}">Retest Now</div><div style="font-size:8px;color:#aaa">Target: ${retestYear}</div></div>
-            </label>
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:4px 7px;border-radius:6px;border:1px solid ${dec==="next"?"#c0d8f8":"#e0e3ea"};background:${dec==="next"?"#f0f6ff":"#fafbfc"}">
-              <input type="checkbox" ${dec==="next"?"checked":""} onchange="toggleRetestNext('${donor.id}','${s.id}',this.checked)" onclick="event.stopPropagation()" style="width:12px;height:12px;cursor:pointer;accent-color:#0073ea"/>
-              <div style="font-size:10px"><div style="color:${dec==="next"?"#0055bb":"#555"};font-weight:${dec==="next"?"700":"500"}">Defer</div><div style="font-size:8px;color:#aaa">Skip ${retestYear} → ${deferLabel}</div></div>
-            </label>
-          </div>`;
-        }).join("")}
-      </div>`;
-
       h+=`<div oncontextmenu="cdShowMonContextMenu(event,'${donor.id}')" style="display:grid;grid-template-columns:${cg};border-bottom:0.5px solid #e8eaed;align-items:start;cursor:context-menu">
-        ${productCell}${testCell}${scheduleCell}${decisionCell}
+        ${productCell}${testCell}${scheduleCell}
       </div>`;
     });
 
-    h+=`</div><div style="margin-top:8px;font-size:10px;color:#aaa;text-align:right">🟢 On Track >6mo · 🟡 Due Soon <6mo · 🔴 Retest Due = past due · Defer adds +12mo to due date · Right-click a row for Tracking/Deferred options</div>`;
+    h+=`</div><div style="margin-top:8px;font-size:10px;color:#aaa;text-align:right">🟢 On Track >6mo · 🟡 Due Soon <6mo · 🔴 Retest Due = past due · Right-click a row to send its tests to Tracking or Deferred</div>`;
   }
   h+=`</div>`;
   if(cdMonContextMenu) h+=cdMonContextMenuHtml();
@@ -2736,6 +2704,30 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="cdLegacyDefer"){
+    const {cands,npdSkipped}=cdLegacyDeferCandidates();
+    const n=cands.filter(c=>modal.sel.has(c.item.id)).length;
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this&&!modal.busy)closeModal()">
+      <div class="modal-box" style="max-width:760px;max-height:88vh;display:flex;flex-direction:column">
+        <div style="background:#0055bb;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+          <div style="color:#fff;font-weight:800;font-size:14px">🔵 Move deferred items to Deferred Items</div>
+          <button onclick="closeModal()" ${modal.busy?"disabled":""} style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+        </div>
+        <div style="padding:16px 20px;overflow-y:auto">
+          <div style="font-size:11.5px;color:#555;line-height:1.6;margin-bottom:12px">These products had one or more tests ticked <b>Defer</b> in the old Management Decision column. Tick the ones to move. Products where <b>every</b> test was deferred are ticked for you; products where only <b>some</b> were deferred are left unticked — if you move them, the remaining tests go to Tracking.</div>
+          ${cands.length?`<div style="border:1px solid #e3e8f0;border-radius:8px;overflow:hidden">${cands.map(c=>{ const on=modal.sel.has(c.item.id); return `<label style="display:flex;align-items:flex-start;gap:11px;padding:10px 14px;border-bottom:1px solid #f0f1f3;cursor:pointer;background:${on?"#f0f6ff":"#fff"}">
+            <input type="checkbox" ${on?"checked":""} ${modal.busy?"disabled":""} onchange="cdLegacyToggle('${esc(c.item.id)}',this.checked)" style="width:15px;height:15px;margin-top:2px;accent-color:#0073ea;flex-shrink:0"/>
+            <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700;color:#222">${esc(c.item.name)} ${c.item.prioritySku?`<span style="font-size:10px;font-weight:700;color:#0055bb;background:#e8f2ff;border-radius:6px;padding:1px 7px;margin-left:6px">${esc(c.item.prioritySku)}</span>`:""}</div>
+            <div style="font-size:10.5px;color:#777;margin-top:2px">Deferred: ${c.deferSubs.map(s=>esc(s.name)).join(" · ")}</div>
+            ${c.full?`<div style="font-size:10px;color:#0a7a46;font-weight:700;margin-top:3px">All tests deferred → whole product moves</div>`:`<div style="font-size:10px;color:#b36b00;font-weight:700;margin-top:3px">Only some deferred → ${c.otherSubs.length} other test${c.otherSubs.length!==1?"s":""} would go to Tracking</div>`}</div></label>`; }).join("")}</div>`:`<div style="padding:18px;text-align:center;color:#999;font-size:12px">Nothing left to move.</div>`}
+          ${npdSkipped?`<div style="margin-top:10px;font-size:11px;color:#777">NPD items are not included (${npdSkipped} skipped).</div>`:""}
+        </div>
+        <div style="padding:13px 20px;border-top:1px solid #eee;display:flex;gap:10px;justify-content:flex-end;flex-shrink:0">
+          <button onclick="closeModal()" ${modal.busy?"disabled":""} style="padding:9px 18px;font-size:12px;font-weight:600;color:#555;background:#f0f2f5;border:none;border-radius:7px;cursor:pointer">Cancel</button>
+          <button onclick="cdRunLegacyDefer()" ${(modal.busy||!n)?"disabled":""} style="padding:9px 22px;font-size:12px;font-weight:700;color:#fff;background:${(modal.busy||!n)?"#9bbfe9":"#0073ea"};border:none;border-radius:7px;cursor:${(modal.busy||!n)?"default":"pointer"}">${modal.busy?"Moving…":`Move ${n} item${n!==1?"s":""}`}</button>
+        </div>
+      </div>
+    </div>`;
   } else if(modal.type==="pcaAddPoToBatch"){
     const t=pcaTickets.find(x=>x.id===modal.ticketId);
     if(!t){ root.innerHTML=""; return; }
@@ -3016,7 +3008,7 @@ function renderModals(){
                 <label class="pmm-label">Channel</label>
                 <div style="display:flex;flex-wrap:wrap;gap:5px 14px;padding:9px 12px;border:1.5px solid #c8cdd7;border-radius:7px">
                   ${CD_CHANNEL_OPTIONS.map(o=>`<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:#333;cursor:pointer;white-space:nowrap">
-                    <input type="checkbox" ${channelArr.includes(o)?"checked":""} onchange="cdEditToggleChannel('${o}', this.checked)"/> ${esc(o)}
+                    <input type="checkbox" ${channelArr.includes(o)?"checked":""} onchange="cdEditToggleChannel('${String(o).replace(/'/g,"\\'")}', this.checked)"/> ${esc(o)}
                   </label>`).join("")}
                 </div>
               </div>
@@ -3032,11 +3024,9 @@ function renderModals(){
             <div class="pmm-field"><label class="pmm-label">Colors</label>${cdTa(d.colors,"modal.draft.colors=this.value")}</div>
           </div>
           <div class="pmm-card">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <div style="font-size:13px;font-weight:700;color:#333">Test Types</div>
-              <button onclick="cdEditAddTestType()" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:5px 12px;cursor:pointer">+ Add Test Type</button>
-            </div>
-            ${d.testTypes.map((tt,ti)=>cdEditTestTypeBlockHtml(tt,ti)).join("")}
+            <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:10px">Test Types</div>
+            ${cdTabStripHtml(d.testTypes,Math.min(d.activeTT||0,d.testTypes.length-1),"cdEditSelectTT","cdEditAddTestType","Test Type","+ Add Test Type",t=>t.name)}
+            ${cdEditTestTypeBlockHtml(d.testTypes[Math.min(d.activeTT||0,d.testTypes.length-1)],Math.min(d.activeTT||0,d.testTypes.length-1))}
           </div>
         </div>
         <div style="padding:14px 20px;border-top:1px solid #eee;display:flex;gap:10px;justify-content:flex-end;flex-shrink:0">
@@ -3084,7 +3074,7 @@ function supplierTableHtml(item,q){
   const needle=(q||"").toLowerCase();
   const list=(item.supplierTests||[]).filter(e=>!needle||((e.description||"")+" "+(e.supplier||"")).toLowerCase().includes(needle));
   const th=(h,i)=>`<div style="padding:5px 10px 5px ${i===0?"44px":"10px"};font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;border-right:0.5px solid #dde0e9">${h}</div>`;
-  let html=`<div style="display:grid;grid-template-columns:${grid};background:#eeeff5;border-bottom:0.5px solid #dde0e9">${["Test Type Description","Supplier","Tested Date","Test Report"].map(th).join("")}</div>`;
+  let html=`<div style="display:grid;grid-template-columns:${grid};background:#eeeff5;border-bottom:0.5px solid #dde0e9">${["Test Type","Supplier","Tested Date","Test Report"].map(th).join("")}</div>`;
   if(!list.length){
     return html+`<div style="padding:14px 44px;font-size:11px;color:#9aa3b5;font-style:italic">${(item.supplierTests||[]).length?"No supplier tests match your search.":"No supplier test data yet — add it from New Entry → Supplier Test Data."}</div>`;
   }
@@ -3422,6 +3412,12 @@ let cdDraft = {sku:"",parentSku:"",description:"",prioritySku:"",website:"",meet
 function cdNewExec(){ return {supplier:"",method:"",wwl:"",claim:"",report:"",lab:"",cost:"",date:"",samples:[{value:"",verdict:""}]}; }
 function cdNewTestType(){ return {name:"",std:"",criteria:"",target:"",equipment:"",accreditation:"",labs:"",execs:[cdNewExec()]}; }
 let cdTestTypes = [cdNewTestType()];
+let cdActiveTT = 0;                         // which test-type tab is open on the New Entry form
+// A horizontal strip of tabs, one per item, plus an "add" button. label(t) is the small second line.
+function cdTabStripHtml(items, active, selFn, addFn, noun, addLabel, sub){
+  return `<div class="tt-tabs">${items.map((t,i)=>{ const sb=sub?String(sub(t)||"").trim():""; return `<button type="button" class="tt-tab${i===active?" on":""}" onclick="${selFn}(${i})" title="${esc(sb)}"><span class="tt-n">${noun} ${i+1}</span><span class="tt-sub">${sb?esc(sb):"&nbsp;"}</span></button>`; }).join("")}<button type="button" class="tt-add" onclick="${addFn}()">${addLabel}</button></div>`;
+}
+function cdSelectTT(i){ cdActiveTT=Math.max(0,Math.min(i,cdTestTypes.length-1)); cdRenderNewEntry(); }
 // Guided setup for "Rhino-USA 3rd Party Test": find product -> parent SKU -> review -> choose tests -> form
 let cdWizard={active:true,done:false,step:1,query:"",matches:[],motherId:"",selSubs:new Set(),sug:[],sugIdx:-1,msg:"",refMode:"original",manual:0};
 function cdWzReset(){ cdWizard={active:true,done:false,step:1,query:"",matches:[],motherId:"",selSubs:new Set(),sug:[],sugIdx:-1,msg:"",refMode:"original",manual:0}; }
@@ -3550,13 +3546,13 @@ function cdIsPhysicalTest(tt){
 function cdSetPhysical(ti,on,edit){
   const tt=edit?modal.draft.testTypes[ti]:cdTestTypes[ti]; if(!tt) return;
   tt.physical=!!on; tt.physicalManual=true;
-  if(edit) renderModals(); else cdRenderNewEntry();
+  if(edit) cdEditRerender(); else cdRenderNewEntry();
 }
 // Typing a name re-checks the guess (only until the tick box has been set by hand).
 function cdNameChanged(ti,edit){
   const tt=edit?modal.draft.testTypes[ti]:cdTestTypes[ti]; if(!tt||tt.physicalManual) return;
   const p=CD_PHYS_RE.test(tt.name||"");
-  if(cdIsPhysicalTest(tt)!==p){ tt.physical=p; if(edit) renderModals(); else cdRenderNewEntry(); }
+  if(cdIsPhysicalTest(tt)!==p){ tt.physical=p; if(edit) cdEditRerender(); else cdRenderNewEntry(); }
 }
 function cdPhysToggleHtml(tt,ti,edit){
   return `<label style="display:flex;align-items:flex-start;gap:7px;margin:-4px 0 12px;font-size:11px;color:#555;cursor:pointer" title="Physical tests record WLL, break strength and results in lbs. Other tests record PASS / FAIL only.">
@@ -3742,8 +3738,13 @@ async function cdSaveFailEdit(){
   }
 }
 
-function cdAddTestType(){ cdTestTypes.push(cdNewTestType()); cdRenderNewEntry(); }
-function cdRemoveTestType(i){ cdTestTypes.splice(i,1); cdRenderNewEntry(); }
+function cdAddTestType(){ cdTestTypes.push(cdNewTestType()); cdActiveTT=cdTestTypes.length-1; cdRenderNewEntry(); }
+function cdRemoveTestType(i){
+  cdTestTypes.splice(i,1);
+  if(!cdTestTypes.length) cdTestTypes.push(cdNewTestType());
+  cdActiveTT=Math.max(0,Math.min(cdActiveTT>i?cdActiveTT-1:cdActiveTT,cdTestTypes.length-1));   // stay on a neighbouring tab
+  cdRenderNewEntry();
+}
 function cdAddExec(ti){ cdTestTypes[ti].execs.push(cdNewExec()); cdRenderNewEntry(); }
 function cdRemoveExec(ti,ei){ cdTestTypes[ti].execs.splice(ei,1); cdRenderNewEntry(); }
 function cdAddSample(ti,ei){ cdTestTypes[ti].execs[ei].samples.push({value:"",verdict:""}); cdRenderNewEntry(); }
@@ -3778,11 +3779,11 @@ function cdExecBlockHtml(tt, ti, ex, ei){
       ${tt.execs.length>1?`<button onclick="cdRemoveExec(${ti},${ei})" style="font-size:10px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:2px 7px;cursor:pointer">Remove</button>`:""}
     </div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Priority Supplier</label>${cdTa(ex.supplier,"cdTestTypes[${ti}].execs[${ei}].supplier=this.value")}</div>
-      <div class="pmm-field"><label class="pmm-label">Test Method</label>${cdTa(ex.method,"cdTestTypes[${ti}].execs[${ei}].method=this.value")}</div>
+      <div class="pmm-field"><label class="pmm-label">Priority Supplier</label>${cdTa(ex.supplier,`cdTestTypes[${ti}].execs[${ei}].supplier=this.value`)}</div>
+      <div class="pmm-field"><label class="pmm-label">Test Method</label>${cdTa(ex.method,`cdTestTypes[${ti}].execs[${ei}].method=this.value`)}</div>
     </div>
     ${cdExecPhysHtml(tt, ex, `cdTestTypes[${ti}].execs[${ei}]`, `cdAddSample(${ti},${ei})`, si=>`cdRemoveSample(${ti},${ei},${si})`)}
-    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label>${cdTa(ex.report,"cdTestTypes[${ti}].execs[${ei}].report=this.value")}</div>
+    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label>${cdTa(ex.report,`cdTestTypes[${ti}].execs[${ei}].report=this.value`)}</div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="cdTestTypes[${ti}].execs[${ei}].lab=this.value"/></div>
       <div class="pmm-field"><label class="pmm-label">Cost</label><input class="pmm-input" placeholder="$0.00" value="${esc(ex.cost)}" oninput="cdTestTypes[${ti}].execs[${ei}].cost=this.value"/></div>
@@ -3796,13 +3797,13 @@ function cdTestTypeBlockHtml(tt, ti){
       <div style="font-size:11.5px;font-weight:700;color:#0073ea">Test Type ${ti+1}${tt.fromWizard?` <span style="margin-left:8px;font-size:9.5px;font-weight:700;color:#0a7a46;background:#e3f6ec;border:1px solid #b8e6cf;border-radius:9px;padding:1px 9px">Existing test · new results are added to ${new Date().getFullYear()}</span>`:""}</div>
       ${cdTestTypes.length>1?`<button onclick="cdRemoveTestType(${ti})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
     </div>
-    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label>${cdTa(tt.name,"cdTestTypes[${ti}].name=this.value",`onchange="cdNameChanged(${ti},false)"`)}</div>
+    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label>${cdTa(tt.name,`cdTestTypes[${ti}].name=this.value`,`onchange="cdNameChanged(${ti},false)"`)}</div>
     ${cdPhysToggleHtml(tt,ti,false)}
-    <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label>${cdTa(tt.criteria,"cdTestTypes[${ti}].criteria=this.value")}</div>
-    <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label>${cdTa(tt.target,"cdTestTypes[${ti}].target=this.value")}</div>
+    <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label>${cdTa(tt.criteria,`cdTestTypes[${ti}].criteria=this.value`)}</div>
+    <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label>${cdTa(tt.target,`cdTestTypes[${ti}].target=this.value`)}</div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Required Lab Equipment <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.equipment,"cdTestTypes[${ti}].equipment=this.value")}</div>
-      <div class="pmm-field"><label class="pmm-label">Lab Accreditation <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.accreditation,"cdTestTypes[${ti}].accreditation=this.value")}</div>
+      <div class="pmm-field"><label class="pmm-label">Required Lab Equipment <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.equipment,`cdTestTypes[${ti}].equipment=this.value`)}</div>
+      <div class="pmm-field"><label class="pmm-label">Lab Accreditation <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.accreditation,`cdTestTypes[${ti}].accreditation=this.value`)}</div>
     </div>
     <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #dde0e7">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -3813,97 +3814,145 @@ function cdTestTypeBlockHtml(tt, ti){
     </div>
   </div>`;
 }
-// ── New Entry: second button for supplier-provided test data ─────────────────
-// "Rhino-USA 3rd Party Test" is the existing form. "Supplier Test Data" records tests the
-// SUPPLIER did, against a product that already exists. Each one is saved as its own row in the
-// Subitems sheet, in the "Supplier Test Data" column, in this simple format:
-//   Test type Description: ...  /  Test Report Link: ...  /  Tested Date: ...  /  Supplier: ...
+// ── New Entry: Supplier Test Data ──────────────────────────────────────────────
+// Same guided flow as the Rhino-USA 3rd Party Test (find product -> parent SKU -> enter data) but without the
+// review / choose-tests steps. The tests the SUPPLIER did are saved on the product's row in the Items sheet, in
+// the "Supplier Test Data" column, one block per test, blocks separated by a blank line:
+//   Test type: ...
+//   Test Report Link: ...
+//   Tested Date: ...
+//   Supplier: ...
 let cdNewMode="rhino";
 function cdSupNewEntry(){ return {description:"",link:"",date:"",supplier:""}; }
-let cdSupDraft={sku:"",entries:[cdSupNewEntry()]};
-let cdSupSubmitting=false;
-function cdSetNewMode(m){ cdNewMode=m; cdRenderNewEntry(); }
+let cdSupTests=[cdSupNewEntry()], cdActiveSup=0, cdSupSubmitting=false;
+function cdBlankDraft(){ return {sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]}; }
+function cdEntryHasData(){
+  return !!(cdDraft.sku||cdDraft.description||cdTestTypes.some(t=>(t.name||"").trim()||t.execs.some(e=>e.supplier||e.method||e.date||e.lab||e.report))||cdSupTests.some(t=>t.description||t.link||t.supplier||t.date));
+}
+function cdSetNewMode(m){
+  if(m===cdNewMode) return;
+  if(cdEntryHasData() && !confirm("Switch to the other entry type? What you've entered so far will be cleared.")) return;
+  cdDraft=cdBlankDraft(); cdTestTypes=[cdNewTestType()]; cdActiveTT=0; cdSupTests=[cdSupNewEntry()]; cdActiveSup=0;
+  cdClearLookupRecommendations(); cdWzReset(); cdNewMode=m; cdRenderNewEntry();
+}
 function cdNewModeBarHtml(){
   const b=(k,label,sub)=>`<button onclick="cdSetNewMode('${k}')" style="flex:1;min-width:230px;text-align:left;padding:11px 15px;cursor:pointer;border-radius:10px;border:1.5px solid ${cdNewMode===k?"#0073ea":"#dde0e7"};background:${cdNewMode===k?"#e8f2ff":"#fff"};box-shadow:${cdNewMode===k?"0 1px 5px rgba(0,115,234,.25)":"none"}"><div style="font-size:12.5px;font-weight:800;color:${cdNewMode===k?"#0055bb":"#444"}">${label}</div><div style="font-size:10.5px;color:#888;margin-top:2px;font-weight:400">${sub}</div></button>`;
   return `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">${b("rhino","Rhino-USA 3rd Party Test","New product, test types and results")}${b("supplier","Supplier Test Data","Tests done by the supplier, for an existing product")}</div>`;
 }
 function cdFormatSupplierTest(e){
-  return [`Test type Description: ${cdOneLine(e.description)}`,`Test Report Link: ${cdOneLine(e.link)}`,`Tested Date: ${e.date?cdFmtDateUS(e.date):""}`,`Supplier: ${cdOneLine(e.supplier)}`].join("\n");
+  return [`Test type: ${cdOneLine(e.description)}`,`Test Report Link: ${cdOneLine(e.link)}`,`Tested Date: ${e.date?cdFmtDateUS(e.date):""}`,`Supplier: ${cdOneLine(e.supplier)}`].join("\n");
 }
-function cdSupAddEntry(){ cdSupDraft.entries.push(cdSupNewEntry()); cdRenderNewEntry(); }
-function cdSupRemoveEntry(i){ cdSupDraft.entries.splice(i,1); if(!cdSupDraft.entries.length) cdSupDraft.entries.push(cdSupNewEntry()); cdRenderNewEntry(); }
-// Updates only the status line (never re-renders the form) so typing/clicking is never interrupted.
-function cdSupUpdateStatus(){
-  const el=document.getElementById("cd-sup-status"); if(!el) return;
-  const sku=(cdSupDraft.sku||"").trim();
-  if(!sku){ el.innerHTML=""; return; }
-  const item=cdFindExistingItemBySku(sku);
-  el.innerHTML=item
-    ? `<span style="color:#0a7a46;font-weight:700">✓ ${esc(item.name)}</span>${item.description?` <span style="color:#666">— ${esc(item.description)}</span>`:""}`
-    : `<span style="color:#c0392b">No product with this SKU yet. Add the product first under “Rhino-USA 3rd Party Test”.</span>`;
+function cdSupSelect(i){ cdActiveSup=Math.max(0,Math.min(i,cdSupTests.length-1)); cdRenderNewEntry(); }
+function cdSupAdd(){ cdSupTests.push(cdSupNewEntry()); cdActiveSup=cdSupTests.length-1; cdRenderNewEntry(); }
+function cdSupRemove(i){
+  cdSupTests.splice(i,1);
+  if(!cdSupTests.length) cdSupTests.push(cdSupNewEntry());
+  cdActiveSup=Math.max(0,Math.min(cdActiveSup>i?cdActiveSup-1:cdActiveSup,cdSupTests.length-1));
+  cdRenderNewEntry();
 }
-function cdRenderSupplierEntry(wrap){
-  const d=cdSupDraft;
-  const fld=(i,key,label,type,ph)=>`<div class="pmm-field"><label class="pmm-label">${label}</label>${type==="area"
-    ?cdTa(d.entries[i][key],`cdSupDraft.entries[${i}].${key}=this.value`,`placeholder="${ph||""}"`)
-    :`<input class="pmm-input" type="${type}" value="${esc(d.entries[i][key])}" oninput="cdSupDraft.entries[${i}].${key}=this.value" placeholder="${ph||""}"/>`}</div>`;
-  wrap.innerHTML=`<div style="max-width:900px;margin:0 auto;padding:20px 0">${cdNewModeBarHtml()}
-    <div class="pmm-card">
-      <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:4px">Supplier Test Data</div>
-      <div style="font-size:11px;color:#777;margin-bottom:14px">Record tests the supplier performed. Pick an existing product, then add one or more supplier tests. These appear in the main table under <b>Supplier Test Data</b> for that product.</div>
-      <div class="pmm-field">
-        <label class="pmm-label">Product SKU</label>
-        <input class="pmm-input" value="${esc(d.sku)}" oninput="cdSupDraft.sku=this.value;cdSupUpdateStatus()" onblur="cdSupUpdateStatus()" placeholder="e.g. HD-RATCHETKIT-4PK"/>
-        <div id="cd-sup-status" style="font-size:10.5px;margin-top:4px"></div>
-      </div>
+function cdSupTestHtml(t,i){
+  const fld=(label,inner)=>`<div class="pmm-field"><label class="pmm-label">${label}</label>${inner}</div>`;
+  return `<div style="border:1.5px solid #e0e3ea;border-radius:8px;padding:14px;background:#fafbfc">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:11.5px;font-weight:700;color:#0073ea">Supplier Test ${i+1}</div>
+      ${cdSupTests.length>1?`<button onclick="cdSupRemove(${i})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
     </div>
-    ${d.entries.map((e,i)=>`<div class="pmm-card" style="border-left:4px solid #0073ea">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <div style="font-size:12px;font-weight:700;color:#0073ea">Supplier Test ${i+1}</div>
-        ${d.entries.length>1?`<button onclick="cdSupRemoveEntry(${i})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
-      </div>
-      ${fld(i,"description","Test type Description","area","e.g. Salt spray test, 96 hours, on the ratchet housing")}
-      ${fld(i,"link","Test Report Link","url","https://drive.google.com/…")}
-      <div class="pmm-grid2">${fld(i,"date","Tested Date","date")}${fld(i,"supplier","Supplier","text","Supplier name")}</div>
-    </div>`).join("")}
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <button onclick="cdSupAddEntry()" style="font-size:11.5px;font-weight:700;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:8px;padding:9px 16px;cursor:pointer">+ Add another supplier test</button>
-      <button id="cd-sup-submit" onclick="cdSubmitSupplierData()" style="font-size:12px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:8px;padding:10px 24px;cursor:pointer;margin-left:auto">✓ Submit Supplier Test Data</button>
+    ${fld("Test type",cdTa(t.description,`cdSupTests[${i}].description=this.value`,'placeholder="e.g. Salt spray test, 96 hours, on the ratchet housing"'))}
+    ${fld("Test Report Link",cdTa(t.link,`cdSupTests[${i}].link=this.value`,'placeholder="https://drive.google.com/…"'))}
+    <div class="pmm-grid2">
+      ${fld("Tested Date",`<input type="date" class="pmm-input" value="${esc(t.date)}" oninput="cdSupTests[${i}].date=this.value"/>`)}
+      ${fld("Supplier",cdTa(t.supplier,`cdSupTests[${i}].supplier=this.value`,'placeholder="Supplier name"'))}
     </div>
   </div>`;
-  cdSupUpdateStatus();
+}
+function cdRenderSupplierEntry(wrap){
+  if(cdWizard.active && !cdWizard.done){ cdRenderWizard(wrap); return; }
+  if(cdActiveSup>=cdSupTests.length) cdActiveSup=cdSupTests.length-1;
+  wrap.innerHTML=`<div style="max-width:900px;margin:0 auto;padding:20px 0">${cdNewModeBarHtml()}${cdWzFormTopHtml()}
+    ${cdProductDetailsHtml()}
+    <div class="pmm-card">
+      <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:3px">Supplier Tests</div>
+      <div style="font-size:11px;color:#777;margin-bottom:10px">Tests the supplier performed. They are saved on the product's row in the Items sheet (column <b>Supplier Test Data</b>) and show in the main table under <b>Supplier Test Data</b>.</div>
+      ${cdTabStripHtml(cdSupTests,cdActiveSup,"cdSupSelect","cdSupAdd","Supplier Test","+ Add Supplier Test",t=>t.description)}
+      ${cdSupTestHtml(cdSupTests[cdActiveSup],cdActiveSup)}
+    </div>
+    <div style="display:flex;gap:10px">
+      <button onclick="cdResetNewEntryForm()" style="padding:13px 22px;font-size:13px;font-weight:700;color:#555;background:#f0f2f5;border:none;border-radius:9px;cursor:pointer">↺ Reset</button>
+      <button id="cd-sup-submit" onclick="cdSubmitSupplierData()" style="flex:1;padding:13px;font-size:13px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:9px;cursor:pointer">✓ Submit Supplier Test Data</button>
+    </div>
+  </div>`;
+}
+// Appends an Items-row field list, or a whole new Items row.
+async function cdAppendItemRow(itemsMap, values){
+  const row=cdBuildRow(itemsMap, values);
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
+  const res=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[row]})});
+  cdCheckAuthError(res);
+  if(!res.ok){ const t=await res.text(); throw new Error(`Could not save item (${res.status}): ${t.slice(0,150)}`); }
+}
+// Adds text to the END of one cell on an Items row, after a blank line -- what is already there is never replaced.
+async function cdAppendItemCell(rowId, colName, text){
+  const map=await cdEnsureColumn(ITEMS_SHEET, colName);
+  if(map.id===undefined||map[colName]===undefined) throw new Error(`The "${ITEMS_SHEET}" sheet has no "${colName}" column.`);
+  const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(ITEMS_SHEET)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
+  cdCheckAuthError(res);
+  if(!res.ok) throw new Error(`Could not read "${ITEMS_SHEET}" (${res.status})`);
+  const rows=(await res.json()).values||[];
+  let rowIndex=-1;
+  for(let r=1;r<rows.length;r++){ if((rows[r][map.id]||"").trim()===String(rowId)){ rowIndex=r+1; break; } }
+  if(rowIndex===-1) throw new Error(`Could not find item #${rowId} in the "${ITEMS_SHEET}" sheet.`);
+  const cur=String((rows[rowIndex-1]||[])[map[colName]]||"").replace(/\s+$/,"");
+  const gid=await pmmGetSheetGidFor(ITEMS_SHEET);
+  const bres=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
+    body:JSON.stringify({requests:[{updateCells:{range:{sheetId:gid,startRowIndex:rowIndex-1,endRowIndex:rowIndex,startColumnIndex:map[colName],endColumnIndex:map[colName]+1},rows:[{values:[{userEnteredValue:{stringValue:cur?cur+"\n\n"+text:text}}]}],fields:"userEnteredValue"}}]})});
+  cdCheckAuthError(bres);
+  if(!bres.ok){ const t=await bres.text(); throw new Error(`Could not save (${bres.status}): ${t.slice(0,150)}`); }
+}
+// Saves the PRODUCT side of an entry (same rules as the Rhino-USA 3rd Party Test) and says which item row the data belongs on.
+async function cdSaveItemRowForEntry(){
+  const itemsMap=await cdGetHeaderMap(ITEMS_SHEET);
+  const d=cdDraft, sku=(d.sku||"").trim(), existing=cdFindExistingItemBySku(sku);
+  const channel=Array.isArray(d.channel)?d.channel.join(", "):d.channel;
+  const all={parentSku:d.parentSku,description:d.description,prioritySku:d.prioritySku,website:d.website,meetsClaim:d.meetsClaim,mechTesting:d.mechTesting,chemTesting:d.chemTesting,corrTesting:d.corrTesting,country:d.country,colors:d.colors,channel};
+  if(cdWzInheritActive()){
+    // Original reference: the data goes on the MOTHER's row; this SKU keeps only its own fields.
+    const mother=cdWzMother();
+    const own={parentSku:(d.parentSku||"").trim()||cdWzParentKey(mother),description:d.description,prioritySku:d.prioritySku,website:d.website,country:d.country,colors:d.colors,channel};
+    if(existing) await cdUpdateItemFields(existing.rowId,{name:sku,...own});
+    else await cdAppendItemRow(itemsMap,{id:cdGenerateId(),name:sku,group:cdWzMotherGroupName()||"Uncategorized",...own});
+    const shared={}; CD_INHERITED_FIELDS.forEach(f=>{ if(String(d[f]||"")!==String(mother[f]||"")) shared[f]=d[f]||""; });
+    if(Object.keys(shared).length) await cdUpdateItemFields(mother.rowId,shared);
+    return {rowId:mother.rowId,name:mother.name,original:true,shared:Object.keys(shared).length};
+  }
+  if(existing){ await cdUpdateItemFields(existing.rowId,{name:sku,...all}); return {rowId:existing.rowId,name:existing.name}; }
+  const id=cdGenerateId();
+  await cdAppendItemRow(itemsMap,{id,name:sku,group:(cdWizard.done?(cdWzMotherGroupName()||"Uncategorized"):"Uncategorized"),...all});
+  return {rowId:id,name:sku,created:true};
 }
 async function cdSubmitSupplierData(){
   if(cdSupSubmitting) return;
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
-  const d=cdSupDraft;
-  const item=cdFindExistingItemBySku(d.sku||"");
-  if(!item){ alert('Enter the SKU of a product that already exists. A new product has to be added first under "Rhino-USA 3rd Party Test".'); return; }
-  const entries=d.entries.filter(e=>(e.description||"").trim()||(e.link||"").trim()||e.date||(e.supplier||"").trim());
+  const sku=(cdDraft.sku||"").trim();
+  if(!sku){ alert("Type the SKU these supplier tests belong to."); return; }
+  const entries=cdSupTests.filter(e=>(e.description||"").trim()||(e.link||"").trim()||e.date||(e.supplier||"").trim());
   if(!entries.length){ alert("Fill in at least one supplier test."); return; }
   const noDesc=entries.findIndex(e=>!(e.description||"").trim());
-  if(noDesc!==-1){ alert(`Supplier Test ${noDesc+1} needs a Test type Description.`); return; }
+  if(noDesc!==-1){ alert(`Supplier Test ${noDesc+1} needs a Test type.`); return; }
   const badLink=entries.findIndex(e=>(e.link||"").trim() && !/^https?:\/\//i.test(e.link.trim()));
   if(badLink!==-1){ alert(`The Test Report Link on Supplier Test ${badLink+1} must start with http:// or https://`); return; }
   cdSupSubmitting=true;
   const btn=document.getElementById("cd-sup-submit"); if(btn){ btn.disabled=true; btn.style.opacity=".6"; btn.textContent="Submitting…"; }
   try{
-    const map=await cdEnsureColumn(SUBITEMS_SHEET,"Supplier Test Data");   // creates the column the first time
-    const used=new Set();
-    const rows=entries.map(e=>{
-      let sid; do{ sid=cdGenerateSubId(); }while(used.has(sid)); used.add(sid);
-      return cdBuildRow(map,{parent_item_id:item.rowId, s:sid, name:cdOneLine(e.description).slice(0,100), "Supplier Test Data":cdFormatSupplierTest(e)});
-    });
-    const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(SUBITEMS_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
-    const res=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:rows})});
-    cdCheckAuthError(res);
-    if(!res.ok){ const t=await res.text(); throw new Error(`Could not save (${res.status}): ${t.slice(0,150)}`); }
-    const n=rows.length, name=item.name, itemId=item.id;
-    cdSupDraft={sku:"",entries:[cdSupNewEntry()]};
+    const saved=await cdSaveItemRowForEntry();
+    await cdAppendItemCell(saved.rowId,"Supplier Test Data",entries.map(cdFormatSupplierTest).join("\n\n"));
+    const n=entries.length;
+    cdDraft=cdBlankDraft(); cdSupTests=[cdSupNewEntry()]; cdActiveSup=0; cdWzReset();
     await fetchSheetData();
-    iExp[itemId]=true; iTab[itemId]="supplier";   // so it's right there next time they open the main table
+    iExp["i"+saved.rowId]=true; iTab["i"+saved.rowId]="supplier";
     cdRenderNewEntry();
-    alert(`Saved ${n} supplier test${n!==1?"s":""} for ${name}. Open the Main Table, expand the product and choose "Supplier Test Data" to see ${n!==1?"them":"it"}.`);
+    alert(saved.original
+      ? `Saved ${n} supplier test${n!==1?"s":""} under the original reference #${saved.rowId} (${saved.name}); ${sku} is linked to it.`+(saved.shared?` The shared fields you changed were updated on ${saved.name}.`:"")
+      : `Saved ${n} supplier test${n!==1?"s":""} for ${saved.name}. Open the Main Table, expand the product and choose "Supplier Test Data" to see ${n!==1?"them":"it"}.`);
   }catch(e){
     alert("Could not submit: "+e.message);
   }finally{
@@ -3955,8 +4004,9 @@ function cdWzGroups(matches){
   }).sort((a,b)=>a.key.localeCompare(b.key));
 }
 function cdWzStepperHtml(){
-  const names=["Find product","Parent SKU","Review","Choose tests","Enter results"];
-  const cur=cdWizard.done?5:cdWizard.step;
+  const sup=cdNewMode==="supplier";
+  const names=sup?["Find product","Parent SKU","Enter supplier data"]:["Find product","Parent SKU","Review","Choose tests","Enter results"];
+  const cur=cdWizard.done?names.length:cdWizard.step;
   return `<div class="wz-steps">${names.map((n,i)=>{ const k=i+1, st=k<cur?"done":k===cur?"on":""; return `<div class="wz-step ${st}"><span class="wz-dot">${k<cur?"✓":k}</span><span class="wz-lbl">${n}</span></div>`; }).join('<div class="wz-line"></div>')}</div>`;
 }
 // ---- step 1: search ----
@@ -4042,7 +4092,15 @@ function cdWzStep2Html(){
   </div>`;
 }
 function cdWzSelectMother(id){ cdWizard.motherId=id; cdRenderNewEntry(); }
-function cdWzConfirmParent(){ if(!cdWzMother()) return; cdWizard.step=3; cdWizard.selSubs=new Set(); cdRenderNewEntry(); }
+function cdWzApplySupplier(){
+  const m=cdWzMother(); if(!m) return;
+  cdDraft={sku:"",parentSku:cdWzParentKey(m),description:"",prioritySku:m.prioritySku||"",website:m.websiteUrl||"",meetsClaim:m.meetsClaim||"",mechTesting:m.mechTesting||"",chemTesting:m.chemTesting||"",corrTesting:m.corrTesting||"",country:m.country||"",colors:m.colors||"",channel:m.channel?String(m.channel).split(",").map(x=>x.trim()).filter(Boolean):[]};
+  cdSupTests=[cdSupNewEntry()]; cdActiveSup=0;
+  cdWizard.done=true; cdWizard.active=true; cdWizard.refMode="original";
+  cdRenderNewEntry();
+  window.scrollTo&&window.scrollTo(0,0);
+}
+function cdWzConfirmParent(){ if(!cdWzMother()) return; if(cdNewMode==="supplier"){ cdWzApplySupplier(); return; } cdWizard.step=3; cdWizard.selSubs=new Set(); cdRenderNewEntry(); }
 // ---- step 3: review everything on file ----
 function cdWzResultChips(sub){
   const ys=Object.keys(sub.yearBlocks||{}).filter(y=>(sub.yearBlocks[y]||[]).length).sort();
@@ -4112,7 +4170,7 @@ function cdWzApply(){
   const tts=chosen.map(sub=>({subId:sub.rowId,name:sub.name||"",std:sub.std||"",criteria:sub.criteria||"",target:sub.target||"",equipment:sub.equipment||"",accreditation:sub.accreditation||"",labs:sub.labs||"",execs:[cdNewExec()],fromWizard:true,appendToExisting:true,
     physical:CD_PHYS_RE.test(sub.name||"")||Object.values(sub.yearBlocks||{}).flat().some(b=>b.wwl||b.claim)}));
   for(let k=0;k<man;k++){ const t=cdNewTestType(); t.newUnderReference=true; tts.push(t); }     // a test that isn't listed: created as a NEW row under the same reference
-  cdTestTypes=tts.length?tts:[cdNewTestType()];
+  cdTestTypes=tts.length?tts:[cdNewTestType()]; cdActiveTT=0;
   cdClearLookupRecommendations();
   cdWizard.done=true; cdWizard.active=true; cdWizard.refMode="original";
   cdRenderNewEntry();
@@ -4122,7 +4180,7 @@ function cdWzUseMotherSku(){ const m=cdWzMother(); if(!m) return; cdDraft.sku=m.
 function cdWzRestart(){
   if(!confirm("Start the guided setup again? What you've entered in the form will be cleared.")) return;
   cdDraft={sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]};
-  cdTestTypes=[cdNewTestType()]; cdClearLookupRecommendations(); cdWzReset(); cdRenderNewEntry();
+  cdTestTypes=[cdNewTestType()]; cdActiveTT=0; cdSupTests=[cdSupNewEntry()]; cdActiveSup=0; cdClearLookupRecommendations(); cdWzReset(); cdRenderNewEntry();
 }
 function cdWzUseGuided(){ cdWzReset(); cdRenderNewEntry(); }
 // ---- "Original reference" support ----
@@ -4151,14 +4209,14 @@ function cdWzFormTopHtml(){
     const m=cdWzMother(), n=cdTestTypes.filter(t=>t.fromWizard).length, man=cdTestTypes.filter(t=>t.newUnderReference).length;
     const opt=(mode,title,desc)=>{ const on=cdWizard.refMode===mode; return `<label style="flex:1;min-width:290px;display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border-radius:10px;cursor:pointer;border:1.5px solid ${on?"#0073ea":"#dde0e7"};background:${on?"#eef6ff":"#fff"}"><input type="radio" name="cd-ref-mode" style="margin-top:3px" ${on?"checked":""} onchange="cdWzSetRefMode('${mode}')"/><span><div style="font-size:12px;font-weight:800;color:${on?"#0055bb":"#333"}">${title}</div><div style="font-size:10.5px;color:#666;margin-top:3px;line-height:1.55">${desc}</div></span></label>`; };
     return `${cdWzStepperHtml()}<div style="background:#eef6ff;border:1.5px solid #c0d8f8;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-      <div style="flex:1;min-width:260px"><div style="font-size:12.5px;font-weight:800;color:#0055bb">Setup complete — now enter the new results</div>
-      <div style="font-size:11px;color:#555;margin-top:3px;line-height:1.5">Parent SKU <b>${esc(cdDraft.parentSku)}</b> · mother SKU <b>${esc(m?m.name:"")}</b> · ${n} existing test${n!==1?"s":""}${man?` + ${man} added manually`:""}. Type the SKU name below — its description, colour and priority SKU are filled in from Items, then the Master Data sheet.</div></div>
+      <div style="flex:1;min-width:260px"><div style="font-size:12.5px;font-weight:800;color:#0055bb">Setup complete — now enter the ${cdNewMode==="supplier"?"supplier test data":"new results"}</div>
+      <div style="font-size:11px;color:#555;margin-top:3px;line-height:1.5">Parent SKU <b>${esc(cdDraft.parentSku)}</b> · mother SKU <b>${esc(m?m.name:"")}</b>${cdNewMode==="supplier"?"":` · ${n} existing test${n!==1?"s":""}${man?` + ${man} added manually`:""}`}. Type the SKU name below — its description, colour and priority SKU are filled in from Items, then the Master Data sheet.</div></div>
       ${m?`<button onclick="cdWzUseMotherSku()" class="wz-btn sec" style="font-size:11px;padding:7px 14px;background:#fff;border:1px solid #c0d8f8;color:#0055bb">Use ${esc(m.name)} (retest this SKU)</button>`:""}
       <button onclick="cdWzRestart()" class="wz-btn sec" style="font-size:11px;padding:7px 14px">↺ Change selection</button></div>
     ${m?`<div class="pmm-card" style="padding:14px 16px"><div style="font-size:12.5px;font-weight:800;color:#222;margin-bottom:9px">Where should the results be saved?</div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        ${opt("original",`Original reference · #${esc(m.rowId)} · ${esc(m.name)} <span style="font-size:9px;font-weight:700;color:#0a7a46;background:#e3f6ec;border-radius:8px;padding:1px 7px;margin-left:6px">recommended</span>`,`All results and test edits are saved once, under the mother SKU. The SKU you type links to it. Only its parent SKU, description, priority SKU, website, sale country, colors and channel belong to that SKU — the rest comes from the mother, and changes to those fields update the mother in the Google Sheet.`)}
-        ${opt("new","Create a new reference",`The SKU you type becomes its own item with its own reference number and its own copy of these tests.`)}
+        ${opt("original",`Original reference · #${esc(m.rowId)} · ${esc(m.name)} <span style="font-size:9px;font-weight:700;color:#0a7a46;background:#e3f6ec;border-radius:8px;padding:1px 7px;margin-left:6px">recommended</span>`,(cdNewMode==="supplier"?`The supplier tests are saved once, on the mother SKU's row. The SKU you type links to it.`:`All results and test edits are saved once, under the mother SKU. The SKU you type links to it.`)+`  Only its parent SKU, description, priority SKU, website, sale country, colors and channel belong to that SKU — the rest comes from the mother, and changes to those fields update the mother in the Google Sheet.`)}
+        ${opt("new","Create a new reference",(cdNewMode==="supplier"?`The SKU you type becomes its own item with its own reference number and its own supplier test data.`:`The SKU you type becomes its own item with its own reference number and its own copy of these tests.`))}
       </div></div>`:""}`;
   }
   if(!cdWizard.active) return `<div style="margin-bottom:12px"><button onclick="cdWzUseGuided()" style="background:#e8f2ff;border:1px solid #c0d8f8;color:#0055bb;font-size:11.5px;font-weight:700;border-radius:8px;padding:7px 14px;cursor:pointer">🧭 Use the guided setup (find an existing product first)</button></div>`;
@@ -4171,14 +4229,10 @@ function cdRenderWizard(wrap){
   if(w.step===1){ const el=document.getElementById("cd-wz-q"); if(el){ el.focus(); const n=el.value.length; try{ el.setSelectionRange(n,n); }catch(e){} cdWzUpdateSug(); } }
 }
 
-function cdRenderNewEntry(){
-  const wrap=document.getElementById("board-wrap"); if(!wrap) return;
-  if(cdNewMode==="supplier"){ cdRenderSupplierEntry(wrap); return; }
-  if(cdWizard.active && !cdWizard.done){ cdRenderWizard(wrap); return; }
+function cdProductDetailsHtml(){
   const d=cdDraft;
   const channelArr=Array.isArray(d.channel)?d.channel:(d.channel?String(d.channel).split(",").map(s=>s.trim()).filter(Boolean):[]);
-  let html=`<div style="max-width:900px;margin:0 auto;padding:20px 0">${cdNewModeBarHtml()}${cdWzFormTopHtml()}`;
-  html+=`<div class="pmm-card">
+  return `<div class="pmm-card">
     <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:16px">Product Details</div>
     <div class="pmm-grid2">
       <div class="pmm-field">
@@ -4210,7 +4264,7 @@ function cdRenderNewEntry(){
         <label class="pmm-label">Channel <span style="color:#aaa;font-weight:400">(select all that apply)</span></label>
         <div style="display:flex;flex-wrap:wrap;gap:5px 14px;padding:9px 12px;border:1.5px solid #c8cdd7;border-radius:7px">
           ${CD_CHANNEL_OPTIONS.map(o=>`<label style="display:flex;align-items:center;gap:5px;font-size:11.5px;color:#333;cursor:pointer;white-space:nowrap">
-            <input type="checkbox" ${channelArr.includes(o)?"checked":""} onchange="cdToggleChannel('${o}', this.checked)"/> ${esc(o)}
+            <input type="checkbox" ${channelArr.includes(o)?"checked":""} onchange="cdToggleChannel('${String(o).replace(/'/g,"\\'")}', this.checked)"/> ${esc(o)}
           </label>`).join("")}
         </div>
       </div>
@@ -4226,13 +4280,22 @@ function cdRenderNewEntry(){
     <div class="pmm-field"><label class="pmm-label">Colors</label>${cdTa(d.colors,"cdDraft.colors=this.value")}</div>
     ${cdIdNoteHtml()}
   </div>`;
+}
+
+function cdRenderNewEntry(){
+  const wrap=document.getElementById("board-wrap"); if(!wrap) return;
+  if(cdNewMode==="supplier"){ cdRenderSupplierEntry(wrap); return; }
+  if(cdWizard.active && !cdWizard.done){ cdRenderWizard(wrap); return; }
+  const d=cdDraft;
+  const channelArr=Array.isArray(d.channel)?d.channel:(d.channel?String(d.channel).split(",").map(s=>s.trim()).filter(Boolean):[]);
+  let html=`<div style="max-width:900px;margin:0 auto;padding:20px 0">${cdNewModeBarHtml()}${cdWzFormTopHtml()}`;
+  html+=cdProductDetailsHtml();
   html+=cdRecommendedTestTypesHtml();
+  if(cdActiveTT>=cdTestTypes.length) cdActiveTT=cdTestTypes.length-1;
   html+=`<div class="pmm-card">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <div style="font-size:13px;font-weight:700;color:#333">Test Types</div>
-      <button onclick="cdAddTestType()" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:5px 12px;cursor:pointer">+ Add Test Type</button>
-    </div>
-    ${cdTestTypes.map((tt,ti)=>cdTestTypeBlockHtml(tt,ti)).join("")}
+    <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:10px">Test Types</div>
+    ${cdTabStripHtml(cdTestTypes,cdActiveTT,"cdSelectTT","cdAddTestType","Test Type","+ Add Test Type",t=>t.name)}
+    ${cdTestTypeBlockHtml(cdTestTypes[cdActiveTT],cdActiveTT)}
   </div>`;
   html+=`<div style="display:flex;gap:10px">
     <button onclick="cdResetNewEntryForm()" style="padding:13px 22px;font-size:13px;font-weight:700;color:#555;background:#f0f2f5;border:none;border-radius:9px;cursor:pointer">↺ Reset</button>
@@ -4242,10 +4305,10 @@ function cdRenderNewEntry(){
   wrap.innerHTML=html;
 }
 function cdResetNewEntryForm(){
-  const hasData = cdDraft.sku || cdDraft.description || cdTestTypes.some(tt=>tt.name.trim()||tt.std.trim());
-  if(hasData && !confirm("Reset the form? This clears everything you've entered so far.")) return;
-  cdDraft={sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]};
-  cdTestTypes=[cdNewTestType()];
+  if(cdEntryHasData() && !confirm("Reset the form? This clears everything you've entered so far.")) return;
+  cdDraft=cdBlankDraft();
+  cdSupTests=[cdSupNewEntry()]; cdActiveSup=0;
+  cdTestTypes=[cdNewTestType()]; cdActiveTT=0;
   cdClearLookupRecommendations();
   const skipped=!cdWizard.active; cdWzReset(); if(skipped) cdWizard.active=false;   // keep manual mode if they chose it
   cdRenderNewEntry();
@@ -4430,7 +4493,7 @@ async function cdLookupSku(){
   const existing=cdFindExistingItemBySku(sku);
   if(existing){
     cdApplyItemToDraft(existing);
-    if(!cdWizard.done) cdOfferTestTypeRecommendations(existing, true);   // guided setup has already chosen the tests
+    if(!cdWizard.done && cdNewMode==="rhino") cdOfferTestTypeRecommendations(existing, true);   // guided setup has already chosen the tests
     cdWzSyncInherited();                                                // shared fields always come from the mother SKU
     cdRenderNewEntry();
     setStatus("Found in Items — description & priority SKU auto-filled.");
@@ -4604,7 +4667,7 @@ async function cdSubmitEntry(){
     const wasUpdate=updatedExisting;
     const submittedSku=cdDraft.sku;
     cdDraft={sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]};
-    cdTestTypes=[cdNewTestType()];
+    cdTestTypes=[cdNewTestType()]; cdActiveTT=0;
     cdClearLookupRecommendations();
     cdWzReset();
     await fetchSheetData();
@@ -4712,15 +4775,27 @@ function cdEditToggleChannel(opt, checked){
   if(checked){ if(!d.channel.includes(opt)) d.channel.push(opt); }
   else d.channel=d.channel.filter(c=>c!==opt);
 }
-function cdEditAddTestType(){ modal.draft.testTypes.push(cdNewTestType()); renderModals(); }
-function cdEditRemoveTestType(i){ modal.draft.testTypes.splice(i,1); renderModals(); }
-function cdEditAddExec(ti){ modal.draft.testTypes[ti].execs.push(cdNewExec()); renderModals(); }
-function cdEditRemoveExec(ti,ei){ modal.draft.testTypes[ti].execs.splice(ei,1); renderModals(); }
-function cdEditAddSample(ti,ei){ modal.draft.testTypes[ti].execs[ei].samples.push({value:"",verdict:""}); renderModals(); }
+// Re-rendering the pop-up resets its scroll position, so remember it and put it back.
+function cdEditRerender(){
+  const box=document.querySelector('#modal-root div[style*="overflow-y:auto"]'); const top=box?box.scrollTop:0;
+  renderModals();
+  const box2=document.querySelector('#modal-root div[style*="overflow-y:auto"]'); if(box2) box2.scrollTop=top;
+}
+function cdEditSelectTT(i){ modal.draft.activeTT=Math.max(0,Math.min(i,modal.draft.testTypes.length-1)); cdEditRerender(); }
+function cdEditAddTestType(){ modal.draft.testTypes.push(cdNewTestType()); modal.draft.activeTT=modal.draft.testTypes.length-1; cdEditRerender(); }
+function cdEditRemoveTestType(i){
+  const d=modal.draft; d.testTypes.splice(i,1);
+  if(!d.testTypes.length) d.testTypes.push(cdNewTestType());
+  const a=d.activeTT||0; d.activeTT=Math.max(0,Math.min(a>i?a-1:a,d.testTypes.length-1));
+  cdEditRerender();
+}
+function cdEditAddExec(ti){ modal.draft.testTypes[ti].execs.push(cdNewExec()); cdEditRerender(); }
+function cdEditRemoveExec(ti,ei){ modal.draft.testTypes[ti].execs.splice(ei,1); cdEditRerender(); }
+function cdEditAddSample(ti,ei){ modal.draft.testTypes[ti].execs[ei].samples.push({value:"",verdict:""}); cdEditRerender(); }
 function cdEditRemoveSample(ti,ei,si){
   modal.draft.testTypes[ti].execs[ei].samples.splice(si,1);
   if(!modal.draft.testTypes[ti].execs[ei].samples.length) modal.draft.testTypes[ti].execs[ei].samples.push({value:"",verdict:""});
-  renderModals();
+  cdEditRerender();
 }
 function cdEditExecBlockHtml(tt, ti, ex, ei){
   return `<div style="border:1px solid #eceef2;border-radius:6px;padding:10px;margin-bottom:8px;background:#fff">
@@ -4729,11 +4804,11 @@ function cdEditExecBlockHtml(tt, ti, ex, ei){
       ${tt.execs.length>1?`<button onclick="cdEditRemoveExec(${ti},${ei})" style="font-size:10px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:2px 7px;cursor:pointer">Remove</button>`:""}
     </div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Priority Supplier</label>${cdTa(ex.supplier,"modal.draft.testTypes[${ti}].execs[${ei}].supplier=this.value")}</div>
-      <div class="pmm-field"><label class="pmm-label">Test Method</label>${cdTa(ex.method,"modal.draft.testTypes[${ti}].execs[${ei}].method=this.value")}</div>
+      <div class="pmm-field"><label class="pmm-label">Priority Supplier</label>${cdTa(ex.supplier,`modal.draft.testTypes[${ti}].execs[${ei}].supplier=this.value`)}</div>
+      <div class="pmm-field"><label class="pmm-label">Test Method</label>${cdTa(ex.method,`modal.draft.testTypes[${ti}].execs[${ei}].method=this.value`)}</div>
     </div>
     ${cdExecPhysHtml(tt, ex, `modal.draft.testTypes[${ti}].execs[${ei}]`, `cdEditAddSample(${ti},${ei})`, si=>`cdEditRemoveSample(${ti},${ei},${si})`)}
-    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label>${cdTa(ex.report,"modal.draft.testTypes[${ti}].execs[${ei}].report=this.value")}</div>
+    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label>${cdTa(ex.report,`modal.draft.testTypes[${ti}].execs[${ei}].report=this.value`)}</div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].lab=this.value"/></div>
       <div class="pmm-field"><label class="pmm-label">Cost</label><input class="pmm-input" placeholder="$0.00" value="${esc(ex.cost)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].cost=this.value"/></div>
@@ -4747,13 +4822,13 @@ function cdEditTestTypeBlockHtml(tt, ti){
       <div style="font-size:11.5px;font-weight:700;color:#0073ea">${esc(tt.name)||`Test Type ${ti+1}`}</div>
       ${modal.draft.testTypes.length>1?`<button onclick="cdEditRemoveTestType(${ti})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
     </div>
-    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label>${cdTa(tt.name,"modal.draft.testTypes[${ti}].name=this.value",`onchange="cdNameChanged(${ti},true)"`)}</div>
+    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label>${cdTa(tt.name,`modal.draft.testTypes[${ti}].name=this.value`,`onchange="cdNameChanged(${ti},true)"`)}</div>
     ${cdPhysToggleHtml(tt,ti,true)}
-    <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label>${cdTa(tt.criteria,"modal.draft.testTypes[${ti}].criteria=this.value")}</div>
-    <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label>${cdTa(tt.target,"modal.draft.testTypes[${ti}].target=this.value")}</div>
+    <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label>${cdTa(tt.criteria,`modal.draft.testTypes[${ti}].criteria=this.value`)}</div>
+    <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label>${cdTa(tt.target,`modal.draft.testTypes[${ti}].target=this.value`)}</div>
     <div class="pmm-grid2">
-      <div class="pmm-field"><label class="pmm-label">Required Lab Equipment <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.equipment,"modal.draft.testTypes[${ti}].equipment=this.value")}</div>
-      <div class="pmm-field"><label class="pmm-label">Lab Accreditation <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.accreditation,"modal.draft.testTypes[${ti}].accreditation=this.value")}</div>
+      <div class="pmm-field"><label class="pmm-label">Required Lab Equipment <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.equipment,`modal.draft.testTypes[${ti}].equipment=this.value`)}</div>
+      <div class="pmm-field"><label class="pmm-label">Lab Accreditation <span style="color:#aaa;font-weight:400">(optional)</span></label>${cdTa(tt.accreditation,`modal.draft.testTypes[${ti}].accreditation=this.value`)}</div>
     </div>
     <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #dde0e7">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -5179,73 +5254,153 @@ async function cdAppendTrackingRow(item){
   if(!res.ok){ const t=await res.text(); throw new Error(`Could not save to "${CD_TRACKING_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
 }
 
+// ── Monitoring: right-click an item -> tick the tests to DEFER; unticked tests go to Tracking ──
+function cdMonTestsOf(item){
+  const tested=item.subs.filter(s=>Object.values(s.yearBlocks||{}).some(b=>b&&b.length));
+  return {tested, list:tested.length?tested:item.subs};
+}
 function cdShowMonContextMenu(e, itemId){
   e.preventDefault();
-  cdMonContextMenu={x:e.clientX, y:e.clientY, itemId};
+  const item=cdFindItemById(itemId); if(!item) return;
+  const {list}=cdMonTestsOf(item);
+  // tests already ticked "Defer" in the old Management Decision column start out ticked
+  const ticked=new Set(list.filter(s=>getRetestDecision(item.id,s.id)==="next").map(s=>s.id));
+  cdMonContextMenu={x:e.clientX, y:e.clientY, itemId, ticked, reason:""};
   renderMonitoring();
 }
 function cdCloseMonContextMenu(){ cdMonContextMenu=null; renderMonitoring(); }
+function cdMonSummaryHtml(){
+  const m=cdMonContextMenu; if(!m) return "";
+  const item=cdFindItemById(m.itemId); if(!item) return "";
+  const {list}=cdMonTestsOf(item), d=list.filter(s=>m.ticked.has(s.id)).length, t=list.length-d;
+  return `<span style="color:#0055bb;font-weight:700">${d} → Deferred Items</span> &nbsp;·&nbsp; <span style="color:#0a7a46;font-weight:700">${t} → Tracking</span>`;
+}
+function cdMonTick(subId, on){
+  const m=cdMonContextMenu; if(!m) return;
+  if(on) m.ticked.add(subId); else m.ticked.delete(subId);
+  const row=document.getElementById("mon-ctx-row-"+subId); if(row) row.style.background=on?"#f0f6ff":"#fff";
+  const sum=document.getElementById("mon-ctx-sum"); if(sum) sum.innerHTML=cdMonSummaryHtml();
+}
+function cdMonTickAll(on){
+  const m=cdMonContextMenu; if(!m) return;
+  const item=cdFindItemById(m.itemId); if(!item) return;
+  cdMonTestsOf(item).list.forEach(s=>{ if(on) m.ticked.add(s.id); else m.ticked.delete(s.id); });
+  renderMonitoring();
+}
 function cdMonContextMenuHtml(){
-  const m=cdMonContextMenu;
+  const m=cdMonContextMenu, item=cdFindItemById(m.itemId); if(!item) return "";
+  const {list,tested}=cdMonTestsOf(item);
+  const W=500, left=Math.max(12,Math.min(m.x,window.innerWidth-W-16)), top=Math.max(12,Math.min(m.y,window.innerHeight-460));
+  const rows=list.map(s=>{
+    const on=m.ticked.has(s.id), last=latestTestDate(s);
+    return `<label id="mon-ctx-row-${esc(s.id)}" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #f0f1f3;cursor:pointer;background:${on?"#f0f6ff":"#fff"}">
+      <input type="checkbox" ${on?"checked":""} onchange="cdMonTick('${esc(s.id)}',this.checked)" style="width:15px;height:15px;accent-color:#0073ea;cursor:pointer;flex-shrink:0"/>
+      <div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:#222;line-height:1.35">${esc(s.name)}</div>
+      <div style="font-size:10px;color:#999;margin-top:2px">${last?`Last tested ${fmtD(last)}`:"No test data yet"}</div></div>
+    </label>`;
+  }).join("");
   return `<div onclick="cdCloseMonContextMenu()" style="position:fixed;inset:0;z-index:90"></div>
-    <div style="position:fixed;top:${m.y}px;left:${m.x}px;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.18);z-index:91;min-width:190px;overflow:hidden">
-      <div onclick="cdTransferToTracking()" style="padding:10px 16px;font-size:12px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">📝 Transfer to Tracking</div>
-      <div onclick="cdPromptDefer()" style="padding:10px 16px;font-size:12px;cursor:pointer;color:#0055bb" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">🔵 Deferred</div>
+    <div style="position:fixed;top:${top}px;left:${left}px;width:${W}px;max-width:calc(100vw - 24px);max-height:86vh;display:flex;flex-direction:column;background:#fff;border:1.5px solid #dde0e7;border-radius:12px;box-shadow:0 14px 40px rgba(0,0,0,.24);z-index:91;overflow:hidden">
+      <div style="padding:13px 16px;background:#f6f8fc;border-bottom:1px solid #e6eaf2">
+        <div style="font-size:13px;font-weight:800;color:#1f2430">${esc(item.name)}</div>
+        <div style="font-size:11px;color:#777;margin-top:3px;line-height:1.5">Tick the tests to <b style="color:#0055bb">defer</b>. Tests you leave unticked are sent to <b style="color:#0a7a46">Tracking</b> for testing.</div>
+      </div>
+      <div style="padding:7px 14px;font-size:10.5px;border-bottom:1px solid #f0f1f3"><a href="#" onclick="cdMonTickAll(true);return false" style="color:#0073ea;font-weight:700">Defer all</a> &nbsp;·&nbsp; <a href="#" onclick="cdMonTickAll(false);return false" style="color:#0073ea;font-weight:700">Defer none</a>${tested.length?"":` &nbsp;·&nbsp; <span style="color:#b36b00">no test results yet</span>`}</div>
+      <div style="overflow-y:auto;flex:1">${rows||`<div style="padding:16px;color:#999;font-size:12px">This item has no tests yet.</div>`}</div>
+      <div style="padding:10px 14px;border-top:1px solid #e6eaf2;background:#fcfdff">
+        <textarea id="mon-ctx-reason" class="pmm-input" rows="2" placeholder="Reason for deferring (optional)" oninput="cdMonContextMenu.reason=this.value" style="margin-bottom:8px">${esc(m.reason||"")}</textarea>
+        <div style="display:flex;align-items:center;gap:10px"><div id="mon-ctx-sum" style="flex:1;font-size:11px">${cdMonSummaryHtml()}</div>
+          <button onclick="cdCloseMonContextMenu()" style="padding:8px 16px;font-size:12px;font-weight:600;color:#555;background:#f0f2f5;border:none;border-radius:7px;cursor:pointer">Cancel</button>
+          <button onclick="cdSubmitMonTransfer()" style="padding:8px 20px;font-size:12px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:7px;cursor:pointer">Submit</button></div>
+      </div>
     </div>`;
 }
-// Click "Transfer to Tracking" and it happens immediately, no selection step:
-// tests currently marked Deferred in Monitoring go straight to Deferred Items,
-// everything else (due/retest/on-track) goes straight to Tracking.
-function cdTransferToTracking(){
-  const itemId=cdMonContextMenu.itemId;
-  cdMonContextMenu=null;
-  const item=cdFindItemById(itemId);
-  if(!item) return;
-
-  const trackedSubs=item.subs.filter(s=>(s.p24&&s.p24.length)||(s.p25&&s.p25.length)||(s.p26&&s.p26.length));
-  const deferredNames=new Set(trackedSubs.filter(s=>getRetestDecision(item.id,s.id)==="next").map(s=>s.name));
-  const dueNames=new Set(trackedSubs.filter(s=>getRetestDecision(item.id,s.id)!=="next").map(s=>s.name));
-
-  // Nothing due -- the whole item is deferred, so it doesn't need a Tracking entry at all.
-  if(trackedSubs.length>0 && deferredNames.size===trackedSubs.length){
-    cdDeferItem(item, "All annual tests are currently marked Deferred in Monitoring.");
-    return;
-  }
-
+// One place that does the split: ticked tests -> Deferred Items, the rest -> Tracking.
+function cdTransferSplit(item, deferNames, dueNames, hasTested, reason){
+  const itemId=item.id;
+  // everything deferred: the whole item is deferred, so it needs no Tracking entry at all
+  if(deferNames.size && !dueNames.size){ cdDeferItem(item, reason||"Deferred from Monitoring."); return; }
   cdTrackingTransferredIds.add(itemId);
   localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
   cdCloseFromMonitoring(itemId);
-
-  if(trackedSubs.length){ cdItemTrackingSubNames[itemId]=dueNames; } else { delete cdItemTrackingSubNames[itemId]; }
+  if(hasTested){ cdItemTrackingSubNames[itemId]=dueNames; } else { delete cdItemTrackingSubNames[itemId]; }
   cdSaveItemTrackingSubs();
-
-  if(deferredNames.size){
-    cdItemDeferredSubNames[itemId]=deferredNames;
+  if(deferNames.size){
+    cdItemDeferredSubNames[itemId]=deferNames;
     cdSaveItemDeferredSubs();
     cdDeferredItemIds.add(itemId);
     localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
-    if(accessToken) cdWriteDeferredRow(item, `Auto-split transfer: ${[...deferredNames].join(", ")} deferred; remaining tests moved to Tracking.`).catch(()=>{});
+    if(accessToken) cdWriteDeferredRow(item, reason||`Auto-split transfer: ${[...deferNames].join(", ")} deferred; remaining tests moved to Tracking.`).catch(()=>{});
   } else {
     delete cdItemDeferredSubNames[itemId];
     cdSaveItemDeferredSubs();
     cdDeferredItemIds.delete(itemId);
     localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
   }
-
   switchTab("tracking");
   if(accessToken) cdAppendTrackingRow(item).catch(e=>alert(`Transferred locally, but could not write to the "${CD_TRACKING_SHEET}" sheet: `+e.message));
 }
-function cdPromptDefer(){
-  const itemId=cdMonContextMenu.itemId;
-  cdMonContextMenu=null;
-  const item=cdFindItemById(itemId);
-  if(!item) return;
-  openTextGate({
-    title:"Defer Reason",
-    message:`Why is "${item.name}" being deferred?`,
-    placeholder:"e.g. Awaiting supplier confirmation",
-    onSuccess:(reason)=>cdDeferItem(item, reason),
+function cdSubmitMonTransfer(){
+  const m=cdMonContextMenu; if(!m) return;
+  const item=cdFindItemById(m.itemId); cdMonContextMenu=null;
+  if(!item){ renderMonitoring(); return; }
+  const {tested,list}=cdMonTestsOf(item);
+  const defer=new Set(list.filter(s=>m.ticked.has(s.id)).map(s=>s.name));
+  const due=new Set(list.filter(s=>!m.ticked.has(s.id)).map(s=>s.name));
+  cdTransferSplit(item, defer, due, tested.length>0, (m.reason||"").trim());
+}
+// ── Items earlier ticked "Defer" in the old Management Decision column -> Deferred Items (NPD items are left out) ──
+function cdLegacyDeferCandidates(){
+  const byItem={};
+  Object.entries(retestDecisions||{}).forEach(([k,v])=>{
+    if(v!=="next") return; const i=k.indexOf("_"); if(i<0) return;
+    (byItem[k.slice(0,i)]=byItem[k.slice(0,i)]||new Set()).add(k.slice(i+1));
   });
+  const cands=[]; let npdSkipped=0;
+  Object.entries(byItem).forEach(([itemId,subIds])=>{
+    const item=cdFindItemById(itemId); if(!item) return;
+    if(cdDeferredItemIds.has(itemId)||cdMonitoringClosedIds.has(itemId)) return;            // already moved
+    if(String(item.prioritySku||"").trim().toUpperCase()==="NPD"){ npdSkipped++; return; }  // NPD items are not included
+    const {list,tested}=cdMonTestsOf(item);
+    const deferSubs=list.filter(s=>subIds.has(s.id)); if(!deferSubs.length) return;
+    cands.push({item,deferSubs,otherSubs:list.filter(s=>!subIds.has(s.id)),full:deferSubs.length===list.length,hasTested:tested.length>0});
+  });
+  cands.sort((a,b)=>String(a.item.name).localeCompare(String(b.item.name)));
+  return {cands,npdSkipped};
+}
+function cdOpenLegacyDefer(){
+  const {cands}=cdLegacyDeferCandidates();
+  openModal({type:"cdLegacyDefer", sel:new Set(cands.filter(c=>c.full).map(c=>c.item.id)), busy:false});
+}
+function cdLegacyToggle(itemId,on){ if(on) modal.sel.add(itemId); else modal.sel.delete(itemId); renderModals(); }
+async function cdRunLegacyDefer(){
+  if(!modal||modal.type!=="cdLegacyDefer"||modal.busy) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  const {cands}=cdLegacyDeferCandidates(), chosen=cands.filter(c=>modal.sel.has(c.item.id));
+  if(!chosen.length) return;
+  modal.busy=true; renderModals();
+  let done=0, partial=0;
+  try{
+    for(const c of chosen){
+      const item=c.item;
+      if(c.full){
+        await cdWriteDeferredRow(item,"Deferred in Monitoring (Management decision).");
+        cdTrackingTransferredIds.delete(item.id); delete cdItemDeferredSubNames[item.id];
+      } else {
+        await cdWriteDeferredRow(item,`Deferred in Monitoring: ${c.deferSubs.map(s=>s.name).join(", ")}; remaining tests moved to Tracking.`);
+        await cdAppendTrackingRow(item);
+        cdItemDeferredSubNames[item.id]=new Set(c.deferSubs.map(s=>s.name));
+        cdItemTrackingSubNames[item.id]=new Set(c.otherSubs.map(s=>s.name));
+        cdTrackingTransferredIds.add(item.id); partial++;
+      }
+      cdDeferredItemIds.add(item.id); cdCloseFromMonitoring(item.id); done++;
+    }
+  }catch(e){ alert(`Moved ${done} of ${chosen.length} before an error: ${e.message}`); }
+  localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+  localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
+  cdSaveItemDeferredSubs(); cdSaveItemTrackingSubs();
+  closeModal(); switchTab("deferreditems");
+  if(done) alert(`Moved ${done} item${done!==1?"s":""} to Deferred Items`+(partial?` (${partial} had other tests that went to Tracking)`:"")+".");
 }
 // Writes the sheet-side record only -- shared by a full defer (cdDeferItem)
 // and a mixed transfer (some tests deferred, some sent to Tracking).
