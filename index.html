@@ -115,6 +115,25 @@ input:not(:placeholder-shown) ~ .sc-clear{display:block}
 .yc-overall{display:inline-flex;font-size:9.5px;font-weight:800;padding:2px 10px;border-radius:5px;margin-bottom:7px;background:#f3f5f9;color:#555}
 .yc-overall.pass{background:#e3f9ee;color:#0a7a46}.yc-overall.fail{background:#ffe8e8;color:#c0392b}
 .yc-empty{color:#b3bacb;font-size:11px;font-style:italic}
+/* step 1: reference list on the left of "Find the product" */
+.wz-s1{display:grid;grid-template-columns:350px minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:1000px){.wz-s1{grid-template-columns:1fr}}
+.wz-rem{background:#fff;border:1.5px solid #e0e3ea;border-radius:12px;overflow:hidden;position:sticky;top:12px}
+.wz-rem-h{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;background:#fff8e8;border-bottom:1px solid #fde0b0}
+.wz-rem-h b{font-size:12.5px;color:#7a5200}.wz-rem-h span{font-size:10px;font-weight:700;color:#a8710f;background:#ffefc6;border-radius:9px;padding:2px 9px}
+.wz-rem-note{padding:9px 14px;font-size:10.5px;line-height:1.55;color:#7a6a45;background:#fffcf3;border-bottom:1px solid #f4e6c2}
+.wz-rem-q{padding:8px 12px 0}.wz-rem-q input{font-size:11.5px;padding:7px 10px}
+#cd-wz-rem-list{max-height:560px;overflow-y:auto;padding:6px 8px 10px}
+.wz-rem-row{padding:8px 9px;border-bottom:1px solid #f1f2f5;border-radius:7px;cursor:pointer}
+.wz-rem-row:hover{background:#f0f6ff}
+.wz-rem-row .top{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.wz-rem-row .top b{font-size:11.5px;color:#0055bb;overflow-wrap:anywhere}
+.wz-rem-row .ref{flex-shrink:0;font-size:9.5px;font-weight:700;color:#6b7385;background:#f1f3f7;border-radius:6px;padding:1px 7px}
+.wz-rem-row .desc{font-size:10.5px;color:#444;line-height:1.4;margin-top:2px}
+.wz-rem-row .meta{font-size:9.5px;color:#9aa3b5;margin-top:2px}
+/* the paste/upload grid */
+.cd-cell{display:block;width:100%;box-sizing:border-box;border:none;outline:none;resize:none;overflow:hidden;min-height:30px;padding:6px 6px;font:11px/1.4 inherit;font-family:inherit;color:#222;background:transparent;white-space:pre-wrap;overflow-wrap:anywhere}
+.cd-cell:focus{background:#f0f7ff;box-shadow:inset 0 0 0 2px #0073ea}
 /* one tab per test type: Test Type 1 | Test Type 2 | ... | + Add */
 .tt-tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;border-bottom:2px solid #dde5f2;margin:0 0 14px}
 .tt-tab{display:flex;flex-direction:column;align-items:flex-start;gap:1px;max-width:230px;padding:8px 16px 7px;border:1.5px solid #dde0e7;border-bottom:none;border-radius:9px 9px 0 0;background:#f2f4f9;color:#6b7385;cursor:pointer;margin-bottom:-2px;text-align:left}
@@ -2704,6 +2723,8 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="cdTable"){
+    root.innerHTML=cdTableModalHtml(); cdTblRefresh();
   } else if(modal.type==="cdLegacyDefer"){
     const {cands,npdSkipped}=cdLegacyDeferCandidates();
     const n=cands.filter(c=>modal.sel.has(c.item.id)).length;
@@ -4009,6 +4030,34 @@ function cdWzStepperHtml(){
   const cur=cdWizard.done?names.length:cdWizard.step;
   return `<div class="wz-steps">${names.map((n,i)=>{ const k=i+1, st=k<cur?"done":k===cur?"on":""; return `<div class="wz-step ${st}"><span class="wz-dot">${k<cur?"✓":k}</span><span class="wz-lbl">${n}</span></div>`; }).join('<div class="wz-line"></div>')}</div>`;
 }
+// ---- Remarks: the mother SKUs that hold the compiled tests (reference only) ----
+function cdWzMotherList(){
+  return cdWzAllItems().filter(i=>!i._replicatedFrom&&(i.subs||[]).length).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+}
+function cdWzRemarksHtml(){
+  const list=cdWzMotherList();
+  return `<aside class="wz-rem">
+    <div class="wz-rem-h"><b>📌 Remarks</b><span id="cd-wz-rem-n">${list.length} mother SKU${list.length!==1?"s":""}</span></div>
+    <div class="wz-rem-note">For reference — <b>compliance team only</b>. These are the mother SKUs that hold the compiled tests, with their product description and reference number (Ref #). Click one to put it in the search.</div>
+    <div class="wz-rem-q"><input class="pmm-input" placeholder="Filter this list…" oninput="cdWzRemFilter(this.value)" autocomplete="off"/></div>
+    <div id="cd-wz-rem-list">${list.map(i=>`<div class="wz-rem-row" data-k="${esc(cdWzLow([i.name,i.description,i.rowId,i.parentSku].join(" ")))}" onclick="cdWzUseRemark('${esc(i.id)}')">
+      <div class="top"><b>${esc(i.name)}</b><span class="ref">Ref #${esc(i.rowId)}</span></div>
+      <div class="desc">${esc(i.description||"—")}</div>
+      <div class="meta">${(i.subs||[]).length} test${(i.subs||[]).length!==1?"s":""}${i.parentSku?` · Parent ${esc(i.parentSku)}`:""}</div>
+    </div>`).join("")||`<div style="padding:14px;color:#aaa;font-size:11.5px">No mother SKUs with tests yet.</div>`}</div>
+  </aside>`;
+}
+function cdWzRemFilter(v){
+  const q=cdWzLow(v).trim(); let n=0;
+  document.querySelectorAll("#cd-wz-rem-list .wz-rem-row").forEach(r=>{ const hit=!q||r.dataset.k.includes(q); r.style.display=hit?"":"none"; if(hit) n++; });
+  const c=document.getElementById("cd-wz-rem-n"); if(c) c.textContent=`${n} mother SKU${n!==1?"s":""}`;
+}
+function cdWzUseRemark(id){
+  const it=cdWzAllItems().find(i=>i.id===id); if(!it) return;
+  cdWizard.query=it.name; cdWizard.sugIdx=-1; cdWizard.msg="";
+  const el=document.getElementById("cd-wz-q"); if(el){ el.value=it.name; el.focus(); }
+  cdWzUpdateSug();
+}
 // ---- step 1: search ----
 function cdWzStep1Html(){
   const w=cdWizard;
@@ -4224,9 +4273,265 @@ function cdWzFormTopHtml(){
 }
 function cdRenderWizard(wrap){
   const w=cdWizard;
-  const body=w.step===1?cdWzStep1Html():w.step===2?cdWzStep2Html():w.step===3?cdWzStep3Html():cdWzStep4Html();
-  wrap.innerHTML=`<div style="max-width:1000px;margin:0 auto;padding:20px 0">${cdNewModeBarHtml()}${cdWzStepperHtml()}${body}</div>`;
+  const body=w.step===1?`<div class="wz-s1">${cdWzRemarksHtml()}${cdWzStep1Html()}</div>`:w.step===2?cdWzStep2Html():w.step===3?cdWzStep3Html():cdWzStep4Html();
+  wrap.innerHTML=`<div style="max-width:${w.step===1?1240:1000}px;margin:0 auto;padding:20px 0">${cdNewModeBarHtml()}${cdWzStepperHtml()}${body}</div>`;
   if(w.step===1){ const el=document.getElementById("cd-wz-q"); if(el){ el.focus(); const n=el.value.length; try{ el.setSelectionRange(n,n); }catch(e){} cdWzUpdateSug(); } }
+}
+
+// ───────────────── New Entry · paste / upload a table of test types ─────────────────
+// One row = one test. Rows that share a Test Category become ONE test type (tab) with one execution per row.
+const CD_TBL_COLS=[
+  {key:"name",title:"Test Category",w:12,alias:["testcategory","testtype","testname","test","category"]},
+  {key:"physical",title:"Physical / tensile test",w:6,alias:["physicaltensiletest","physicaltensile","physical","tensile","tensiletest"]},
+  {key:"criteria",title:"Specific Evaluation Criteria",w:15,alias:["specificevaluationcriteria","evaluationcriteria","criteria"]},
+  {key:"target",title:"Expected Target Performance",w:14,alias:["expectedtargetperformance","targetperformance","target"]},
+  {key:"equipment",title:"Required Lab Equipment & Capabilities",w:12,alias:["requiredlabequipmentcapabilities","requiredlabequipment","labequipment","equipment"]},
+  {key:"accreditation",title:"Required Lab Accreditation",w:9,alias:["requiredlabaccreditation","labaccreditation","accreditation"]},
+  {key:"supplier",title:"Priority Supplier",w:8,alias:["prioritysupplier","supplier"]},
+  {key:"method",title:"Test Standard/ Method",w:9,alias:["teststandardmethod","teststandard","testmethod","standardmethod","method","standard"]},
+  {key:"result",title:"Test Result",w:5,alias:["testresult","result"]},
+  {key:"report",title:"Test Report Link",w:6,alias:["testreportlink","reportlink","testreport"]},
+  {key:"lab",title:"Test Lab",w:5,alias:["testlab","lab"]},
+  {key:"cost",title:"Cost",w:4,alias:["cost"]},
+  {key:"date",title:"Test Completion Date",w:6,alias:["testcompletiondate","completiondate","testeddate","date"]},
+];
+// Optional 14th column (your sample table has it): lets one table hold several products.
+const CD_TBL_PRODUCT={key:"product",title:"Product / SKU",w:10,alias:["productsku","product","sku"]};
+const cdTblNorm=v=>String(v==null?"":v).toLowerCase().replace(/[^a-z0-9]/g,"");
+// Spreadsheet-style text -> rows. Handles "quoted cells" (which may hold line breaks and "" quotes).
+function cdParseDelimited(text, delim){
+  const rows=[]; let row=[], f="", q=false; const s=String(text||"").replace(/\r\n?/g,"\n");
+  for(let i=0;i<s.length;i++){
+    const c=s[i];
+    if(q){ if(c==='"'){ if(s[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=c; }
+    else if(c==='"' && f===""){ q=true; }
+    else if(c===delim){ row.push(f); f=""; }
+    else if(c==="\n"){ row.push(f); rows.push(row); row=[]; f=""; }
+    else f+=c;
+  }
+  if(f!==""||row.length){ row.push(f); rows.push(row); }
+  return rows;
+}
+function cdTblHeaderMap(row){
+  const all=[...CD_TBL_COLS,CD_TBL_PRODUCT]; const map=[]; let hits=0;
+  (row||[]).forEach((h,i)=>{ const n=cdTblNorm(h); const col=n?all.find(c=>cdTblNorm(c.title)===n||c.alias.includes(n)):null; map[i]=col?col.key:null; if(col) hits++; });
+  return {map,hits};
+}
+// rows -> records. A first row made of the column titles (in ANY order) is used as the header; otherwise columns are positional.
+function cdTblRecords(rows){
+  const clean=(rows||[]).filter(r=>r.some(c=>String(c==null?"":c).trim()));
+  if(!clean.length) return {records:[],header:false,hasProduct:false};
+  const hm=cdTblHeaderMap(clean[0]); const header=hm.hits>=3&&hm.map.includes("name");
+  const keys=header?hm.map:[...CD_TBL_COLS.map(c=>c.key),"product"];
+  const body=header?clean.slice(1):clean;
+  const records=body.map(r=>{ const o={}; keys.forEach((k,i)=>{ if(k&&o[k]===undefined) o[k]=String(r[i]==null?"":r[i]).trim(); }); return o; });
+  return {records,header,hasProduct:keys.includes("product")&&records.some(r=>r.product)};
+}
+function cdTblBool(v){
+  const t=String(v==null?"":v).trim().toLowerCase(); if(!t) return undefined;
+  if(/^(true|yes|y|1|x|✓|✔|physical|tensile)$/.test(t)) return true;
+  if(/^(false|no|n|0)$/.test(t)) return false;
+  return undefined;
+}
+function cdTblDate(v){
+  const t=String(v==null?"":v).trim(); if(!t) return "";
+  const fmt=(y,m,d)=>{ y=+y; m=+m; d=+d; if(!(y>1990&&y<2100&&m>=1&&m<=12&&d>=1&&d<=31)) return ""; return `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`; };
+  let m=t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if(m) return fmt(m[1],m[2],m[3]);
+  m=t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if(m){ let a=+m[1], b=+m[2], y=+m[3]; if(y<100) y+=2000; if(a>12&&b<=12) return fmt(y,b,a); return fmt(y,a,b); }   // US order M/D/Y, or D/M/Y when the first number can't be a month
+  if(/^\d{5}(\.\d+)?$/.test(t)){ const d=new Date(Math.round((parseFloat(t)-25569)*86400000)); return fmt(d.getUTCFullYear(),d.getUTCMonth()+1,d.getUTCDate()); }   // Excel serial date
+  const d=new Date(t); if(!isNaN(d)) return fmt(d.getFullYear(),d.getMonth()+1,d.getDate());
+  return "";
+}
+function cdTblCost(v){ const n=parseFloat(String(v==null?"":v).replace(/[^0-9.\-]/g,"")); return isNaN(n)?"":String(n); }
+function cdTblSamples(text, phys){
+  const t=String(text==null?"":text).trim(); if(!t) return [{value:"",verdict:""}];
+  if(phys){ const s=cdParseSamplesFromResult(t); if(s.length&&(s[0].value||s[0].verdict)) return s; }
+  const m=t.match(/\b(PASS|FAIL)\b/i); return [{value:"",verdict:m?m[1].toUpperCase():""}];
+}
+function cdTblSkuOf(label){ const m=String(label||"").match(/\(([^()]+)\)\s*$/); return (m?m[1]:String(label||"")).trim(); }
+// records -> test types (one per distinct Test Category, in the order they appear)
+function cdTblBuild(records){
+  const groups=[], idx={};
+  records.forEach(r=>{ const name=String(r.name||"").trim(); if(!name) return; const k=name.toLowerCase().replace(/\s+/g," "); if(!idx[k]){ idx[k]={name,rows:[]}; groups.push(idx[k]); } idx[k].rows.push(r); });
+  return groups.map(g=>{
+    const pick=key=>(g.rows.map(r=>r[key]).find(v=>String(v||"").trim())||"");
+    const explicit=g.rows.map(r=>cdTblBool(r.physical)).find(v=>v!==undefined);
+    const tt={...cdNewTestType(), name:g.name, criteria:pick("criteria"), target:pick("target"), equipment:pick("equipment"), accreditation:pick("accreditation"), execs:[], fromTable:true};
+    if(explicit!==undefined){ tt.physical=explicit; tt.physicalManual=true; }
+    const phys=explicit!==undefined?explicit:CD_PHYS_RE.test(g.name);
+    g.rows.forEach((r,ri)=>{
+      const hasResultData=[r.supplier,r.result,r.report,r.lab,r.cost,r.date].some(v=>String(v||"").trim());
+      if(ri>0&&!hasResultData) return;      // a repeat row with nothing to record adds nothing
+      const ex=cdNewExec(); ex.supplier=r.supplier||""; ex.method=r.method||""; ex.report=r.report||""; ex.lab=r.lab||""; ex.cost=cdTblCost(r.cost); ex.date=cdTblDate(r.date); ex.samples=cdTblSamples(r.result,phys);
+      tt.execs.push(ex);
+    });
+    if(!tt.execs.length) tt.execs.push(cdNewExec());
+    return tt;
+  });
+}
+// ---- the pop-up grid ----
+let cdTbl=null;
+const CD_TBL_N=14;                       // 13 titles + optional Product / SKU
+const cdTblBlankRow=()=>new Array(CD_TBL_N).fill("");
+function cdTblHasExisting(){ return cdTestTypes.some(t=>(t.name||"").trim()||(t.criteria||"").trim()||t.execs.some(e=>e.supplier||e.method||e.lab||e.report||e.date||e.cost||(e.samples||[]).some(s=>s.value||s.verdict))); }
+function cdOpenTable(){
+  cdTbl={rows:Array.from({length:6},cdTblBlankRow), hasProduct:false, product:"", replace:false, notice:""};
+  openModal({type:"cdTable"});
+}
+function cdTblRecordsOfGrid(){
+  return cdTbl.rows.map(r=>{ const o={}; CD_TBL_COLS.forEach((c,i)=>{ o[c.key]=String(r[i]||"").trim(); }); o.product=String(r[13]||"").trim(); return o; });
+}
+function cdTblProducts(){ const m={}; cdTblRecordsOfGrid().forEach(o=>{ if(o.product) m[o.product]=(m[o.product]||0)+1; }); return m; }
+function cdTblValidate(){
+  const recs=cdTblRecordsOfGrid(), t=cdTbl, out={rows:[],errors:[],tests:[],used:0};
+  const use=[];
+  recs.forEach((o,i)=>{
+    const any=Object.values(o).some(v=>v);
+    if(!any){ out.rows[i]={s:"empty"}; return; }
+    if(t.hasProduct&&t.product&&t.product!=="__all"&&o.product!==t.product){ out.rows[i]={s:"other"}; return; }
+    if(!o.name){ out.rows[i]={s:"error",msg:"needs a Test Category"}; out.errors.push(`Row ${i+1} needs a Test Category`); return; }
+    const w=[];
+    if(o.date&&!cdTblDate(o.date)) w.push("date not recognised");
+    if(o.cost&&cdTblCost(o.cost)==="") w.push("cost is not a number");
+    if(o.physical&&cdTblBool(o.physical)===undefined) w.push("Physical / tensile should be TRUE or FALSE");
+    if(o.result){ const phys=cdTblBool(o.physical); const p=phys!==undefined?phys:CD_PHYS_RE.test(o.name); if(!/\b(PASS|FAIL)\b/i.test(o.result)&&!(p&&/\d/.test(o.result))) w.push("result should be PASS or FAIL"); }
+    out.rows[i]={s:w.length?"warn":"ok",msg:w.join("; ")}; use.push(o);
+  });
+  out.used=use.length; out.tests=cdTblBuild(use);
+  return out;
+}
+function cdTblRefresh(){
+  if(!cdTbl||!document.getElementById("cd-tbl")) return;
+  const v=cdTblValidate(), n=v.tests.length;
+  v.rows.forEach((r,i)=>{ const el=document.getElementById("cd-tbl-n-"+i); if(!el) return;
+    el.style.background=r.s==="error"?"#fdecec":r.s==="warn"?"#fff4e0":r.s==="ok"?"#e3f6ec":"#f4f5f9";
+    el.style.color=r.s==="error"?"#c0392b":r.s==="warn"?"#b36b00":r.s==="ok"?"#0a7a46":"#9aa3b5";
+    el.title=r.msg||(r.s==="other"?"Belongs to another product":""); });
+  const sum=document.getElementById("cd-tbl-sum");
+  if(sum){
+    const warn=v.rows.filter(r=>r.s==="warn").length;
+    sum.innerHTML=v.errors.length?`<span style="color:#c0392b;font-weight:700">⚠ ${esc(v.errors[0])}${v.errors.length>1?` (+${v.errors.length-1} more)`:""}</span>`
+      :n?`<b style="color:#0a7a46">${v.used} row${v.used!==1?"s":""} → ${n} test type${n!==1?"s":""}</b>${v.used>n?` <span style="color:#777">(rows with the same Test Category share one tab)</span>`:""}${warn?` <span style="color:#b36b00">· ${warn} row${warn!==1?"s":""} to check (hover the row number)</span>`:""}`
+      :`<span style="color:#999">Paste or type at least one test — a Test Category is required.</span>`;
+  }
+  const b=document.getElementById("cd-tbl-apply");
+  if(b){ const ok=!v.errors.length&&n>0; b.disabled=!ok; b.style.background=ok?"#0073ea":"#9bbfe9"; b.style.cursor=ok?"pointer":"default"; b.textContent=n?`Create ${n} test type${n!==1?"s":""}`:"Create test types"; }
+}
+function cdTblSet(r,c,v){ cdTbl.rows[r][c]=v; cdTblRefresh(); }
+function cdTblRerender(fr,fc){
+  renderModals();
+  if(fr!=null){ const el=document.querySelector(`#cd-tbl textarea[data-r="${fr}"][data-c="${fc}"]`); if(el){ el.focus(); el.setSelectionRange(el.value.length,el.value.length); } }
+}
+function cdTblKey(e,r,c){
+  if(e.key==="Enter"&&!e.altKey){
+    e.preventDefault();
+    const next=document.querySelector(`#cd-tbl textarea[data-r="${r+1}"][data-c="${c}"]`);
+    if(next){ next.focus(); next.select(); } else { cdTbl.rows.push(cdTblBlankRow()); cdTblRerender(r+1,c); }
+  }
+}
+function cdTblAddRow(){ cdTbl.rows.push(cdTblBlankRow()); cdTblRerender(cdTbl.rows.length-1,0); }
+function cdTblDelRow(r){ cdTbl.rows.splice(r,1); while(cdTbl.rows.length<3) cdTbl.rows.push(cdTblBlankRow()); cdTblRerender(); }
+function cdTblClear(){ cdTbl.rows=Array.from({length:6},cdTblBlankRow); cdTbl.hasProduct=false; cdTbl.product=""; cdTbl.notice=""; cdTblRerender(); }
+// load parsed records into the grid, replacing what is there
+function cdTblLoadRecords(records, hasProduct, source){
+  const rows=records.map(o=>{ const r=cdTblBlankRow(); CD_TBL_COLS.forEach((c,i)=>{ r[i]=o[c.key]||""; }); r[13]=o.product||""; return r; });
+  while(rows.length<6) rows.push(cdTblBlankRow());
+  cdTbl.rows=rows; cdTbl.hasProduct=!!hasProduct;
+  const prods=Object.keys(cdTblProducts());
+  if(hasProduct&&prods.length){
+    const sku=(cdDraft.sku||"").trim().toLowerCase();
+    cdTbl.product=(sku&&prods.find(p=>cdTblSkuOf(p).toLowerCase()===sku))||prods[0];
+  } else cdTbl.product="";
+  const n=records.length;
+  cdTbl.notice=`Loaded ${n} row${n!==1?"s":""}${source?` from ${source}`:""}.`+(prods.length>1?` This table has ${prods.length} products — choose which one to import below.`:"");
+}
+function cdTblPaste(e,r,c){
+  const text=(e.clipboardData||window.clipboardData).getData("text");
+  if(!text||!/[\t\n]/.test(text)) return;                // a single value: let the browser paste it normally
+  e.preventDefault();
+  const rows=cdParseDelimited(text,"\t"), parsed=cdTblRecords(rows);
+  if(parsed.header){ cdTblLoadRecords(parsed.records,parsed.hasProduct,"the pasted table"); }
+  else{                                                    // no title row: drop the block in at the cell you pasted into
+    const block=rows.filter(rw=>rw.some(x=>String(x).trim()));
+    block.forEach((rw,i)=>{ while(cdTbl.rows.length<=r+i) cdTbl.rows.push(cdTblBlankRow()); rw.forEach((val,j)=>{ if(c+j<CD_TBL_N) cdTbl.rows[r+i][c+j]=String(val).trim(); }); });
+    if(cdTbl.rows.some(x=>x[13])) cdTbl.hasProduct=true;
+    cdTbl.notice=`Pasted ${block.length} row${block.length!==1?"s":""}.`;
+  }
+  cdTblRerender();
+}
+function cdTblUpload(file){
+  if(!file) return; const name=file.name||"table", reader=new FileReader();
+  const finish=(rows)=>{
+    const parsed=cdTblRecords(rows);
+    if(!parsed.header){ cdTbl.notice=`"${name}" isn't in the default format. Its first row must use the default titles (Test Category, Physical / tensile test, Specific Evaluation Criteria …).`; cdTblRerender(); return; }
+    cdTblLoadRecords(parsed.records,parsed.hasProduct,`"${name}"`); cdTblRerender();
+  };
+  if(/\.(xlsx|xls)$/i.test(name)){
+    if(typeof XLSX==="undefined"){ cdTbl.notice="The Excel reader could not load. Save the file as .csv, or paste the table instead."; cdTblRerender(); return; }
+    reader.onload=ev=>{ try{
+      const wb=XLSX.read(ev.target.result,{type:"binary"}); let pick=null;
+      for(const sn of wb.SheetNames){ const r=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:false,defval:""}); const first=r.find(x=>x.some(c=>String(c).trim()))||[]; if(cdTblHeaderMap(first).hits>=3){ pick=r; break; } if(!pick) pick=r; }
+      finish(pick||[]);
+    }catch(err){ cdTbl.notice="Could not read that file: "+err.message; cdTblRerender(); } };
+    reader.readAsBinaryString(file);
+  } else {
+    reader.onload=ev=>{ const txt=String(ev.target.result||""); const first=txt.split("\n")[0]||""; const delim=(/\.(tsv|txt)$/i.test(name)||first.split("\t").length>2)?"\t":","; finish(cdParseDelimited(txt,delim)); };
+    reader.readAsText(file);
+  }
+}
+function cdTblTemplate(){
+  const q=v=>/[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+  const csv=CD_TBL_COLS.map(c=>q(c.title)).join(",")+"\n";
+  const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="Test_Types_Template.csv"; document.body.appendChild(a); a.click(); a.remove();
+}
+function cdTblApply(){
+  const v=cdTblValidate(); if(v.errors.length||!v.tests.length) return;
+  const m=(cdWizard.done&&cdWzMother())?cdWzMother():null;
+  if(m){      // a Test Category that already exists on this mother SKU updates / adds to THAT test instead of creating a duplicate
+    v.tests.forEach(tt=>{ const hit=(m.subs||[]).find(s=>String(s.name||"").trim().toLowerCase().replace(/\s+/g," ")===tt.name.toLowerCase().replace(/\s+/g," "));
+      if(hit){ tt.subId=hit.rowId; tt.fromWizard=true; tt.appendToExisting=true; } });
+  }
+  if(cdTblHasExisting()&&!cdTbl.replace){ const first=cdTestTypes.length; cdTestTypes.push(...v.tests); cdActiveTT=first; }
+  else { cdTestTypes=v.tests; cdActiveTT=0; }
+  closeModal(); cdRenderNewEntry();
+}
+function cdTableModalHtml(){
+  const t=cdTbl, hasX=t.hasProduct, cols=hasX?[...CD_TBL_COLS,CD_TBL_PRODUCT]:CD_TBL_COLS;
+  const total=cols.reduce((a,c)=>a+c.w,0), avail=91;
+  const prods=cdTblProducts(), pk=Object.keys(prods), existing=cdTblHasExisting();
+  const head=cols.map(c=>`<th style="width:${(c.w/total*avail).toFixed(2)}%;padding:6px 5px;font-size:9px;font-weight:800;color:#5b6479;text-transform:uppercase;letter-spacing:.25px;text-align:left;background:#f1f4fa;border:1px solid #dde3ee;position:sticky;top:0;z-index:1;line-height:1.25">${esc(c.title)}</th>`).join("");
+  const body=t.rows.map((r,ri)=>`<tr><td id="cd-tbl-n-${ri}" style="width:2.2%;text-align:center;font-size:9.5px;font-weight:700;border:1px solid #dde3ee;background:#f4f5f9;color:#9aa3b5;vertical-align:top;padding-top:8px">${ri+1}</td>${
+    cols.map((c,ci)=>`<td style="padding:0;border:1px solid #dde3ee;vertical-align:top"><textarea class="cd-ta cd-cell" rows="1" data-r="${ri}" data-c="${ci}" oninput="cdTblSet(${ri},${ci},this.value);cdAutoGrow(this)" onpaste="cdTblPaste(event,${ri},${ci})" onkeydown="cdTblKey(event,${ri},${ci})">${esc(r[ci]||"")}</textarea></td>`).join("")
+  }<td style="width:2.2%;text-align:center;border:1px solid #dde3ee;vertical-align:top;padding-top:6px"><button type="button" title="Delete this row" onclick="cdTblDelRow(${ri})" style="border:none;background:none;color:#c9cfdb;cursor:pointer;font-size:12px">✕</button></td></tr>`).join("");
+  return `<div class="modal-wrap">
+    <div class="modal-box" style="width:min(1560px,97vw);max-width:none;max-height:93vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="background:#0055bb;padding:12px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        <div style="color:#fff;font-weight:800;font-size:14px">📋 Paste or upload test types <span style="font-weight:500;font-size:11px;opacity:.85;margin-left:8px">each row becomes a test — rows with the same Test Category share one tab</span></div>
+        <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+      </div>
+      <div style="padding:10px 16px 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0">
+        <button onclick="document.getElementById('cd-tbl-file').click()" style="font-size:11px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:7px;padding:7px 14px;cursor:pointer">⬆ Upload Excel / CSV file</button>
+        <input type="file" id="cd-tbl-file" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none" onchange="cdTblUpload(this.files[0]);this.value=''"/>
+        <button onclick="cdTblTemplate()" style="font-size:11px;font-weight:600;color:#555;background:#f0f2f5;border:1px solid #dde0e7;border-radius:7px;padding:7px 12px;cursor:pointer">⬇ Download blank template (.csv)</button>
+        <div style="font-size:10.5px;color:#777;line-height:1.45;flex:1;min-width:260px">Type like in Excel, or <b>paste</b> (Ctrl/Cmd+V) rows copied from Excel / Google Sheets — with or without the title row. <b>Enter</b> moves down, <b>Tab</b> moves right. An uploaded file must use these same titles.</div>
+      </div>
+      ${t.notice?`<div style="margin:0 16px 6px;padding:7px 12px;background:#eef6ff;border:1px solid #c0d8f8;border-radius:7px;font-size:11px;color:#0055bb;flex-shrink:0">${esc(t.notice)}</div>`:""}
+      ${hasX&&pk.length?`<div style="margin:0 16px 6px;padding:8px 12px;background:#fff8e8;border:1px solid #fde0b0;border-radius:7px;font-size:11px;color:#6b4a00;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0"><b>This table has a Product / SKU column.</b> Import rows for:
+        <select class="pmm-input" style="width:auto;max-width:560px;padding:5px 8px;font-size:11px" onchange="cdTbl.product=this.value;cdTblRefresh()">${pk.map(p=>`<option value="${esc(p)}" ${t.product===p?"selected":""}>${esc(p)} (${prods[p]} rows)</option>`).join("")}<option value="__all" ${t.product==="__all"?"selected":""}>All rows (every product)</option></select></div>`:""}
+      <div style="padding:0 16px;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden">
+        <table id="cd-tbl" style="width:100%;table-layout:fixed;border-collapse:collapse;background:#fff"><thead><tr><th style="width:2.2%;background:#f1f4fa;border:1px solid #dde3ee;position:sticky;top:0;z-index:1"></th>${head}<th style="width:2.2%;background:#f1f4fa;border:1px solid #dde3ee;position:sticky;top:0;z-index:1"></th></tr></thead><tbody>${body}</tbody></table>
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid #e6eaf2;background:#fcfdff;display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0">
+        <button onclick="cdTblAddRow()" style="font-size:11px;font-weight:700;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:7px;padding:6px 12px;cursor:pointer">+ Add row</button>
+        <button onclick="cdTblClear()" style="font-size:11px;font-weight:600;color:#888;background:none;border:none;cursor:pointer;text-decoration:underline">Clear table</button>
+        <div id="cd-tbl-sum" style="flex:1;min-width:240px;font-size:11.5px"></div>
+        ${existing?`<label style="font-size:11px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${t.replace?"checked":""} onchange="cdTbl.replace=this.checked"/> Replace the current test types instead of adding to them</label>`:""}
+        <button onclick="closeModal()" style="padding:8px 16px;font-size:12px;font-weight:600;color:#555;background:#f0f2f5;border:none;border-radius:7px;cursor:pointer">Cancel</button>
+        <button id="cd-tbl-apply" onclick="cdTblApply()" style="padding:8px 20px;font-size:12px;font-weight:700;color:#fff;background:#9bbfe9;border:none;border-radius:7px;cursor:default">Create test types</button>
+      </div>
+    </div>
+  </div>`;
 }
 
 function cdProductDetailsHtml(){
@@ -4293,7 +4598,10 @@ function cdRenderNewEntry(){
   html+=cdRecommendedTestTypesHtml();
   if(cdActiveTT>=cdTestTypes.length) cdActiveTT=cdTestTypes.length-1;
   html+=`<div class="pmm-card">
-    <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:10px">Test Types</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <div style="font-size:13px;font-weight:700;color:#333">Test Types</div>
+      <button type="button" onclick="cdOpenTable()" title="Paste a table from Excel / Google Sheets, or upload one — every row becomes a test type" style="font-size:11px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:7px;padding:6px 14px;cursor:pointer">📋 Paste / upload table</button>
+    </div>
     ${cdTabStripHtml(cdTestTypes,cdActiveTT,"cdSelectTT","cdAddTestType","Test Type","+ Add Test Type",t=>t.name)}
     ${cdTestTypeBlockHtml(cdTestTypes[cdActiveTT],cdActiveTT)}
   </div>`;
@@ -4707,7 +5015,7 @@ function cdRenderTracking(){
 // (from before multi-sample support existed) as one sample.
 function cdParseSamplesFromResult(resultText){
   const text=String(resultText||"");
-  const re=/Sample\s*\d+\s*=\s*([\d,\.]+)\s*lbs\s*(?:\(([A-Za-z]+)\))?/gi;
+  const re=/Sample\s*\d+\s*=\s*([\d,]*\d[\d,\.]*)\s*(?:lbs?\.?)?\s*(?:\(\s*([A-Za-z]+)\s*\))?/gi;   // \"lbs\" is optional: results are often stored as \"Sample 1= 4,828 (FAIL)\"
   const samples=[];
   let m;
   while((m=re.exec(text))){
@@ -4896,11 +5204,12 @@ async function cdWriteTestTypesToSubitems(testTypes, parentItemId){
   const rawData=await rawRes.json();
   const rawRows=rawData.values||[];
   for(const tt of testTypes){
-    const hasAnyExecData=tt.execs.some(ex=>ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||(ex.samples||[]).some(s=>s.value||s.verdict));
+    const hasAnyExecData=tt.execs.some(ex=>ex.supplier||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||(ex.samples||[]).some(s=>s.value||s.verdict));
     if(!tt.name.trim() && !tt.std.trim() && !hasAnyExecData) continue; // skip a fully-blank "+ Add Test Type" row
     const yearBlocks={}, yearExecs={};
     tt.execs.forEach(ex=>{
-      const hasData=ex.supplier||ex.method||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||(ex.samples||[]).some(s=>s.value||s.verdict);
+      // a test standard / method on its own is part of the test's definition, not a result -- it needs a supplier, result, report, lab, cost or date to become one
+      const hasData=ex.supplier||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||(ex.samples||[]).some(s=>s.value||s.verdict);
       if(!hasData) return;
       const yr=cdYearColFor(ex.date);
       if(!yearBlocks[yr]) yearBlocks[yr]=[];
