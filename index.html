@@ -65,7 +65,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tab-btn{padding:8px 16px;font-size:12px;background:none;border:none;border-bottom:2px solid transparent;color:rgba(255,255,255,.65);font-weight:500;cursor:pointer;white-space:nowrap}
 .tab-btn.active{border-bottom-color:#fff;color:#fff;font-weight:700}
 /* search — kept out of innerHTML cycle so typing is uninterrupted */
-#search-wrap{position:relative;flex:1;min-width:160px;max-width:280px}
+#search-wrap{position:relative;flex:1;min-width:150px;max-width:230px}
 #search-wrap svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#aaa;pointer-events:none}
 #searchBox{width:100%;padding:6px 10px 6px 30px;border:1.5px solid #dde0e7;border-radius:7px;font-size:12px;background:#fafbfc;color:#333;outline:none;height:34px}
 #searchBox:focus{border-color:#0073ea}
@@ -115,6 +115,10 @@ input:not(:placeholder-shown) ~ .sc-clear{display:block}
 .yc-overall{display:inline-flex;font-size:9.5px;font-weight:800;padding:2px 10px;border-radius:5px;margin-bottom:7px;background:#f3f5f9;color:#555}
 .yc-overall.pass{background:#e3f9ee;color:#0a7a46}.yc-overall.fail{background:#ffe8e8;color:#c0392b}
 .yc-empty{color:#b3bacb;font-size:11px;font-style:italic}
+.mon-hl{display:grid;grid-template-columns:270px minmax(0,1.7fr) minmax(0,1fr);gap:20px;align-items:center}
+@media (max-width:1150px){.mon-hl{grid-template-columns:1fr 1fr}}
+@media (max-width:760px){.mon-hl{grid-template-columns:1fr}}
+.fp-compact button{padding:3px 9px !important;font-size:10.5px !important}
 /* step 1: reference list on the left of "Find the product" */
 .wz-s1{display:grid;grid-template-columns:350px minmax(0,1fr);gap:16px;align-items:start}
 @media (max-width:1000px){.wz-s1{grid-template-columns:1fr}}
@@ -308,10 +312,20 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
         <div id="main-search-suggest" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:60;max-height:280px;overflow-y:auto"></div>
       </div>
       <div style="position:relative;flex-shrink:0">
-        <select id="skuSelect" onchange="onSkuSelect(this.value)" style="padding:6px 28px 6px 10px;border:1.5px solid #dde0e7;border-radius:7px;font-size:12px;background:#fafbfc;color:#333;outline:none;height:34px;cursor:pointer;appearance:none;min-width:140px;max-width:200px">
+        <select id="skuSelect" onchange="onSkuSelect(this.value)" style="padding:6px 28px 6px 10px;border:1.5px solid #dde0e7;border-radius:7px;font-size:12px;background:#fafbfc;color:#333;outline:none;height:34px;cursor:pointer;appearance:none;min-width:125px;max-width:165px">
           <option value="">All SKUs</option>
         </select>
         <svg style="position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;color:#888" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <!-- Priority SKU: pills -->
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">Priority SKU</span>
+        <div id="fp-priority" class="fp-compact" style="display:flex;gap:4px;flex-wrap:nowrap"></div>
+      </div>
+      <!-- Test result: pills -->
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">Test result</span>
+        <div id="fp-result" class="fp-compact" style="display:flex;gap:4px;flex-wrap:nowrap"></div>
       </div>
       <div style="position:relative">
         <button class="tb" id="btn-sort" onclick="tDD('sort')">
@@ -323,41 +337,31 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
       <button id="clear-all-filters" onclick="clearAllFilters()" style="display:none;font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;cursor:pointer;font-weight:600;padding:4px 10px;border-radius:6px">&#10005; Clear all</button>
     </div>
     <!-- Filter rows -->
-    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding-top:4px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-top:4px">
       <!-- Country: pills (as-is) -->
       <div style="display:flex;align-items:center;gap:6px">
         <span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">Country</span>
-        <div id="fp-country" style="display:flex;gap:4px;flex-wrap:nowrap"></div>
+        <div id="fp-country" class="fp-compact" style="display:flex;gap:4px;flex-wrap:nowrap"></div>
       </div>
       <!-- Group: compact select -->
       <div style="display:flex;align-items:center;gap:6px">
         <span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">Group</span>
         <div style="position:relative">
-          <select id="fp-group-sel" onchange="setFG(this.value)" style="padding:4px 28px 4px 10px;border:1.5px solid #dde0e7;border-radius:20px;font-size:11px;font-weight:600;background:#fff;color:#333;outline:none;height:30px;cursor:pointer;appearance:none;min-width:140px"></select>
+          <select id="fp-group-sel" onchange="setFG(this.value)" style="padding:4px 28px 4px 10px;border:1.5px solid #dde0e7;border-radius:20px;font-size:11px;font-weight:600;background:#fff;color:#333;outline:none;height:30px;cursor:pointer;appearance:none;min-width:120px;max-width:150px"></select>
           <svg style="position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;color:#888" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
       </div>
-      <!-- Priority SKU: pills -->
-      <div style="display:flex;align-items:center;gap:6px">
-        <span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">Priority SKU</span>
-        <div id="fp-priority" style="display:flex;gap:4px;flex-wrap:nowrap"></div>
-      </div>
-      <!-- Test result: pills -->
-      <div style="display:flex;align-items:center;gap:6px">
-        <span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">Test result</span>
-        <div id="fp-result" style="display:flex;gap:4px;flex-wrap:nowrap"></div>
-      </div>
       <!-- Supplier test data: pills -->
       <div style="display:flex;align-items:center;gap:6px">
-        <span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">Supplier test data</span>
-        <div id="fp-supplier" style="display:flex;gap:4px;flex-wrap:nowrap"></div>
+        <span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">Supplier data</span>
+        <div id="fp-supplier" class="fp-compact" style="display:flex;gap:4px;flex-wrap:nowrap"></div>
       </div>
       <!-- Date (as-is) -->
       <div style="display:flex;align-items:center;gap:6px">
         <span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">Date</span>
-        <input type="date" id="date-from" onchange="setDateFrom(this.value)" style="padding:3px 8px;border:1.5px solid #dde0e7;border-radius:6px;font-size:11px;color:#333;outline:none;height:28px"/>
+        <input type="date" id="date-from" onchange="setDateFrom(this.value)" style="width:118px;padding:3px 6px;border:1.5px solid #dde0e7;border-radius:6px;font-size:11px;color:#333;outline:none;height:28px"/>
         <span style="font-size:10px;color:#aaa">to</span>
-        <input type="date" id="date-to" onchange="setDateTo(this.value)" style="padding:3px 8px;border:1.5px solid #dde0e7;border-radius:6px;font-size:11px;color:#333;outline:none;height:28px"/>
+        <input type="date" id="date-to" onchange="setDateTo(this.value)" style="width:118px;padding:3px 6px;border:1.5px solid #dde0e7;border-radius:6px;font-size:11px;color:#333;outline:none;height:28px"/>
         <button id="clear-dates-btn" onclick="clearDates()" style="display:none;font-size:10px;color:#0073ea;background:none;border:none;cursor:pointer;padding:0">&#10005;</button>
       </div>
     </div>
@@ -1111,7 +1115,30 @@ function calcExpiry(sub, itemId){
     deferred.setMonth(deferred.getMonth()+12);
     return deferred;
   }
+  // deferred through the Deferred Items tab: the same +12 months
+  if(itemId){ const f=cdDeferredFlowInfo(itemId, sub); if(f) return f.next; }
   return standardDue;
+}
+// ── Deferral ────────────────────────────────────────────────────────────────────
+// A test deferred from Monitoring (Deferred Items tab) is due 12 months after its normal due date. It stays out of
+// Monitoring while that date is more than 6 months away, and comes back into Monitoring by itself once it is within 6
+// months (or past). If the test is performed again after it was deferred, the deferral is over.
+const CD_REFLECT_DAYS=180;
+function cdStdDue(last){ const d=new Date(last); d.setFullYear(d.getFullYear()+(last.getFullYear()<=2024?2:1)); return d; }
+function cdDeferredFlowInfo(itemId, sub){
+  if(!itemId||!cdDeferredItemIds.has(itemId)) return null;
+  const names=cdItemDeferredSubNames[itemId];
+  if(names&&names.size&&!names.has(sub.name)) return null;       // only some tests were deferred
+  const last=latestTestDate(sub); if(!last) return null;
+  const on=cdIsoToDate(cdDeferredDates[itemId]);
+  if(on&&last>on) return null;                                   // tested again since: no longer deferred
+  const std=cdStdDue(last), next=new Date(std); next.setMonth(next.getMonth()+12);
+  return {deferredOn:on, standard:std, next, last};
+}
+function cdDeferredTestsOf(item){
+  const names=cdItemDeferredSubNames[item.id];
+  const tested=item.subs.filter(s=>Object.values(s.yearBlocks||{}).some(b=>b&&b.length));
+  return names&&names.size?tested.filter(s=>names.has(s.name)):tested;
 }
 function monStatus(sub, itemId){
   const exp=calcExpiry(sub, itemId); if(!exp) return "none";
@@ -1120,6 +1147,7 @@ function monStatus(sub, itemId){
   const days=Math.round((exp-new Date())/(86400000));
   if(days<0)   return "overdue";    // 🔴 past due date
   if(days<=180) return "due_soon";  // 🟡 within 6 months
+  if(itemId&&cdDeferredFlowInfo(itemId, sub)) return "deferred";   // 🔵 deferred and still more than 6 months away: on hold
   return "ok";                       // 🟢 more than 6 months away
 }
 function fmtD(d){return d?d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"—";}
@@ -1739,6 +1767,74 @@ function renderTable(){
 }
 
 // ── MONITORING TAB ────────────────────────────────────────────────────────────
+// ── Monitoring: high-level update (charts) ────────────────────────────────────
+// Counts every test in the rows being looked at (search / priority apply; the status pills do not, so the
+// charts keep showing the whole picture). Tests deferred through Deferred Items that are still on hold count as "Deferred".
+function cdMonSummarize(rowsBase){
+  const now=new Date(), mk=()=>({overdue:0,due_soon:0,ok:0,deferred:0});
+  const stat=mk(), byPri={}, bars=Array.from({length:14},mk);
+  const bucket=(d,sm)=>{ if(!d) return null; if(sm==="overdue"||d<now) return 0; const m=(d.getFullYear()-now.getFullYear())*12+(d.getMonth()-now.getMonth()); return m>=12?13:1+m; };
+  const add=(sm,exp,pri)=>{ if(!(sm in stat)) return; stat[sm]++; const p=pri||"—"; (byPri[p]=byPri[p]||mk())[sm]++; const b=bucket(exp,sm); if(b!==null) bars[b][sm]++; };
+  rowsBase.forEach(r=>r.subsWith2024.forEach(s=>add(monStatus(s,r.donor.id),calcExpiry(s,r.donor.id),String(r.donor.prioritySku||"").trim())));
+  let onHold=0, back=null;
+  GROUPS.forEach(g=>g.items.forEach(item=>{
+    if(!cdDeferredItemIds.has(item.id)) return;
+    if(monFilterPriority!=="ALL"&&String(item.prioritySku||"").trim().toLowerCase()!==monFilterPriority.toLowerCase()) return;
+    cdDeferredTestsOf(item).forEach(s=>{
+      const f=cdDeferredFlowInfo(item.id,s); if(!f||monStatus(s,item.id)!=="deferred") return;   // within 6 months: already in the table
+      onHold++; add("deferred",f.next,String(item.prioritySku||"").trim());
+      const r=new Date(f.next); r.setDate(r.getDate()-CD_REFLECT_DAYS); if(!back||r<back) back=r;
+    });
+  }));
+  return {stat,byPri,bars,onHold,back,total:stat.overdue+stat.due_soon+stat.ok+stat.deferred};
+}
+function cdMonHighLevelHtml(hl){
+  const C={overdue:"#e2445c",due_soon:"#fdab3d",ok:"#00c875",deferred:"#5b9bf5"};
+  const NAME={overdue:"Retest due",due_soon:"Due soon <6mo",ok:"On track >6mo",deferred:"Deferred"};
+  const ORDER=["overdue","due_soon","ok","deferred"], st=hl.stat, total=hl.total;
+  const action=(st.overdue||st.due_soon)
+    ?`<span style="font-size:11px;color:#7a2e2e;background:#fff0f0;border:1px solid #ffd0d0;border-radius:20px;padding:4px 12px">🔴 <b>Action required</b> — ${st.overdue?`<b>${st.overdue} test${st.overdue>1?"s":""} overdue</b>`:""}${st.overdue&&st.due_soon?" · ":""}${st.due_soon?`<b>${st.due_soon} due within 6 months</b>`:""} — schedule now</span>`
+    :`<span style="font-size:11px;color:#0a7a46;background:#f0fff8;border:1px solid #c3f0da;border-radius:20px;padding:4px 12px">🟢 Nothing is overdue or due within 6 months</span>`;
+  // donut
+  const R=38, CIRC=2*Math.PI*R; let off=0;
+  const arcs=ORDER.filter(k=>st[k]).map(k=>{ const len=st[k]/total*CIRC; const a=`<circle cx="60" cy="60" r="${R}" fill="none" stroke="${C[k]}" stroke-width="17" stroke-dasharray="${len.toFixed(2)} ${(CIRC-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 60 60)"><title>${NAME[k]}: ${st[k]}</title></circle>`; off+=len; return a; }).join("");
+  const donut=total?`<svg viewBox="0 0 120 120" width="108" height="108" style="flex-shrink:0">${arcs}<text x="60" y="59" text-anchor="middle" font-size="19" font-weight="800" fill="#1f2430">${total}</text><text x="60" y="73" text-anchor="middle" font-size="8.5" fill="#8a93a6">tests</text></svg>`:`<div style="width:108px;height:108px;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;flex-shrink:0">no tests</div>`;
+  const legend=ORDER.map(k=>{
+    const fn=k==="deferred"?"switchTab('deferreditems')":`monFilterStatus=monFilterStatus==='${k}'?'ALL':'${k}';renderMonitoring()`;
+    return `<div onclick="${fn}" title="${k==="deferred"?"Deferred tests are listed in the Deferred Items tab":"Click to filter the table"}" style="display:flex;align-items:center;gap:7px;padding:3px 7px;border-radius:6px;cursor:pointer;${monFilterStatus===k?"background:#e8f2ff;":""}"><span style="width:9px;height:9px;border-radius:50%;background:${C[k]};flex-shrink:0"></span><span style="font-size:11px;color:#444;flex:1;white-space:nowrap">${NAME[k]}</span><b style="font-size:12.5px;color:#1f2430">${st[k]}</b></div>`;
+  }).join("");
+  // when tests come due: Overdue | next 12 months | Later
+  const now=new Date(), lab=["Overdue"];
+  for(let i=0;i<12;i++){ const d=new Date(now.getFullYear(),now.getMonth()+i,1); lab.push(d.toLocaleDateString("en-US",{month:"short"})+(d.getMonth()===0?" ’"+String(d.getFullYear()).slice(2):"")); }
+  lab.push("Later");
+  const W=620,Hh=152,pad=14,bw=(W-pad*2)/14,base=120,maxH=84, maxTot=Math.max(1,...hl.bars.map(b=>b.overdue+b.due_soon+b.ok+b.deferred));
+  const bars=hl.bars.map((b,i)=>{
+    const x=pad+i*bw+bw*.16, w=bw*.68; let cum=0, parts="";
+    ORDER.forEach(k=>{ if(!b[k]) return; const h=b[k]/maxTot*maxH; parts+=`<rect x="${x.toFixed(1)}" y="${(base-cum-h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${C[k]}"><title>${lab[i]} — ${NAME[k]}: ${b[k]}</title></rect>`; cum+=h; });
+    const tot=b.overdue+b.due_soon+b.ok+b.deferred;
+    return parts+(tot?`<text x="${(x+w/2).toFixed(1)}" y="${(base-cum-3).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="700" fill="#555">${tot}</text>`:"")+`<text x="${(x+w/2).toFixed(1)}" y="${base+13}" text-anchor="middle" font-size="8.5" fill="${i===0?"#c0392b":"#8a93a6"}">${lab[i]}</text>`;
+  }).join("");
+  const sx=pad+7*bw;
+  const barsSvg=`<svg viewBox="0 0 ${W} ${Hh}" width="100%" style="display:block"><line x1="${pad}" y1="${base}" x2="${W-pad}" y2="${base}" stroke="#e3e8f0"/><line x1="${sx}" y1="14" x2="${sx}" y2="${base}" stroke="#c8d0de" stroke-dasharray="3 3"/><text x="${sx+4}" y="22" font-size="8.5" fill="#8a93a6">6 months →</text>${bars}</svg>`;
+  // by priority SKU
+  const pris=["Retail","A","B","C","NPD"].filter(p=>hl.byPri[p]).concat(Object.keys(hl.byPri).filter(p=>!["Retail","A","B","C","NPD"].includes(p)));
+  const maxP=Math.max(1,...pris.map(p=>ORDER.reduce((a,k)=>a+hl.byPri[p][k],0)));
+  const priRows=pris.map(p=>{
+    const t=ORDER.reduce((a,k)=>a+hl.byPri[p][k],0), clickable=["Retail","A","B","C"].includes(p);
+    return `<div ${clickable?`onclick="monFilterPriority=monFilterPriority==='${p}'?'ALL':'${p}';renderMonitoring()" title="Click to filter by ${p}"`:""} style="display:flex;align-items:center;gap:8px;margin-bottom:6px;${clickable?"cursor:pointer;":""}${monFilterPriority===p?"background:#e8f2ff;border-radius:6px;":""}"><span style="width:46px;font-size:10.5px;font-weight:700;color:#555;text-align:right;flex-shrink:0">${p==="Retail"?"★ Retail":p==="—"?"none":p+" SKU"}</span><div style="flex:1;display:flex;height:14px;background:#f4f5f9;border-radius:4px;overflow:hidden">${ORDER.map(k=>hl.byPri[p][k]?`<div title="${p} — ${NAME[k]}: ${hl.byPri[p][k]}" style="width:${(hl.byPri[p][k]/maxP*100).toFixed(1)}%;background:${C[k]}"></div>`:"").join("")}</div><b style="width:26px;font-size:11px;color:#1f2430">${t}</b></div>`;
+  }).join("")||`<div style="color:#bbb;font-size:11px">no tests</div>`;
+  const hold=hl.onHold?`<div style="margin-top:10px;padding-top:9px;border-top:1px solid #f0f1f3;font-size:11px;color:#555;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span>🔵 <b>${hl.onHold} deferred test${hl.onHold!==1?"s":""}</b> on hold — not shown in the table. The next one comes back to Monitoring in <b>${esc(hl.back?hl.back.toLocaleDateString("en-US",{month:"short",year:"numeric"}):"—")}</b>.</span><a href="#" onclick="switchTab('deferreditems');return false" style="color:#0073ea;font-weight:700;font-size:11px">View Deferred Items →</a></div>`:"";
+  const ttl=t=>`<div style="font-size:9.5px;font-weight:800;color:#8a93a6;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">${t}</div>`;
+  return `<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:12px 16px;margin-bottom:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px"><div style="font-size:13px;font-weight:800;color:#1f2430">📊 High-level update <span style="font-size:10px;font-weight:600;color:#9aa3b5;margin-left:6px">as of ${esc(fmtD(new Date()))}</span></div>${action}</div>
+    <div class="mon-hl">
+      <div>${ttl("Status of tests")}<div style="display:flex;align-items:center;gap:12px">${donut}<div style="flex:1;min-width:130px">${legend}</div></div></div>
+      <div style="min-width:0">${ttl("When tests come due — next 12 months")}${barsSvg}</div>
+      <div>${ttl("By priority SKU")}${priRows}</div>
+    </div>${hold}
+  </div>`;
+}
+
 function renderMonitoring(){
   if(typeof cdHydrateDeferredSet==="function") cdHydrateDeferredSet();
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
@@ -1789,8 +1885,15 @@ function renderMonitoring(){
     allRows.push({g,donor,ms,exp,last,siblingNames,allSubs:donor.subs,subsWith2024,parentKey});
   });
 
-  // Apply filters
-  let rows=allRows.filter(r=>!cdMonitoringClosedIds.has(r.donor.id)); // hide items already transferred/deferred
+  // Items deferred through the Deferred Items tab stay out of Monitoring while their next due date is far away.
+  // Once it is within 6 months (or already past) their due tests are reflected here again -- automatically.
+  const reflectedRow=r=>{
+    if(!cdMonitoringClosedIds.has(r.donor.id)||!cdDeferredItemIds.has(r.donor.id)) return false;
+    const due=r.subsWith2024.filter(s=>cdDeferredFlowInfo(r.donor.id,s)&&monStatus(s,r.donor.id)!=="deferred");
+    if(!due.length) return false;
+    r.reflected=true; r.subsWith2024=due; r.allSubs=due; return true;
+  };
+  let rows=allRows.filter(r=>!cdMonitoringClosedIds.has(r.donor.id)||reflectedRow(r));
   if(monFocusParent) rows=rows.filter(r=>r.parentKey===monFocusParent);
   if(monSearchQ){
     const q=monSearchQ.toLowerCase();
@@ -1800,88 +1903,44 @@ function renderMonitoring(){
       r.allSubs.some(s=>s.name.toLowerCase().includes(q))
     );
   }
-  if(monFilterStatus!=="ALL"){
-    rows=rows.filter(r=>{
-      if(monFilterStatus==="deferred") return r.subsWith2024.every(s=>getRetestDecision(r.donor.id,s.id)==="next");
-      return r.subsWith2024.some(s=>monStatus(s,r.donor.id)===monFilterStatus);
-    });
-  }
   if(monFilterDecision!=="ALL"){
     rows=rows.filter(r=>r.subsWith2024.some(s=>getRetestDecision(r.donor.id,s.id)===monFilterDecision));
   }
   if(monFilterPriority!=="ALL"){
     rows=rows.filter(r=>(r.donor.prioritySku||"").trim().toLowerCase()===monFilterPriority.toLowerCase());
   }
-
-  // Count per-subtest for stat cards
-  let cntOverdue=0,cntSoon=0,cntOk=0,cntDeferred=0;
-  rows.forEach(({donor,subsWith2024})=>{
-    subsWith2024.forEach(s=>{
-      const sm=monStatus(s,donor.id);
-      if(sm==="overdue") cntOverdue++;
-      else if(sm==="due_soon") cntSoon++;
-      else if(sm==="ok") cntOk++;
-      else if(sm==="deferred") cntDeferred++;
+  const rowsBase=rows;                       // what the charts count: search + priority, but not the status pills
+  if(monFilterStatus!=="ALL"){
+    rows=rows.filter(r=>{
+      if(monFilterStatus==="deferred") return r.subsWith2024.every(s=>getRetestDecision(r.donor.id,s.id)==="next");
+      return r.subsWith2024.some(s=>monStatus(s,r.donor.id)===monFilterStatus);
     });
-  });
+  }
+  const hl=cdMonSummarize(rowsBase);
 
   const cg="minmax(180px,1.5fr) minmax(200px,2fr) minmax(300px,2fr)";
   const hdrs=["Product / SKUs","Annual Test Requirements","Schedule per Test"];
 
   let h=`<div style="padding:14px 18px">`;
 
-  // Search + filter bar
-  const clearFocusBtn=monFocusParent?`<button onclick="clearMonFocus()" style="display:inline-flex;align-items:center;gap:4px;background:#e8f2ff;color:#0055bb;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;border:1px solid #c0d8f8;cursor:pointer">${esc(monFocusParent)} ✕</button>`:""
-  const sBtn=(val,lbl,c)=>`<button onclick="monFilterStatus='${val}';renderMonitoring()" style="font-size:11px;font-weight:600;padding:3px 12px;border-radius:20px;cursor:pointer;border:1px solid ${monFilterStatus===val?"#0073ea":"#dde0e7"};background:${monFilterStatus===val?"#e8f2ff":"#fff"};color:${monFilterStatus===val?"#0055bb":c}">${lbl}</button>`;
-  const dBtn=(val,lbl)=>`<button onclick="monFilterDecision='${val}';renderMonitoring()" style="font-size:11px;font-weight:600;padding:3px 12px;border-radius:20px;cursor:pointer;border:1px solid ${monFilterDecision===val?"#0073ea":"#dde0e7"};background:${monFilterDecision===val?"#e8f2ff":"#fff"};color:${monFilterDecision===val?"#0055bb":"#555"}">${lbl}</button>`;
-  const pBtn=(val,lbl,c)=>`<button onclick="monFilterPriority='${val}';renderMonitoring()" style="font-size:11px;font-weight:600;padding:3px 12px;border-radius:20px;cursor:pointer;border:1px solid ${monFilterPriority===val?"#0073ea":"#dde0e7"};background:${monFilterPriority===val?"#e8f2ff":"#fff"};color:${monFilterPriority===val?"#0055bb":c}">${lbl}</button>`;
+  // Search + filters share ONE row (the static search box + this slot): priority, status, then the buttons
+  const clearFocusBtn=monFocusParent?`<button onclick="clearMonFocus()" style="display:inline-flex;align-items:center;gap:4px;background:#e8f2ff;color:#0055bb;font-size:10.5px;font-weight:600;padding:2px 10px;border-radius:20px;border:1px solid #c0d8f8;cursor:pointer">${esc(monFocusParent)} ✕</button>`:"";
+  const pill=(on,c,fn,label)=>`<button onclick="${fn}" style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;cursor:pointer;white-space:nowrap;border:1px solid ${on?"#0073ea":"#dde0e7"};background:${on?"#e8f2ff":"#fff"};color:${on?"#0055bb":c}">${label}</button>`;
+  const grp=(label,inner)=>`<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><span style="font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">${label}</span>${inner}</div>`;
+  const pB=(val,lbl,c)=>pill(monFilterPriority===val,c,`monFilterPriority='${val}';renderMonitoring()`,lbl);
+  const sB=(val,lbl,c)=>pill(monFilterStatus===val,c,`monFilterStatus='${val}';renderMonitoring()`,lbl);
+  const lg=cdLegacyDeferCandidates();
+  const slot=document.getElementById("mon-filter-slot");
+  if(slot) slot.innerHTML=`${clearFocusBtn}
+    ${grp("Priority",pB("ALL","All","#555")+pB("Retail","★ Retail","#0a7a46")+pB("A","A","#0055bb")+pB("B","B","#b07000")+pB("C","C","#7c3aed"))}
+    ${grp("Status",sB("ALL","All","#555")+sB("overdue","🔴 Retest Due","#c0392b")+sB("due_soon","🟡 Due Soon","#b07000")+sB("ok","🟢 On Track","#0a7a46")+sB("deferred","🔵 Deferred","#0055bb"))}
+    ${(monSearchQ||monFilterStatus!=="ALL"||monFilterDecision!=="ALL"||monFocusParent||monFilterPriority!=="ALL")?`<button onclick="clearMonFilters()" style="font-size:10.5px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:600">✕ Clear all</button>`:""}
+    <span style="flex:1"></span>
+    ${lg.cands.length?`<button onclick="cdOpenLegacyDefer()" title="Items you earlier ticked Defer in the old Management Decision column" style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;font-size:10.5px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1.5px solid #c0d8f8;border-radius:7px;cursor:pointer;white-space:nowrap">🔵 Move deferred items (${lg.cands.length})</button>`:""}
+    <button onclick="exportMonitoringExcel()" style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;font-size:10.5px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer;white-space:nowrap">📊 Export Excel</button>`;
 
-  h+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:10px 14px;margin-bottom:14px">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-      ${clearFocusBtn}
-      ${(monSearchQ||monFilterStatus!=="ALL"||monFilterDecision!=="ALL"||monFocusParent||monFilterPriority!=="ALL")?`<button onclick="clearMonFilters()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear all</button>`:""}
-      ${(()=>{ const lg=cdLegacyDeferCandidates(); return lg.cands.length?`<button onclick="cdOpenLegacyDefer()" title="Items you earlier ticked Defer in the old Management Decision column" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1.5px solid #c0d8f8;border-radius:8px;cursor:pointer">🔵 Move deferred items (${lg.cands.length})</button>`:""; })()}
-      <button onclick="exportMonitoringExcel()" style="${cdLegacyDeferCandidates().cands.length?"":"margin-left:auto;"}display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer">📊 Export Excel</button>
-    </div>
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">
-      <span style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">Priority:</span>
-      ${pBtn("ALL","All","#555")}
-      ${pBtn("Retail","★ Retail","#0a7a46")}
-      ${pBtn("A","A SKU","#0055bb")}
-      ${pBtn("B","B SKU","#b07000")}
-      ${pBtn("C","C SKU","#7c3aed")}
-    </div>
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <span style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">Status:</span>
-      ${sBtn("ALL","All","#555")}
-      ${sBtn("overdue","🔴 Retest Due","#c0392b")}
-      ${sBtn("due_soon","🟡 Due Soon","#b07000")}
-      ${sBtn("ok","🟢 On Track","#0a7a46")}
-      ${sBtn("deferred","🔵 Deferred","#0055bb")}
-    </div>
-  </div>`;
-
-  // Alert banner
-  if(cntOverdue||cntSoon){
-    h+=`<div style="background:#fff8f8;border:1.5px solid #ffc0c0;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:flex-start;gap:10px">
-      <span style="font-size:20px;flex-shrink:0">🔴</span>
-      <div><div style="font-size:13px;font-weight:700;color:#c0392b;margin-bottom:3px">Action Required</div>
-      <div style="font-size:11px;color:#555;line-height:1.6">${cntOverdue?`<strong>${cntOverdue} test${cntOverdue>1?"s":""} overdue</strong> — retesting is past due. `:""
-      }${cntSoon?`<strong>${cntSoon} test${cntSoon>1?"s":""} due within 6 months</strong> — schedule now.`:""}</div>
-      </div></div>`;
-  }
-
-  // Stat cards — clickable to filter
-  h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-    ${[{l:"Retest Due",n:cntOverdue,bg:"#fff0f0",c:"#c0392b",br:"#ffd0d0",f:"overdue"},
-       {l:"Due Soon <6mo",n:cntSoon,bg:"#fffdf0",c:"#b07000",br:"#fde8c0",f:"due_soon"},
-       {l:"On Track >6mo",n:cntOk,bg:"#f0fff8",c:"#0a7a46",br:"#c3f0da",f:"ok"},
-       {l:"Deferred",n:cntDeferred,bg:"#f0f6ff",c:"#0055bb",br:"#c0d8f8",f:"deferred"}]
-    .map(s=>`<div style="background:${s.bg};border:1.5px solid ${s.br};border-radius:8px;padding:10px 16px;flex:1;min-width:80px;text-align:center">
-      <div style="font-size:24px;font-weight:700;color:${s.c}">${s.n}</div>
-      <div style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.5px">${s.l}</div>
-    </div>`).join("")}
-  </div>`;
+  // High-level update (replaces the Action Required banner and the four stat cards)
+  h+=cdMonHighLevelHtml(hl);
 
   if(rows.length===0){
     h+=`<div style="text-align:center;padding:48px;color:#aaa"><div style="font-size:32px">🔍</div><div style="font-size:12px;margin-top:8px">No items match the current filters.</div></div>`;
@@ -1891,7 +1950,7 @@ function renderMonitoring(){
         ${hdrs.map(hd=>`<div style="padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;border-right:0.5px solid #dde0e9">${hd}</div>`).join("")}
       </div>`;
 
-    rows.forEach(({g,donor,siblingNames,allSubs,subsWith2024})=>{
+    rows.forEach(({g,donor,siblingNames,allSubs,subsWith2024,reflected})=>{
       const bgRow="#fff";
 
       // Product cell
@@ -1901,6 +1960,7 @@ function renderMonitoring(){
           <div>
             <div style="font-size:11px;font-weight:700;color:#222">${esc(donor.name)}</div>
             ${siblingNames.map(n=>`<div style="font-size:10px;color:#bbb;margin-top:2px">${esc(n)}</div>`).join("")}
+            ${reflected?`<div title="This product was deferred. Its next due date is now within 6 months, so it is back in Monitoring (it also stays in Deferred Items as history)." style="display:inline-block;margin-top:4px;font-size:9px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:9px;padding:1px 7px">↻ Deferred — back in Monitoring</div>`:""}
           </div>
         </div>
       </div>`;
@@ -1936,6 +1996,7 @@ function renderMonitoring(){
               ${sLast?`<span style="font-size:9px;color:#888">Last: ${fmtD(sLast)}</span>`:""}
               ${sExp?`<span style="font-size:9px;font-weight:700;color:${dateColor}">Due: ${fmtD(sExp)}</span>`:""}
               ${daysText?`<span style="font-size:9px;color:${dateColor}">(${daysText})</span>`:""}
+              ${cdDeferredFlowInfo(donor.id,s)?`<span style="font-size:8.5px;font-weight:700;color:#0055bb;background:#e8f2ff;border-radius:8px;padding:1px 6px">↻ deferred</span>`:""}
             </div>
           </div>`;
         }).join("")}
@@ -2118,37 +2179,19 @@ function renderExpense(){
 
   let h=`<div style="padding:14px 18px">`;
 
-  // ── Filter bar ──
-  h+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:10px 14px;margin-bottom:14px">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
-      <button onclick="exportExpenseCSV()" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:5px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer">📊 Export Excel</button>
-    </div>
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-      <span style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">Priority SKU:</span>
-      ${pBtnE("ALL","All")}
-      ${pBtnE("Retail","★ Retail")}
-      ${pBtnE("A","A SKU")}
-      ${pBtnE("B","B SKU")}
-      ${pBtnE("C","C SKU")}
-      ${pBtnE("NPD","NPD")}
-      ${hasFilter||expSearchQ?`<button onclick="expFilterPriority='ALL';expFilterCategory='ALL';expFilterYear='ALL';expSearchQ='';renderExpense()" style="margin-left:8px;font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear filters</button>`:""}
-    </div>
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px">
-      <span style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">Category:</span>
-      ${cBtnE("ALL","All","#555")}
-      ${cBtnE("Mechanical","⚙ Mechanical","#0073ea")}
-      ${cBtnE("Chemical","🧪 Chemical","#00c875")}
-      ${cBtnE("Corrosion","🛡 Corrosion","#fdab3d")}
-      ${cBtnE("Regulatory","📋 Regulatory","#a358df")}
-      ${cBtnE("Other","Other","#888")}
-    </div>
-    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-      <span style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">Year:</span>
-      ${yBtnE("ALL","All","#555")}
-      ${yBtnE("2024","2024","#0073ea")}
-      ${yBtnE("2025","2025","#00c875")}
-      ${yBtnE("2026","2026","#e2445c")}
-    </div>
+  // ── Filter bar: priority, category and year share ONE row with Export ──
+  const pE=(on,col,fn,label)=>`<button onclick="${fn}" style="font-size:10px;font-weight:600;padding:2px 6px;border-radius:20px;cursor:pointer;white-space:nowrap;border:1px solid ${on?col:"#dde0e7"};background:${on?col:"#fff"};color:${on?"#fff":"#555"}">${label}</button>`;
+  const gE=(label,inner)=>`<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><span style="font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.4px">${label}</span>${inner}</div>`;
+  const pp=(v,l)=>pE(expFilterPriority===v,"#0073ea",`expFilterPriority='${v}';renderExpense()`,l);
+  const cc=(v,l,c)=>pE(expFilterCategory===v,c,`expFilterCategory='${v}';renderExpense()`,l);
+  const yy=(v,l,c)=>pE(expFilterYear===v,c,`expFilterYear='${v}';renderExpense()`,l);
+  h+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:8px 12px;margin-bottom:14px;display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap">
+    ${gE("Priority SKU",pp("ALL","All")+pp("Retail","★ Retail")+pp("A","A")+pp("B","B")+pp("C","C")+pp("NPD","NPD"))}
+    ${gE("Category",cc("ALL","All","#555")+cc("Mechanical","Mechanical","#0073ea")+cc("Chemical","Chemical","#00c875")+cc("Corrosion","Corrosion","#fdab3d")+cc("Regulatory","Regulatory","#a358df")+cc("Other","Other","#888"))}
+    ${gE("Year",yy("ALL","All","#555")+yy("2024","2024","#0073ea")+yy("2025","2025","#00c875")+yy("2026","2026","#e2445c"))}
+    ${hasFilter||expSearchQ?`<button onclick="expFilterPriority='ALL';expFilterCategory='ALL';expFilterYear='ALL';expSearchQ='';renderExpense()" style="font-size:10.5px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:600">✕ Clear</button>`:""}
+    <span style="flex:1"></span>
+    <button onclick="exportExpenseCSV()" style="display:inline-flex;align-items:center;gap:5px;padding:4px 12px;font-size:10.5px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer;white-space:nowrap">📊 Export Excel</button>
   </div>`;
 
   // ── KPI Summary cards ──
@@ -3274,7 +3317,8 @@ function cdInitSearchBars(){
   if(cdSearchBarsInitialized) return;
   cdSearchBarsInitialized=true;
   const set=(wrapId, boxId, q, ph)=>{ const el=document.getElementById(wrapId); if(el) el.innerHTML=cdSearchBarHtml(boxId, q, ph); };
-  set("mon-search-wrap","mon-search-box",monSearchQ,"Search SKU or test name…");
+  { const el=document.getElementById("mon-search-wrap");
+    if(el) el.innerHTML=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap">${cdSearchBarHtml("mon-search-box",monSearchQ,"Search SKU or test name…").replace("flex:1;min-width:200px;max-width:320px","flex:0 1 225px;min-width:160px")}<div id="mon-filter-slot" style="display:contents"></div></div>`; }
   set("exp-search-wrap","exp-search-box",expSearchQ,"Search products & tests…");
   set("trk-search-wrap","trk-search-box",cdTrackingSearchQ,"Search products & tests…");
   set("cmp-search-wrap","cmp-search-box",cdCompletedSearchQ,"Search products & tests…");
@@ -3605,8 +3649,8 @@ function cdAutoGrow(el){ if(!el) return; el.style.height="auto"; el.style.height
 function cdAutoGrowAll(){ document.querySelectorAll("textarea.cd-ta").forEach(cdAutoGrow); }
 // A text box that wraps and grows. Enter is blocked so a value stays one paragraph (a stray line
 // break would end up inside a Google Sheet cell).
-function cdTa(value,onInput,extra){
-  return `<textarea class="pmm-input cd-ta" rows="1" ${extra||""} onkeydown="if(event.key==='Enter')event.preventDefault()" oninput="${onInput};cdAutoGrow(this)">${esc(value)}</textarea>`;
+function cdTa(value,onInput,extra,keydown){
+  return `<textarea class="pmm-input cd-ta" rows="1" ${extra||""} onkeydown="${keydown||"if(event.key==='Enter')event.preventDefault()"}" oninput="${onInput};cdAutoGrow(this)">${esc(value)}</textarea>`;
 }
 (function(){
   const run=()=>{ clearTimeout(window.__cdAG); window.__cdAG=setTimeout(cdAutoGrowAll,0); };
@@ -3818,7 +3862,7 @@ function cdTestTypeBlockHtml(tt, ti){
       <div style="font-size:11.5px;font-weight:700;color:#0073ea">Test Type ${ti+1}${tt.fromWizard?` <span style="margin-left:8px;font-size:9.5px;font-weight:700;color:#0a7a46;background:#e3f6ec;border:1px solid #b8e6cf;border-radius:9px;padding:1px 9px">Existing test · new results are added to ${new Date().getFullYear()}</span>`:""}</div>
       ${cdTestTypes.length>1?`<button onclick="cdRemoveTestType(${ti})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
     </div>
-    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label>${cdTa(tt.name,`cdTestTypes[${ti}].name=this.value`,`onchange="cdNameChanged(${ti},false)"`)}</div>
+    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label>${cdTa(tt.name,`cdTestTypes[${ti}].name=this.value;cdSugOpen(this,'tt',${ti})`,`onchange="cdNameChanged(${ti},false)" onfocus="cdSugFocus(this,'tt',${ti})" onblur="cdSugBlur()"`,"if(!cdSugKey(event)&&event.key==='Enter')event.preventDefault()")}</div>
     ${cdPhysToggleHtml(tt,ti,false)}
     <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label>${cdTa(tt.criteria,`cdTestTypes[${ti}].criteria=this.value`)}</div>
     <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label>${cdTa(tt.target,`cdTestTypes[${ti}].target=this.value`)}</div>
@@ -4278,22 +4322,23 @@ function cdRenderWizard(wrap){
   if(w.step===1){ const el=document.getElementById("cd-wz-q"); if(el){ el.focus(); const n=el.value.length; try{ el.setSelectionRange(n,n); }catch(e){} cdWzUpdateSug(); } }
 }
 
-// ───────────────── New Entry · paste / upload a table of test types ─────────────────
-// One row = one test. Rows that share a Test Category become ONE test type (tab) with one execution per row.
+// ───────────────── New Entry · paste / upload / edit a table of test types ─────────────────
+// The grid opens pre-filled with the test types already on the form (one row per execution), so they can be
+// edited like Excel; Save writes the edits back into those tabs. New rows become new tabs.
 const CD_TBL_COLS=[
   {key:"name",title:"Test Category",w:12,alias:["testcategory","testtype","testname","test","category"]},
   {key:"physical",title:"Physical / tensile test",w:6,alias:["physicaltensiletest","physicaltensile","physical","tensile","tensiletest"]},
-  {key:"criteria",title:"Specific Evaluation Criteria",w:15,alias:["specificevaluationcriteria","evaluationcriteria","criteria"]},
-  {key:"target",title:"Expected Target Performance",w:14,alias:["expectedtargetperformance","targetperformance","target"]},
-  {key:"equipment",title:"Required Lab Equipment & Capabilities",w:12,alias:["requiredlabequipmentcapabilities","requiredlabequipment","labequipment","equipment"]},
+  {key:"criteria",title:"Specific Evaluation Criteria",w:13,alias:["specificevaluationcriteria","evaluationcriteria","criteria"]},
+  {key:"target",title:"Expected Target Performance",w:12,alias:["expectedtargetperformance","targetperformance","target"]},
+  {key:"equipment",title:"Required Lab Equipment & Capabilities",w:11,alias:["requiredlabequipmentcapabilities","requiredlabequipment","labequipment","equipment"]},
   {key:"accreditation",title:"Required Lab Accreditation",w:9,alias:["requiredlabaccreditation","labaccreditation","accreditation"]},
   {key:"supplier",title:"Priority Supplier",w:8,alias:["prioritysupplier","supplier"]},
   {key:"method",title:"Test Standard/ Method",w:9,alias:["teststandardmethod","teststandard","testmethod","standardmethod","method","standard"]},
-  {key:"result",title:"Test Result",w:5,alias:["testresult","result"]},
+  {key:"result",title:"Test Result",w:8,alias:["testresult","result"]},
   {key:"report",title:"Test Report Link",w:6,alias:["testreportlink","reportlink","testreport"]},
-  {key:"lab",title:"Test Lab",w:5,alias:["testlab","lab"]},
-  {key:"cost",title:"Cost",w:4,alias:["cost"]},
-  {key:"date",title:"Test Completion Date",w:6,alias:["testcompletiondate","completiondate","testeddate","date"]},
+  {key:"lab",title:"Test Lab",w:6,alias:["testlab","lab"]},
+  {key:"cost",title:"Cost",w:6,alias:["cost"]},
+  {key:"date",title:"Test Completion Date",w:8,alias:["testcompletiondate","completiondate","testeddate","date"]},
 ];
 // Optional 14th column (your sample table has it): lets one table hold several products.
 const CD_TBL_PRODUCT={key:"product",title:"Product / SKU",w:10,alias:["productsku","product","sku"]};
@@ -4350,50 +4395,120 @@ function cdTblSamples(text, phys){
   const m=t.match(/\b(PASS|FAIL)\b/i); return [{value:"",verdict:m?m[1].toUpperCase():""}];
 }
 function cdTblSkuOf(label){ const m=String(label||"").match(/\(([^()]+)\)\s*$/); return (m?m[1]:String(label||"")).trim(); }
-// records -> test types (one per distinct Test Category, in the order they appear)
-function cdTblBuild(records){
-  const groups=[], idx={};
-  records.forEach(r=>{ const name=String(r.name||"").trim(); if(!name) return; const k=name.toLowerCase().replace(/\s+/g," "); if(!idx[k]){ idx[k]={name,rows:[]}; groups.push(idx[k]); } idx[k].rows.push(r); });
-  return groups.map(g=>{
-    const pick=key=>(g.rows.map(r=>r[key]).find(v=>String(v||"").trim())||"");
-    const explicit=g.rows.map(r=>cdTblBool(r.physical)).find(v=>v!==undefined);
-    const tt={...cdNewTestType(), name:g.name, criteria:pick("criteria"), target:pick("target"), equipment:pick("equipment"), accreditation:pick("accreditation"), execs:[], fromTable:true};
-    const idRow=g.rows.find(r=>r.__id); if(idRow) tt.subId=idRow.__id;
-    if(explicit!==undefined){ tt.physical=explicit; tt.physicalManual=true; }
-    const phys=explicit!==undefined?explicit:CD_PHYS_RE.test(g.name);
-    g.rows.forEach((r,ri)=>{
-      const hasResultData=[r.supplier,r.result,r.report,r.lab,r.cost,r.date].some(v=>String(v||"").trim());
-      if(ri>0&&!hasResultData) return;      // a repeat row with nothing to record adds nothing
-      const ex=cdNewExec(); ex.supplier=r.supplier||""; ex.method=r.method||""; ex.report=r.report||""; ex.lab=r.lab||""; ex.cost=cdTblCost(r.cost); ex.date=cdTblDate(r.date); ex.samples=cdTblSamples(r.result,phys);
-      tt.execs.push(ex);
-    });
-    if(!tt.execs.length) tt.execs.push(cdNewExec());
-    return tt;
+// the samples of an execution as one cell of text ("5,693 (PASS)", "Sample 1 = … , Sample 2 = …", or just "PASS")
+function cdTblResultText(samples){
+  const ss=(samples||[]).filter(s=>s.value||s.verdict); if(!ss.length) return "";
+  const f=v=>{ const n=String(v).replace(/,/g,""); return n!==""&&!isNaN(n)?Number(n).toLocaleString("en-US",{maximumFractionDigits:3}):String(v); };
+  if(ss.length===1) return ss[0].value?`${f(ss[0].value)}${ss[0].verdict?` (${ss[0].verdict})`:""}`:ss[0].verdict;
+  return ss.map((s,i)=>s.value?`Sample ${i+1} = ${f(s.value)}${s.verdict?` (${s.verdict})`:""}`:`Sample ${i+1} = ${s.verdict}`).join(", ");
+}
+function cdTblDateUS(iso){ const m=String(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})$/); return m?`${m[2]}/${m[3]}/${m[1]}`:String(iso||""); }
+let cdUidN=0;
+function cdTtUid(tt){ if(!tt._uid) tt._uid="t"+(++cdUidN)+"_"+Math.random().toString(36).slice(2,6); return tt._uid; }
+function cdTblTabHasData(tt){ return !!((tt.name||"").trim()||(tt.criteria||"").trim()||(tt.target||"").trim()||(tt.equipment||"").trim()||(tt.accreditation||"").trim()||(tt.execs||[]).some(e=>e.supplier||e.method||e.lab||e.report||e.date||e.cost||(e.samples||[]).some(s=>s.value||s.verdict))); }
+// rows -> groups. Rows tied to a tab (uid) or to a saved sheet row (id) stay together even when renamed;
+// rows typed fresh with the same Test Category as such a group join it (another supplier / result for that test).
+function cdTblGroups(records){
+  const groups=[], byUid={}, byId={}, byName={}; const nm=v=>String(v||"").trim().toLowerCase().replace(/\s+/g," ");
+  records.forEach(r=>{
+    if(r.__uid){ let g=byUid[r.__uid]; if(!g){ g=byUid[r.__uid]={uid:r.__uid,rows:[]}; groups.push(g); } g.rows.push(r); }
+    else if(r.__id){ let g=byId[r.__id]; if(!g){ g=byId[r.__id]={sid:r.__id,rows:[]}; groups.push(g); } g.rows.push(r); }
   });
+  groups.forEach(g=>{ g.name=(g.rows.map(r=>String(r.name||"").trim()).find(Boolean))||""; if(g.name) byName[nm(g.name)]=g; });
+  records.forEach(r=>{
+    if(r.__uid||r.__id) return;
+    const name=String(r.name||"").trim(); if(!name) return;
+    let g=byName[nm(name)]; if(!g){ g=byName[nm(name)]={name,rows:[]}; groups.push(g); }
+    g.rows.push(r);
+  });
+  return groups;
+}
+// a NEW test type from a group of rows
+function cdTblBuildGroup(g){
+  const pick=key=>(g.rows.map(r=>r[key]).find(v=>String(v||"").trim())||"");
+  const explicit=g.rows.map(r=>cdTblBool(r.physical)).find(v=>v!==undefined);
+  const tt={...cdNewTestType(), name:g.name, criteria:pick("criteria"), target:pick("target"), equipment:pick("equipment"), accreditation:pick("accreditation"), execs:[], fromTable:true};
+  if(g.sid) tt.subId=g.sid;
+  if(explicit!==undefined){ tt.physical=explicit; tt.physicalManual=true; }
+  const phys=explicit!==undefined?explicit:CD_PHYS_RE.test(g.name);
+  g.rows.forEach((r,ri)=>{
+    const hasResultData=[r.supplier,r.result,r.report,r.lab,r.cost,r.date].some(v=>String(v||"").trim());
+    if(ri>0&&!hasResultData) return;      // a repeat row with nothing to record adds nothing
+    const ex=cdNewExec(); ex.supplier=r.supplier||""; ex.method=r.method||""; ex.report=r.report||""; ex.lab=r.lab||""; ex.cost=cdTblCost(r.cost); ex.date=cdTblDate(r.date); ex.samples=cdTblSamples(r.result,phys);
+    tt.execs.push(ex);
+  });
+  if(!tt.execs.length) tt.execs.push(cdNewExec());
+  return tt;
+}
+// the edited rows of a group -> back into the EXISTING tab (keeps its sheet-row link, WLL / break strength, etc.)
+function cdTblUpdateTab(tab,g){
+  const first=g.rows[0];
+  tab.name=g.name||tab.name;
+  tab.criteria=first.criteria; tab.target=first.target; tab.equipment=first.equipment; tab.accreditation=first.accreditation;
+  const pb=cdTblBool(first.physical); if(pb!==undefined){ tab.physical=pb; tab.physicalManual=true; }
+  const phys=cdIsPhysicalTest(tab), old=tab.execs||[];
+  // rows that belong to the tab are always kept; a row typed/pasted under the same name only counts when it carries a result
+  const rows=g.rows.filter((r,i)=>r.__uid||i===0||[r.supplier,r.result,r.report,r.lab,r.cost,r.date].some(v=>String(v||"").trim()));
+  tab.execs=rows.map(r=>{
+    const ex=(r.__ei!=null&&old[r.__ei])?old[r.__ei]:cdNewExec();
+    ex.supplier=r.supplier; ex.method=r.method; ex.report=r.report; ex.lab=r.lab;
+    ex.cost=r.cost?(cdTblCost(r.cost)||ex.cost):"";
+    if(!r.date) ex.date=""; else { const d=cdTblDate(r.date); if(d) ex.date=d; }
+    if(r.result!==cdTblResultText(ex.samples)) ex.samples=cdTblSamples(r.result,phys);   // only re-read the result when the cell was changed
+    return ex;
+  });
+  if(!tab.execs.length) tab.execs=[cdNewExec()];
 }
 // ---- the pop-up grid ----
 let cdTbl=null;
 const CD_TBL_N=14;                       // 13 titles + optional Product / SKU
 const cdTblBlankRow=()=>new Array(CD_TBL_N).fill("");
-function cdTblHasExisting(){ return cdTestTypes.some(t=>(t.name||"").trim()||(t.criteria||"").trim()||t.execs.some(e=>e.supplier||e.method||e.lab||e.report||e.date||e.cost||(e.samples||[]).some(s=>s.value||s.verdict))); }
+function cdTblMeta(){
+  cdTbl.ids=cdTbl.ids||[]; cdTbl.bind=cdTbl.bind||[];
+  while(cdTbl.ids.length<cdTbl.rows.length) cdTbl.ids.push(null);
+  while(cdTbl.bind.length<cdTbl.rows.length) cdTbl.bind.push(null);
+  cdTbl.ids.length=cdTbl.rows.length; cdTbl.bind.length=cdTbl.rows.length;
+}
+// the test types on the form -> grid rows (one per execution)
+function cdTblFromTabs(){
+  const rows=[], bind=[], uids=[];
+  cdTestTypes.forEach(tt=>{
+    if(!cdTblTabHasData(tt)) return;
+    const uid=cdTtUid(tt); uids.push(uid);
+    const phys=cdIsPhysicalTest(tt), execs=(tt.execs&&tt.execs.length)?tt.execs:[cdNewExec()];
+    execs.forEach((ex,ei)=>{
+      const r=cdTblBlankRow(); r[0]=tt.name||"";
+      if(ei===0){ r[1]=phys?"TRUE":"FALSE"; r[2]=tt.criteria||""; r[3]=tt.target||""; r[4]=tt.equipment||""; r[5]=tt.accreditation||""; }
+      r[6]=ex.supplier||""; r[7]=ex.method||""; r[8]=cdTblResultText(ex.samples); r[9]=ex.report||""; r[10]=ex.lab||""; r[11]=ex.cost||""; r[12]=cdTblDateUS(ex.date);
+      rows.push(r); bind.push({uid,ei});
+    });
+  });
+  return {rows,bind,uids};
+}
 function cdOpenTable(){
-  cdTbl={rows:Array.from({length:6},cdTblBlankRow), ids:[], hasProduct:false, product:"", replace:false, notice:""};
+  const t=cdTblFromTabs(), rows=[...t.rows];
+  while(rows.length<Math.max(6,t.rows.length+2)) rows.push(cdTblBlankRow());      // a couple of spare rows to add more
+  const n=t.uids.length;
+  cdTbl={rows, ids:[], bind:[...t.bind], boundUids:t.uids, hasProduct:false, product:"",
+    notice:n?`These are the ${n} test type${n!==1?"s":""} on the form — one row per execution; the tag on the left shows which tab a row belongs to. Edit any cell and press Save to update the tabs. Add rows for new test types.`:""};
   openModal({type:"cdTable"});
 }
-// ids[i] = the Subitems row a loaded (saved) test came from, so an edit -- even a rename -- updates that row
-function cdTblSyncIds(){ cdTbl.ids=cdTbl.ids||[]; while(cdTbl.ids.length<cdTbl.rows.length) cdTbl.ids.push(null); cdTbl.ids.length=cdTbl.rows.length; }
 function cdTblRecordsOfGrid(){
-  cdTblSyncIds();
-  return cdTbl.rows.map((r,ri)=>{ const o={}; CD_TBL_COLS.forEach((c,i)=>{ o[c.key]=String(r[i]||"").trim(); }); o.product=String(r[13]||"").trim(); o.__id=cdTbl.ids[ri]||null; return o; });
+  cdTblMeta();
+  return cdTbl.rows.map((r,ri)=>{
+    const o={}; CD_TBL_COLS.forEach((c,i)=>{ o[c.key]=String(r[i]||"").trim(); }); o.product=String(r[13]||"").trim();
+    const b=cdTbl.bind[ri]; o.__uid=b?b.uid:null; o.__ei=b?b.ei:null; o.__id=cdTbl.ids[ri]||null;
+    return o;
+  });
 }
 function cdTblProducts(){ const m={}; cdTblRecordsOfGrid().forEach(o=>{ if(o.product) m[o.product]=(m[o.product]||0)+1; }); return m; }
 function cdTblValidate(){
-  const recs=cdTblRecordsOfGrid(), t=cdTbl, out={rows:[],errors:[],tests:[],used:0};
+  const recs=cdTblRecordsOfGrid(), t=cdTbl, out={rows:[],errors:[],groups:[],used:0,updates:0,adds:0,removed:0};
   const use=[];
   recs.forEach((o,i)=>{
-    const any=Object.values(o).some(v=>v);
+    const any=[...CD_TBL_COLS.map(c=>o[c.key]),o.product].some(v=>v);
     if(!any){ out.rows[i]={s:"empty"}; return; }
-    if(t.hasProduct&&t.product&&t.product!=="__all"&&o.product!==t.product){ out.rows[i]={s:"other"}; return; }
+    if(!o.__uid&&!o.__id&&t.hasProduct&&t.product&&t.product!=="__all"&&o.product!==t.product){ out.rows[i]={s:"other"}; return; }
     if(!o.name){ out.rows[i]={s:"error",msg:"needs a Test Category"}; out.errors.push(`Row ${i+1} needs a Test Category`); return; }
     const w=[];
     if(o.date&&!cdTblDate(o.date)) w.push("date not recognised");
@@ -4402,25 +4517,30 @@ function cdTblValidate(){
     if(o.result){ const phys=cdTblBool(o.physical); const p=phys!==undefined?phys:CD_PHYS_RE.test(o.name); if(!/\b(PASS|FAIL)\b/i.test(o.result)&&!(p&&/\d/.test(o.result))) w.push("result should be PASS or FAIL"); }
     out.rows[i]={s:w.length?"warn":"ok",msg:w.join("; ")}; use.push(o);
   });
-  out.used=use.length; out.tests=cdTblBuild(use); out.updates=out.tests.filter(t=>t.subId).length;
+  out.used=use.length; out.groups=cdTblGroups(use);
+  out.updates=out.groups.filter(g=>g.uid).length; out.adds=out.groups.length-out.updates;
+  const present=new Set(out.groups.filter(g=>g.uid).map(g=>g.uid));
+  out.removed=(t.boundUids||[]).filter(u=>!present.has(u)).length;
   return out;
 }
 function cdTblRefresh(){
   if(!cdTbl||!document.getElementById("cd-tbl")) return;
-  const v=cdTblValidate(), n=v.tests.length;
+  const v=cdTblValidate(), n=v.groups.length;
   v.rows.forEach((r,i)=>{ const el=document.getElementById("cd-tbl-n-"+i); if(!el) return;
     el.style.background=r.s==="error"?"#fdecec":r.s==="warn"?"#fff4e0":r.s==="ok"?"#e3f6ec":"#f4f5f9";
     el.style.color=r.s==="error"?"#c0392b":r.s==="warn"?"#b36b00":r.s==="ok"?"#0a7a46":"#9aa3b5";
     el.title=r.msg||(r.s==="other"?"Belongs to another product":""); });
   const sum=document.getElementById("cd-tbl-sum");
   if(sum){
-    const warn=v.rows.filter(r=>r.s==="warn").length;
+    const warn=v.rows.filter(r=>r.s==="warn").length, parts=[];
+    if(v.updates) parts.push(`updates ${v.updates}`); if(v.adds) parts.push(`adds ${v.adds}`); if(v.removed) parts.push(`removes ${v.removed}`);
     sum.innerHTML=v.errors.length?`<span style="color:#c0392b;font-weight:700">⚠ ${esc(v.errors[0])}${v.errors.length>1?` (+${v.errors.length-1} more)`:""}</span>`
-      :n?`<b style="color:#0a7a46">${v.used} row${v.used!==1?"s":""} → ${n} test type${n!==1?"s":""}</b>${v.updates?` <span style="color:#0055bb;font-weight:700">(updates ${v.updates} saved test${v.updates!==1?"s":""}${n-v.updates?` · ${n-v.updates} new`:""})</span>`:""}${v.used>n?` <span style="color:#777">(rows with the same Test Category share one tab)</span>`:""}${warn?` <span style="color:#b36b00">· ${warn} row${warn!==1?"s":""} to check (hover the row number)</span>`:""}`
+      :(n||v.removed)?`<b style="color:#0a7a46">${v.used} row${v.used!==1?"s":""} → ${n} test type${n!==1?"s":""}</b>${parts.length?` <span style="color:#0055bb;font-weight:700">(${parts.join(" · ")})</span>`:""}${v.used>n?` <span style="color:#777">(rows with the same Test Category share one tab)</span>`:""}${warn?` <span style="color:#b36b00">· ${warn} row${warn!==1?"s":""} to check (hover the row number)</span>`:""}`
       :`<span style="color:#999">Paste or type at least one test — a Test Category is required.</span>`;
   }
   const b=document.getElementById("cd-tbl-apply");
-  if(b){ const ok=!v.errors.length&&n>0; b.disabled=!ok; b.style.background=ok?"#0073ea":"#9bbfe9"; b.style.cursor=ok?"pointer":"default"; b.textContent=n?`Create ${n} test type${n!==1?"s":""}`:"Create test types"; }
+  if(b){ const ok=!v.errors.length&&(n>0||v.removed>0); b.disabled=!ok; b.style.background=ok?"#0073ea":"#9bbfe9"; b.style.cursor=ok?"pointer":"default";
+    b.textContent=(v.updates||v.removed)?"💾 Save changes":(n?`Create ${n} test type${n!==1?"s":""}`:"Create test types"); }
 }
 function cdTblSet(r,c,v){ cdTbl.rows[r][c]=v; cdTblRefresh(); }
 function cdTblRerender(fr,fc){
@@ -4435,20 +4555,23 @@ function cdTblKey(e,r,c){
   }
 }
 function cdTblAddRow(){ cdTbl.rows.push(cdTblBlankRow()); cdTblRerender(cdTbl.rows.length-1,0); }
-function cdTblDelRow(r){ cdTblSyncIds(); cdTbl.rows.splice(r,1); cdTbl.ids.splice(r,1); while(cdTbl.rows.length<3) cdTbl.rows.push(cdTblBlankRow()); cdTblRerender(); }
-function cdTblClear(){ cdTbl.rows=Array.from({length:6},cdTblBlankRow); cdTbl.ids=[]; cdTbl.hasProduct=false; cdTbl.product=""; cdTbl.notice=""; cdTblRerender(); }
-// load parsed records into the grid, replacing what is there
+function cdTblDelRow(r){ cdTblMeta(); cdTbl.rows.splice(r,1); cdTbl.ids.splice(r,1); cdTbl.bind.splice(r,1); while(cdTbl.rows.length<3) cdTbl.rows.push(cdTblBlankRow()); cdTblRerender(); }
+function cdTblClear(){ cdTbl.rows=Array.from({length:6},cdTblBlankRow); cdTbl.ids=[]; cdTbl.bind=[]; cdTbl.hasProduct=false; cdTbl.product=""; cdTbl.notice=""; cdTblRerender(); }
+// pasted / uploaded rows go BELOW the rows that belong to tabs; earlier pasted rows are replaced
 function cdTblLoadRecords(records, hasProduct, source){
-  const rows=records.map(o=>{ const r=cdTblBlankRow(); CD_TBL_COLS.forEach((c,i)=>{ r[i]=o[c.key]||""; }); r[13]=o.product||""; return r; });
-  while(rows.length<6) rows.push(cdTblBlankRow());
-  cdTbl.rows=rows; cdTbl.ids=records.map(o=>o.__id||null); cdTbl.hasProduct=!!hasProduct;
+  cdTblMeta();
+  const keep=[]; cdTbl.rows.forEach((r,i)=>{ if(cdTbl.bind[i]||cdTbl.ids[i]) keep.push({r,b:cdTbl.bind[i],id:cdTbl.ids[i]}); });
+  const fresh=records.map(o=>{ const r=cdTblBlankRow(); CD_TBL_COLS.forEach((c,i)=>{ r[i]=o[c.key]||""; }); r[13]=o.product||""; return r; });
+  cdTbl.rows=[...keep.map(k=>k.r),...fresh]; cdTbl.bind=[...keep.map(k=>k.b),...fresh.map(()=>null)]; cdTbl.ids=[...keep.map(k=>k.id),...records.map(o=>o.__id||null)];
+  while(cdTbl.rows.length<6) cdTbl.rows.push(cdTblBlankRow());
+  cdTblMeta(); cdTbl.hasProduct=!!hasProduct;
   const prods=Object.keys(cdTblProducts());
   if(hasProduct&&prods.length){
     const sku=(cdDraft.sku||"").trim().toLowerCase();
     cdTbl.product=(sku&&prods.find(p=>cdTblSkuOf(p).toLowerCase()===sku))||prods[0];
   } else cdTbl.product="";
   const n=records.length;
-  cdTbl.notice=`Loaded ${n} row${n!==1?"s":""}${source?` from ${source}`:""}.`+(prods.length>1?` This table has ${prods.length} products — choose which one to import below.`:"");
+  cdTbl.notice=`Loaded ${n} row${n!==1?"s":""}${source?` from ${source}`:""}.`+(keep.length?` The rows for your current test types stay at the top.`:"")+(prods.length>1?` This table has ${prods.length} products — choose which one to import below.`:"");
 }
 // the tests already saved for this product: the mother SKU of the guided setup, or the product whose SKU is typed on the form
 function cdTblSavedSource(){
@@ -4460,10 +4583,12 @@ function cdTblSavedSource(){
 function cdTblLoadSaved(){
   const src=cdTblSavedSource();
   if(!src){ cdTbl.notice="Nothing saved to load yet. Pick a product with the guided setup, or type the SKU of a product that already has tests."; cdTblRerender(); return; }
-  const subs=(src.item.subs||[]).filter(s=>!s._replicated);
+  const open=new Set(cdTestTypes.map(t=>t.subId).filter(Boolean));
+  const subs=(src.item.subs||[]).filter(s=>!s._replicated&&!open.has(s.rowId));
+  if(!subs.length){ cdTbl.notice=`All of ${src.item.name}'s saved tests are already on the form (they are the rows above).`; cdTblRerender(); return; }
   const recs=subs.map(s=>({name:s.name||"", physical:(CD_PHYS_RE.test(s.name||"")||Object.values(s.yearBlocks||{}).flat().some(b=>b.wwl||b.claim))?"TRUE":"FALSE", criteria:s.criteria||"", target:s.target||"", equipment:s.equipment||"", accreditation:s.accreditation||"", __id:s.rowId}));
   cdTblLoadRecords(recs,false,`${src.item.name}'s saved tests`);
-  cdTbl.notice=`Loaded ${recs.length} saved test${recs.length!==1?"s":""} from ${src.item.name}. Edit any cell (even the name) and press Create — the existing rows in the sheet are updated. To add a new result, fill the Priority Supplier / Test Result … columns of that row.`;
+  cdTbl.notice=`Added ${recs.length} more saved test${recs.length!==1?"s":""} from ${src.item.name}. Edit any cell (even the name) and press Save — the existing rows in the sheet are updated once you Submit the entry. To add a new result, fill the Priority Supplier / Test Result … columns of that row.`;
   cdTblRerender();
 }
 function cdTblPaste(e,r,c){
@@ -4506,58 +4631,155 @@ function cdTblTemplate(){
   const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); a.download="Test_Types_Template.csv"; document.body.appendChild(a); a.click(); a.remove();
 }
 function cdTblApply(){
-  const v=cdTblValidate(); if(v.errors.length||!v.tests.length) return;
-  v.tests.forEach(tt=>{ if(tt.subId){ tt.appendToExisting=true; if(cdWizard.done) tt.fromWizard=true; } });   // loaded saved tests: their rows are updated
+  const v=cdTblValidate(); if(v.errors.length||(!v.groups.length&&!v.removed)) return;
+  if(v.removed&&!confirm(`This removes ${v.removed} test type${v.removed!==1?"s":""} from the form (nothing is deleted from the sheet). Continue?`)) return;
   const m=(cdWizard.done&&cdWzMother())?cdWzMother():null;
-  if(m){      // a Test Category that already exists on this mother SKU updates / adds to THAT test instead of creating a duplicate
-    v.tests.forEach(tt=>{ const hit=(m.subs||[]).find(s=>String(s.name||"").trim().toLowerCase().replace(/\s+/g," ")===tt.name.toLowerCase().replace(/\s+/g," "));
-      if(hit){ tt.subId=hit.rowId; tt.fromWizard=true; tt.appendToExisting=true; } });
-  }
-  if(cdTblHasExisting()&&!cdTbl.replace){
-    let firstNew=-1;      // a saved test already open on the form is replaced in place; anything else is added as a new tab
-    v.tests.forEach(tt=>{ const at=tt.subId?cdTestTypes.findIndex(x=>x.subId===tt.subId):-1; if(at>=0){ cdTestTypes[at]=tt; if(firstNew<0) firstNew=at; } else { cdTestTypes.push(tt); if(firstNew<0) firstNew=cdTestTypes.length-1; } });
-    cdActiveTT=Math.max(0,firstNew); }
-  else { cdTestTypes=v.tests; cdActiveTT=0; }
+  const byUid=new Map(cdTestTypes.map(t=>[t._uid,t])), touched=new Set(), fresh=[];
+  v.groups.forEach(g=>{
+    if(g.uid&&byUid.has(g.uid)){ cdTblUpdateTab(byUid.get(g.uid),g); touched.add(g.uid); return; }
+    const tt=cdTblBuildGroup(g);
+    if(m&&!tt.subId){      // a Test Category that already exists on this mother SKU updates / adds to THAT test instead of creating a duplicate
+      const hit=(m.subs||[]).find(s=>String(s.name||"").trim().toLowerCase().replace(/\s+/g," ")===tt.name.toLowerCase().replace(/\s+/g," "));
+      if(hit) tt.subId=hit.rowId;
+    }
+    if(tt.subId){
+      tt.appendToExisting=true; if(cdWizard.done) tt.fromWizard=true;
+      const open=cdTestTypes.find(x=>x.subId&&x.subId===tt.subId);        // that saved test is already open on the form: update that tab
+      if(open){ cdTblUpdateTab(open,g); touched.add(cdTtUid(open)); return; }
+    }
+    fresh.push(tt);
+  });
+  const gone=new Set((cdTbl.boundUids||[]).filter(u=>!v.groups.some(g=>g.uid===u)));
+  let kept=cdTestTypes.filter(t=>!gone.has(t._uid));
+  if(fresh.length&&kept.every(t=>!cdTblTabHasData(t))) kept=[];            // only blank tabs: replace them
+  const firstTouched=kept.findIndex(t=>touched.has(t._uid));
+  cdTestTypes=[...kept,...fresh];
+  if(!cdTestTypes.length) cdTestTypes=[cdNewTestType()];
+  cdActiveTT=fresh.length?kept.length:Math.max(0,firstTouched);
   closeModal(); cdRenderNewEntry();
 }
 function cdTableModalHtml(){
-  const t=cdTbl, hasX=t.hasProduct, cols=hasX?[...CD_TBL_COLS,CD_TBL_PRODUCT]:CD_TBL_COLS;
+  const t=cdTbl; cdTblMeta();
+  const hasX=t.hasProduct, cols=hasX?[...CD_TBL_COLS,CD_TBL_PRODUCT]:CD_TBL_COLS;
   const total=cols.reduce((a,c)=>a+c.w,0), avail=91;
-  const prods=cdTblProducts(), pk=Object.keys(prods), existing=cdTblHasExisting();
-  const head=cols.map(c=>`<th style="width:${(c.w/total*avail).toFixed(2)}%;padding:6px 5px;font-size:9px;font-weight:800;color:#5b6479;text-transform:uppercase;letter-spacing:.25px;text-align:left;background:#f1f4fa;border:1px solid #dde3ee;position:sticky;top:0;z-index:1;line-height:1.25">${esc(c.title)}</th>`).join("");
-  const body=t.rows.map((r,ri)=>`<tr><td id="cd-tbl-n-${ri}" style="width:2.2%;text-align:center;font-size:9.5px;font-weight:700;border:1px solid #dde3ee;background:#f4f5f9;color:#9aa3b5;vertical-align:top;padding-top:8px">${ri+1}${(t.ids||[])[ri]?`<div title="Saved test — Create updates its row in the sheet" style="font-size:7px;color:#0073ea;font-weight:800;margin-top:2px;letter-spacing:.2px">SAVED</div>`:""}</td>${
-    cols.map((c,ci)=>`<td style="padding:0;border:1px solid #dde3ee;vertical-align:top"><textarea class="cd-ta cd-cell" rows="1" data-r="${ri}" data-c="${ci}" oninput="cdTblSet(${ri},${ci},this.value);cdAutoGrow(this)" onpaste="cdTblPaste(event,${ri},${ci})" onkeydown="cdTblKey(event,${ri},${ci})">${esc(r[ci]||"")}</textarea></td>`).join("")
-  }<td style="width:2.2%;text-align:center;border:1px solid #dde3ee;vertical-align:top;padding-top:6px"><button type="button" title="Delete this row" onclick="cdTblDelRow(${ri})" style="border:none;background:none;color:#c9cfdb;cursor:pointer;font-size:12px">✕</button></td></tr>`).join("");
+  const prods=cdTblProducts(), pk=Object.keys(prods);
+  const head=cols.map((c,ci)=>`<th style="width:${(c.w/total*avail).toFixed(2)}%;padding:6px 5px;font-size:9px;font-weight:800;color:#5b6479;text-transform:uppercase;letter-spacing:.25px;text-align:left;background:#f1f4fa;border:1px solid #dde3ee;position:sticky;top:0;z-index:1;line-height:1.25">${esc(c.title)}</th>`).join("");
+  const body=t.rows.map((r,ri)=>{
+    const b=t.bind[ri], tabNo=b?cdTestTypes.findIndex(x=>x._uid===b.uid)+1:0;
+    const tag=b&&tabNo?`<div title="This row belongs to Test Type ${tabNo} on the form" style="font-size:7px;color:#0073ea;font-weight:800;margin-top:2px;letter-spacing:.2px">TAB ${tabNo}</div>`:(t.ids[ri]?`<div title="Saved test — Save updates its row in the sheet" style="font-size:7px;color:#0a7a46;font-weight:800;margin-top:2px;letter-spacing:.2px">SAVED</div>`:"");
+    return `<tr><td id="cd-tbl-n-${ri}" style="width:2.6%;text-align:center;font-size:9.5px;font-weight:700;border:1px solid #dde3ee;background:#f4f5f9;color:#9aa3b5;vertical-align:top;padding-top:8px">${ri+1}${tag}</td>${
+      cols.map((c,ci)=>{
+        const nm=ci===0;
+        const attrs=nm?`oninput="cdTblSet(${ri},${ci},this.value);cdAutoGrow(this);cdSugOpen(this,'grid',${ri})" onfocus="cdSugFocus(this,'grid',${ri})" onblur="cdSugBlur()" onkeydown="if(cdSugKey(event))return;cdTblKey(event,${ri},${ci})"`:`oninput="cdTblSet(${ri},${ci},this.value);cdAutoGrow(this)" onkeydown="cdTblKey(event,${ri},${ci})"`;
+        return `<td style="padding:0;border:1px solid #dde3ee;vertical-align:top"><textarea class="cd-ta cd-cell" rows="1" data-r="${ri}" data-c="${ci}" ${attrs} onpaste="cdTblPaste(event,${ri},${ci})">${esc(r[ci]||"")}</textarea></td>`;
+      }).join("")
+    }<td style="width:2.2%;text-align:center;border:1px solid #dde3ee;vertical-align:top;padding-top:6px"><button type="button" title="Delete this row" onclick="cdTblDelRow(${ri})" style="border:none;background:none;color:#c9cfdb;cursor:pointer;font-size:12px">✕</button></td></tr>`;
+  }).join("");
   return `<div class="modal-wrap">
     <div class="modal-box" style="width:min(1560px,97vw);max-width:none;max-height:93vh;display:flex;flex-direction:column;overflow:hidden">
       <div style="background:#0055bb;padding:12px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
-        <div style="color:#fff;font-weight:800;font-size:14px">📋 Paste or upload test types <span style="font-weight:500;font-size:11px;opacity:.85;margin-left:8px">each row becomes a test — rows with the same Test Category share one tab</span></div>
+        <div style="color:#fff;font-weight:800;font-size:14px">📋 Test types — edit, paste or upload <span style="font-weight:500;font-size:11px;opacity:.85;margin-left:8px">one row per execution — rows with the same Test Category share one tab</span></div>
         <button onclick="closeModal()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
       </div>
       <div style="padding:10px 16px 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0">
         <button onclick="document.getElementById('cd-tbl-file').click()" style="font-size:11px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:7px;padding:7px 14px;cursor:pointer">⬆ Upload Excel / CSV file</button>
         <input type="file" id="cd-tbl-file" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none" onchange="cdTblUpload(this.files[0]);this.value=''"/>
         <button onclick="cdTblTemplate()" style="font-size:11px;font-weight:600;color:#555;background:#f0f2f5;border:1px solid #dde0e7;border-radius:7px;padding:7px 12px;cursor:pointer">⬇ Download blank template (.csv)</button>
-        <button onclick="cdTblLoadSaved()" title="Fill the grid with the tests already saved for this product, so you can correct them here" style="font-size:11px;font-weight:700;color:#0a7a46;background:#e3f6ec;border:1px solid #b8e6cf;border-radius:7px;padding:7px 14px;cursor:pointer">↻ Load this product's saved tests</button>
-        <div style="font-size:10.5px;color:#777;line-height:1.45;flex:1;min-width:260px">Type like in Excel, or <b>paste</b> (Ctrl/Cmd+V) rows copied from Excel / Google Sheets — with or without the title row. <b>Enter</b> moves down, <b>Tab</b> moves right. An uploaded file must use these same titles. Already submitted? <b>Load the saved tests</b>, correct them, and Create — the existing cells are updated.</div>
+        <button onclick="cdTblLoadSaved()" title="Add the tests already saved in the sheet for this product" style="font-size:11px;font-weight:700;color:#0a7a46;background:#e3f6ec;border:1px solid #b8e6cf;border-radius:7px;padding:7px 14px;cursor:pointer">↻ Load this product's saved tests</button>
+        <div style="font-size:10.5px;color:#777;line-height:1.45;flex:1;min-width:260px">Type like in Excel, or <b>paste</b> (Ctrl/Cmd+V) rows copied from Excel / Google Sheets — with or without the title row. Start typing a <b>Test Category</b> to pick a past test and fill its criteria → accreditation. <b>Enter</b> moves down, <b>Tab</b> moves right.</div>
       </div>
       ${t.notice?`<div style="margin:0 16px 6px;padding:7px 12px;background:#eef6ff;border:1px solid #c0d8f8;border-radius:7px;font-size:11px;color:#0055bb;flex-shrink:0">${esc(t.notice)}</div>`:""}
       ${hasX&&pk.length?`<div style="margin:0 16px 6px;padding:8px 12px;background:#fff8e8;border:1px solid #fde0b0;border-radius:7px;font-size:11px;color:#6b4a00;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0"><b>This table has a Product / SKU column.</b> Import rows for:
         <select class="pmm-input" style="width:auto;max-width:560px;padding:5px 8px;font-size:11px" onchange="cdTbl.product=this.value;cdTblRefresh()">${pk.map(p=>`<option value="${esc(p)}" ${t.product===p?"selected":""}>${esc(p)} (${prods[p]} rows)</option>`).join("")}<option value="__all" ${t.product==="__all"?"selected":""}>All rows (every product)</option></select></div>`:""}
       <div style="padding:0 16px;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden">
-        <table id="cd-tbl" style="width:100%;table-layout:fixed;border-collapse:collapse;background:#fff"><thead><tr><th style="width:2.2%;background:#f1f4fa;border:1px solid #dde3ee;position:sticky;top:0;z-index:1"></th>${head}<th style="width:2.2%;background:#f1f4fa;border:1px solid #dde3ee;position:sticky;top:0;z-index:1"></th></tr></thead><tbody>${body}</tbody></table>
+        <table id="cd-tbl" style="width:100%;table-layout:fixed;border-collapse:collapse;background:#fff"><thead><tr><th style="width:2.6%;background:#f1f4fa;border:1px solid #dde3ee;position:sticky;top:0;z-index:1"></th>${head}<th style="width:2.2%;background:#f1f4fa;border:1px solid #dde3ee;position:sticky;top:0;z-index:1"></th></tr></thead><tbody>${body}</tbody></table>
       </div>
       <div style="padding:10px 16px;border-top:1px solid #e6eaf2;background:#fcfdff;display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0">
         <button onclick="cdTblAddRow()" style="font-size:11px;font-weight:700;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:7px;padding:6px 12px;cursor:pointer">+ Add row</button>
         <button onclick="cdTblClear()" style="font-size:11px;font-weight:600;color:#888;background:none;border:none;cursor:pointer;text-decoration:underline">Clear table</button>
         <div id="cd-tbl-sum" style="flex:1;min-width:240px;font-size:11.5px"></div>
-        ${existing?`<label style="font-size:11px;color:#555;display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${t.replace?"checked":""} onchange="cdTbl.replace=this.checked"/> Replace the current test types instead of adding to them</label>`:""}
         <button onclick="closeModal()" style="padding:8px 16px;font-size:12px;font-weight:600;color:#555;background:#f0f2f5;border:none;border-radius:7px;cursor:pointer">Cancel</button>
         <button id="cd-tbl-apply" onclick="cdTblApply()" style="padding:8px 20px;font-size:12px;font-weight:700;color:#fff;background:#9bbfe9;border:none;border-radius:7px;cursor:default">Create test types</button>
       </div>
     </div>
   </div>`;
 }
+
+// ───────────────── Test Type (Name): dropdown of past tests ─────────────────
+// Every test name already in the data, newest/most-used first. Picking one fills Specific Evaluation Criteria →
+// Lab Accreditation (and the physical tick) from the most complete version of that test on file.
+let cdCatalogCache=null;
+function cdTestCatalog(){
+  if(cdCatalogCache&&cdCatalogCache.ref===GROUPS) return cdCatalogCache.list;
+  const map={};
+  GROUPS.forEach(g=>g.items.forEach(item=>{
+    if(item._replicatedFrom) return;
+    (item.subs||[]).forEach(sub=>{
+      const name=String(sub.name||"").trim(); if(!name) return;
+      const k=name.toLowerCase().replace(/\s+/g," ");
+      const rec=map[k]||(map[k]={name,key:k,variants:[],items:new Set()});
+      rec.items.add(item.id);
+      const filled=[sub.criteria,sub.target,sub.equipment,sub.accreditation].filter(v=>String(v||"").trim()).length;
+      const years=Object.entries(sub.yearBlocks||{}).filter(([y,b])=>b&&b.length).map(([y])=>y).sort();
+      rec.variants.push({criteria:sub.criteria||"",target:sub.target||"",equipment:sub.equipment||"",accreditation:sub.accreditation||"",filled,last:years.length?years[years.length-1]:"",physical:CD_PHYS_RE.test(name)||Object.values(sub.yearBlocks||{}).flat().some(b=>b.wwl||b.claim)});
+    });
+  }));
+  const list=Object.values(map).map(rec=>{
+    const best=rec.variants.slice().sort((a,b)=>(b.filled-a.filled)||String(b.last).localeCompare(String(a.last)))[0];
+    return {name:rec.name,key:rec.key,criteria:best.criteria,target:best.target,equipment:best.equipment,accreditation:best.accreditation,physical:best.physical,products:rec.items.size};
+  }).sort((a,b)=>(b.products-a.products)||a.name.localeCompare(b.name));
+  cdCatalogCache={ref:GROUPS,list}; return list;
+}
+let cdSug={list:[],idx:-1,ctx:null};
+function cdSugEl(){ let el=document.getElementById("cd-name-sug"); if(!el){ el=document.createElement("div"); el.id="cd-name-sug"; el.style.display="none"; document.body.appendChild(el); } return el; }
+function cdSugClose(){ const el=document.getElementById("cd-name-sug"); if(el) el.style.display="none"; cdSug.list=[]; cdSug.idx=-1; }
+function cdSugBlur(){ setTimeout(cdSugClose,170); }
+function cdSugFocus(ta,kind,i){ if(!String(ta.value||"").trim()) cdSugOpen(ta,kind,i); }
+function cdSugOpen(ta,kind,i){
+  const q=String(ta.value||"").trim().toLowerCase().replace(/\s+/g," ");
+  let list=cdTestCatalog().filter(r=>!q||r.key.includes(q));
+  if(q) list=list.sort((a,b)=>((b.key.startsWith(q)?1:0)-(a.key.startsWith(q)?1:0))||(b.products-a.products));
+  list=list.slice(0,8);
+  cdSug={list,idx:-1,ctx:{kind,i,ta}};
+  const el=cdSugEl();
+  if(!list.length){ el.style.display="none"; return; }
+  el.style.cssText="position:fixed;z-index:500;display:block;max-height:320px;overflow-y:auto;background:#fff;border:1.5px solid #c0d8f8;border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.22)";
+  el.innerHTML=`<div style="padding:5px 12px;font-size:9px;font-weight:800;color:#8a93a6;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #f1f2f5">From your existing tests — pick one to fill criteria → accreditation</div>`+list.map((x,k)=>`<div class="cd-sug-i" onmousedown="event.preventDefault();cdSugPick(${k})" style="padding:8px 12px;cursor:pointer;border-bottom:1px solid #f4f5f7;background:#fff"><div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><span style="font-size:12px;font-weight:700;color:#0055bb">${cdWzHl(x.name,q)}</span><span style="font-size:9px;color:#9aa3b5;white-space:nowrap">on ${x.products} product${x.products!==1?"s":""}</span></div><div style="font-size:10.5px;color:#777;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.criteria||"—")}</div></div>`).join("");
+  cdSugPlace();
+}
+// keeps the list attached to its field (below it, or above when there is no room), also while the page scrolls
+function cdSugPlace(){
+  const el=document.getElementById("cd-name-sug"), c=cdSug.ctx; if(!el||!c||el.style.display==="none") return;
+  const ta=c.ta; if(!ta||!document.body.contains(ta)){ cdSugClose(); return; }
+  const r=ta.getBoundingClientRect(); if(r.bottom<0||r.top>window.innerHeight){ cdSugClose(); return; }
+  const w=Math.max(r.width,400), h=Math.min(320,cdSug.list.length*54+28), roomBelow=window.innerHeight-r.bottom;
+  el.style.width=w+"px"; el.style.left=Math.max(8,Math.min(r.left,window.innerWidth-w-12))+"px"; el.style.top=(roomBelow<h+8&&r.top>h?r.top-h-4:r.bottom+3)+"px";
+}
+// returns true when the key was used by the dropdown
+function cdSugKey(e){
+  const el=document.getElementById("cd-name-sug"), open=!!el&&el.style.display!=="none"&&cdSug.list.length>0;
+  if(!open) return false;
+  const n=cdSug.list.length, paint=()=>{ el.querySelectorAll(".cd-sug-i").forEach((d,k)=>{ d.style.background=k===cdSug.idx?"#f0f6ff":"#fff"; if(k===cdSug.idx) d.scrollIntoView({block:"nearest"}); }); };
+  if(e.key==="ArrowDown"){ e.preventDefault(); cdSug.idx=Math.min(cdSug.idx+1,n-1); paint(); return true; }
+  if(e.key==="ArrowUp"){ e.preventDefault(); cdSug.idx=Math.max(cdSug.idx-1,-1); paint(); return true; }
+  if(e.key==="Enter"&&cdSug.idx>=0){ e.preventDefault(); cdSugPick(cdSug.idx); return true; }
+  if(e.key==="Escape"){ e.preventDefault(); cdSugClose(); return true; }
+  if(e.key==="Tab") cdSugClose();
+  return false;
+}
+function cdSugPick(k){
+  const x=cdSug.list[k], c=cdSug.ctx; if(!x||!c) return; cdSugClose();
+  if(c.kind==="grid"){
+    const r=cdTbl.rows[c.i]; r[0]=x.name; r[1]=x.physical?"TRUE":"FALSE"; r[2]=x.criteria; r[3]=x.target; r[4]=x.equipment; r[5]=x.accreditation;
+    cdTblRerender(c.i,6); return;
+  }
+  const tt=c.kind==="edit"?modal.draft.testTypes[c.i]:cdTestTypes[c.i]; if(!tt) return;
+  tt.name=x.name; tt.criteria=x.criteria; tt.target=x.target; tt.equipment=x.equipment; tt.accreditation=x.accreditation;
+  tt.physical=x.physical; tt.physicalManual=false;
+  if(c.kind==="edit") cdEditRerender(); else cdRenderNewEntry();
+}
+window.addEventListener("scroll",()=>cdSugPlace(),true);
+window.addEventListener("resize",()=>cdSugPlace());
 
 function cdProductDetailsHtml(){
   const d=cdDraft;
@@ -5155,7 +5377,7 @@ function cdEditTestTypeBlockHtml(tt, ti){
       <div style="font-size:11.5px;font-weight:700;color:#0073ea">${esc(tt.name)||`Test Type ${ti+1}`}</div>
       ${modal.draft.testTypes.length>1?`<button onclick="cdEditRemoveTestType(${ti})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
     </div>
-    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label>${cdTa(tt.name,`modal.draft.testTypes[${ti}].name=this.value`,`onchange="cdNameChanged(${ti},true)"`)}</div>
+    <div class="pmm-field"><label class="pmm-label">Test Type (Name)</label>${cdTa(tt.name,`modal.draft.testTypes[${ti}].name=this.value;cdSugOpen(this,'edit',${ti})`,`onchange="cdNameChanged(${ti},true)" onfocus="cdSugFocus(this,'edit',${ti})" onblur="cdSugBlur()"`,"if(!cdSugKey(event)&&event.key==='Enter')event.preventDefault()")}</div>
     ${cdPhysToggleHtml(tt,ti,true)}
     <div class="pmm-field"><label class="pmm-label">Specific Evaluation Criteria</label>${cdTa(tt.criteria,`modal.draft.testTypes[${ti}].criteria=this.value`)}</div>
     <div class="pmm-field"><label class="pmm-label">Expected Target Performance</label>${cdTa(tt.target,`modal.draft.testTypes[${ti}].target=this.value`)}</div>
@@ -5499,12 +5721,58 @@ function cdItemScheduleHtml(item, tabKey){
     return `<div style="margin-bottom:7px;padding:6px 8px;border-radius:5px;background:#f7f8fa;border:1px solid #e0e0e0">
       <div style="font-size:10px;font-weight:600;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</div>
       ${last?`<div style="font-size:9px;color:#888;margin-top:2px">Last tested: ${fmtD(last)}</div>`:`<div style="font-size:9px;color:#bbb;margin-top:2px">No test data yet</div>`}
+      ${tabKey==="deferreditems"?(()=>{ const f=cdDeferredFlowInfo(item.id,s); return f?`<div style="font-size:9px;color:#0055bb;font-weight:700;margin-top:2px">Next due: ${fmtD(f.next)}</div>`:""; })():""}
     </div>`;
   }).join("");
 }
 // Shared table used by Tracking, Completed Test, and Deferred Items -- same
 // column format everywhere: Product/SKUs (+ siblings), Description, Priority
 // SKU, Schedule per Test, plus revert/delete actions per row.
+// When each item was deferred. The Deferred items sheet is the source of truth (column "Deferred Date");
+// this copy lives in the browser so the date shows straight away.
+const CD_DEFERRED_DATES_LS="rhino_cd_deferred_dates_v1";
+let cdDeferredDates=JSON.parse(localStorage.getItem(CD_DEFERRED_DATES_LS)||"{}");
+let cdDeferredNeedTests=new Set();              // item ids whose sheet row has no "Deferred Tests" yet
+const cdLocalISODate=()=>{ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+function cdNoteDeferredDate(itemId){ cdDeferredDates[itemId]=cdLocalISODate(); localStorage.setItem(CD_DEFERRED_DATES_LS,JSON.stringify(cdDeferredDates)); }
+function cdIsoToDate(iso){ const m=String(iso||"").match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); return m?new Date(+m[1],+m[2]-1,+m[3]):null; }
+// Earliest next due date of the item's deferred tests, and what that means for Monitoring
+function cdDeferredNextDueCellHtml(item){
+  const tests=cdDeferredTestsOf(item), infos=tests.map(x=>cdDeferredFlowInfo(item.id,x)).filter(Boolean);
+  if(!infos.length) return `<span style="color:#9aa3b5;font-size:10.5px">${tests.some(x=>latestTestDate(x))?"Tested again since — no longer deferred":"—"}</span>`;
+  const next=infos.map(f=>f.next).sort((a,b)=>a-b)[0], days=Math.round((next-new Date())/86400000);
+  let chip, bg, col, bd;
+  if(days<0){ chip=`Overdue ${Math.abs(days)} days — back in Monitoring`; bg="#fff0f0"; col="#c0392b"; bd="#ffd0d0"; }
+  else if(days<=CD_REFLECT_DAYS){ chip=`Due in ${days} days — back in Monitoring`; bg="#fffdf0"; col="#b07000"; bd="#fde8c0"; }
+  else { const back=new Date(next); back.setDate(back.getDate()-CD_REFLECT_DAYS); chip=`On hold — returns to Monitoring ${back.toLocaleDateString("en-US",{month:"short",year:"numeric"})}`; bg="#f0f6ff"; col="#0055bb"; bd="#c0d8f8"; }
+  return `<div style="font-weight:700;color:${col}">${esc(fmtD(next))}</div><div style="display:inline-block;margin-top:4px;font-size:9.5px;font-weight:700;color:${col};background:${bg};border:1px solid ${bd};border-radius:9px;padding:2px 8px;line-height:1.35">${esc(chip)}</div>`;
+}
+function cdDeferredDateCellHtml(item){
+  const d=cdIsoToDate(cdDeferredDates[item.id]);
+  if(!d) return `<span style="color:#bbb" title="No date was recorded for this one (it was deferred before dates were kept)">—</span>`;
+  const days=Math.floor((new Date().setHours(0,0,0,0)-d.getTime())/86400000);
+  return `<div style="font-weight:700;color:#0055bb">${esc(fmtD(d))}</div><div style="font-size:10px;color:#9aa3b5;margin-top:2px">${days<=0?"today":days===1?"yesterday":`${days} days ago`}</div>`;
+}
+// Fills the new "Deferred Tests" column for rows that were written before it existed
+async function cdBackfillDeferredTests(){
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  try{
+    const map=await cdEnsureColumn(CD_DEFERRED_SHEET,"Deferred Tests");
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_DEFERRED_SHEET)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
+    cdCheckAuthError(res); if(!res.ok) throw new Error(`Could not read "${CD_DEFERRED_SHEET}" (${res.status})`);
+    const rows=(await res.json()).values||[], gid=await pmmGetSheetGidFor(CD_DEFERRED_SHEET), requests=[]; let n=0;
+    for(let r=1;r<rows.length;r++){
+      const id=(rows[r][map["Item ID"]]||"").trim(); if(!id||(rows[r][map["Deferred Tests"]]||"").trim()) continue;
+      const item=cdFindItemById("i"+id); if(!item) continue;
+      const names=cdItemDeferredSubNames["i"+id]?[...cdItemDeferredSubNames["i"+id]]:cdMonTestsOf(item).list.map(x=>x.name);
+      if(!names.length) continue;
+      requests.push({updateCells:{range:{sheetId:gid,startRowIndex:r,endRowIndex:r+1,startColumnIndex:map["Deferred Tests"],endColumnIndex:map["Deferred Tests"]+1},rows:[{values:[{userEnteredValue:{stringValue:names.join("; ")}}]}],fields:"userEnteredValue"}}); n++;
+    }
+    if(requests.length){ const b=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({requests})}); cdCheckAuthError(b); if(!b.ok){ const t=await b.text(); throw new Error(`Could not save (${b.status}): ${t.slice(0,150)}`); } }
+    cdDeferredNeedTests=new Set(); cdRenderDeferredItems();
+    alert(n?`Filled in the deferred tests for ${n} older row${n!==1?"s":""}.`:"Nothing to fill in.");
+  }catch(e){ alert("Could not fill them in: "+e.message); }
+}
 function cdItemsTableHtml(items, tabKey, emptyMessage){
   if(!items.length){
     const icon = tabKey==="tracking" ? "📝" : tabKey==="completedtest" ? "✅" : "🔵";
@@ -5513,7 +5781,7 @@ function cdItemsTableHtml(items, tabKey, emptyMessage){
   return `<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
     <table style="width:100%;border-collapse:collapse;font-size:11.5px">
       <thead><tr style="background:#f2f3f6">
-        ${(tabKey==="completedtest"?["Product / SKUs","Description","Priority SKU","Schedule per Test","Failed Tests — Follow-up","Status Remarks",""]:["Product / SKUs","Description","Priority SKU","Schedule per Test","Status Remarks",""]).map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+        ${(tabKey==="completedtest"?["Product / SKUs","Description","Priority SKU","Schedule per Test","Failed Tests — Follow-up","Status Remarks",""]:tabKey==="deferreditems"?["Product / SKUs","Description","Priority SKU","Schedule per Test","Deferred Date","Next Due Date","Status Remarks",""]:["Product / SKUs","Description","Priority SKU","Schedule per Test","Status Remarks",""]).map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
       </tr></thead>
       <tbody>
         ${items.map(i=>{
@@ -5526,6 +5794,7 @@ function cdItemsTableHtml(items, tabKey, emptyMessage){
             <td style="padding:9px 12px;white-space:normal;min-width:200px;vertical-align:top">${esc(i.description)}</td>
             <td style="padding:9px 12px;vertical-align:top">${i.prioritySku?`<span style="background:#e8f2ff;color:#0055bb;border:1px solid #c0d8f8;border-radius:6px;font-size:11px;font-weight:700;padding:2px 6px">${esc(i.prioritySku)}</span>`:`<span style="color:#ddd;font-size:10px">—</span>`}</td>
             <td style="padding:9px 12px;min-width:220px;vertical-align:top">${cdItemScheduleHtml(i, tabKey)}</td>
+            ${tabKey==="deferreditems"?`<td style="padding:9px 12px;min-width:120px;vertical-align:top;white-space:nowrap">${cdDeferredDateCellHtml(i)}</td><td style="padding:9px 12px;min-width:190px;vertical-align:top">${cdDeferredNextDueCellHtml(i)}</td>`:""}
             ${tabKey==="completedtest"?`<td style="padding:9px 12px;min-width:250px;vertical-align:top">${cdFailCellHtml(i)}</td>`:""}
             <td style="padding:9px 12px;white-space:normal;min-width:180px;vertical-align:top;color:${i.status?"#333":"#bbb"}">${esc(i.status)||"Click to add remarks…"}</td>
             <td style="padding:9px 12px;vertical-align:top;white-space:nowrap">
@@ -5582,17 +5851,21 @@ async function cdHydrateDeferredSet(){
     if(!res.ok) return;
     const data=await res.json();
     const rows=data.values||[];
-    let changed=false, changedDeferred=false;
+    let changed=false, changedDeferred=false, changedDates=false;
     for(let r=1;r<rows.length;r++){
       const rawId=(rows[r][map["Item ID"]]||"").trim();
       if(!rawId) continue;
+      if(map["Deferred Date"]!==undefined){ const iso=cdTblDate(rows[r][map["Deferred Date"]]||""); if(iso&&cdDeferredDates["i"+rawId]!==iso){ cdDeferredDates["i"+rawId]=iso; changedDates=true; } }
+      if(map["Deferred Tests"]!==undefined){ if((rows[r][map["Deferred Tests"]]||"").trim()) cdDeferredNeedTests.delete("i"+rawId); else cdDeferredNeedTests.add("i"+rawId); }
+      else cdDeferredNeedTests.add("i"+rawId);
       if(!cdMonitoringClosedIds.has("i"+rawId)){ cdMonitoringClosedIds.add("i"+rawId); changed=true; }
       if(!cdDeferredItemIds.has("i"+rawId)){ cdDeferredItemIds.add("i"+rawId); changedDeferred=true; }
     }
     if(changed) localStorage.setItem(CD_MON_CLOSED_LS, JSON.stringify([...cdMonitoringClosedIds]));
     if(changedDeferred) localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
+    if(changedDates) localStorage.setItem(CD_DEFERRED_DATES_LS, JSON.stringify(cdDeferredDates));
     if(changed && activeTab==="monitoring") renderMonitoring();
-    if(changedDeferred && activeTab==="deferreditems") cdRenderDeferredItems();
+    if((changedDeferred||changedDates||cdDeferredNeedTests.size) && activeTab==="deferreditems") cdRenderDeferredItems();
   }catch(e){ /* best-effort */ }
 }
 async function cdAppendTrackingRow(item){
@@ -5684,7 +5957,8 @@ function cdTransferSplit(item, deferNames, dueNames, hasTested, reason){
     cdSaveItemDeferredSubs();
     cdDeferredItemIds.add(itemId);
     localStorage.setItem(CD_DEFERRED_ITEMS_LS, JSON.stringify([...cdDeferredItemIds]));
-    if(accessToken) cdWriteDeferredRow(item, reason||`Auto-split transfer: ${[...deferNames].join(", ")} deferred; remaining tests moved to Tracking.`).catch(()=>{});
+    cdNoteDeferredDate(itemId);
+    if(accessToken) cdWriteDeferredRow(item, reason||`Auto-split transfer: ${[...deferNames].join(", ")} deferred; remaining tests moved to Tracking.`, [...deferNames]).catch(()=>{});
   } else {
     delete cdItemDeferredSubNames[itemId];
     cdSaveItemDeferredSubs();
@@ -5738,10 +6012,10 @@ async function cdRunLegacyDefer(){
     for(const c of chosen){
       const item=c.item;
       if(c.full){
-        await cdWriteDeferredRow(item,"Deferred in Monitoring (Management decision).");
+        await cdWriteDeferredRow(item,"Deferred in Monitoring (Management decision).",c.deferSubs.map(x=>x.name));
         cdTrackingTransferredIds.delete(item.id); delete cdItemDeferredSubNames[item.id];
       } else {
-        await cdWriteDeferredRow(item,`Deferred in Monitoring: ${c.deferSubs.map(s=>s.name).join(", ")}; remaining tests moved to Tracking.`);
+        await cdWriteDeferredRow(item,`Deferred in Monitoring: ${c.deferSubs.map(s=>s.name).join(", ")}; remaining tests moved to Tracking.`,c.deferSubs.map(x=>x.name));
         await cdAppendTrackingRow(item);
         cdItemDeferredSubNames[item.id]=new Set(c.deferSubs.map(s=>s.name));
         cdItemTrackingSubNames[item.id]=new Set(c.otherSubs.map(s=>s.name));
@@ -5758,18 +6032,21 @@ async function cdRunLegacyDefer(){
 }
 // Writes the sheet-side record only -- shared by a full defer (cdDeferItem)
 // and a mixed transfer (some tests deferred, some sent to Tracking).
-async function cdWriteDeferredRow(item, reason){
+async function cdWriteDeferredRow(item, reason, tests){
   await cdEnsureColumn(CD_DEFERRED_SHEET, "Item ID");
   await cdEnsureColumn(CD_DEFERRED_SHEET, "SKU");
   await cdEnsureColumn(CD_DEFERRED_SHEET, "Description");
   await cdEnsureColumn(CD_DEFERRED_SHEET, "Priority SKU");
   await cdEnsureColumn(CD_DEFERRED_SHEET, "Deferred Reason");
+  await cdEnsureColumn(CD_DEFERRED_SHEET, "Deferred Tests");
   await cdEnsureColumn(CD_DEFERRED_SHEET, "Deferred Date");
   const map=await cdGetHeaderMap(CD_DEFERRED_SHEET);
+  const names=(tests&&tests.length?tests:cdMonTestsOf(item).list.map(x=>x.name));
   const row=cdBuildRow(map, {
     "Item ID":item.rowId, SKU:item.name, Description:item.description, "Priority SKU":item.prioritySku,
-    "Deferred Reason":reason, "Deferred Date":new Date().toISOString().slice(0,10),
+    "Deferred Reason":reason, "Deferred Tests":names.join("; "), "Deferred Date":cdLocalISODate(),
   });
+  cdNoteDeferredDate("i"+item.rowId);
   const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_DEFERRED_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
   const res=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:[row]})});
   cdCheckAuthError(res);
@@ -5778,7 +6055,7 @@ async function cdWriteDeferredRow(item, reason){
 async function cdDeferItem(item, reason){
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
   try{
-    await cdWriteDeferredRow(item, reason);
+    await cdWriteDeferredRow(item, reason, cdMonTestsOf(item).list.map(x=>x.name));
     cdTrackingTransferredIds.delete(item.id);
     localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
     delete cdItemDeferredSubNames[item.id];
@@ -5800,6 +6077,7 @@ function cdRenderDeferredItems(){
   const filtered=cdFilterItemsBySearch(allItems, cdDeferredSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
     ${cdDeferredSearchQ?`<div style="margin-bottom:12px"><button onclick="cdDeferredSearchQ='';const b=document.getElementById('def-search-box');if(b)b.value='';cdRenderDeferredItems()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear search</button></div>`:""}
+    ${(()=>{ const n=[...cdDeferredNeedTests].filter(id=>cdDeferredItemIds.has(id)&&cdFindItemById(id)).length; return n?`<div style="margin-bottom:12px;padding:10px 14px;background:#fff8e8;border:1px solid #fde0b0;border-radius:9px;font-size:11.5px;color:#6b4a00;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:240px">${n} older deferred row${n!==1?"s":""} in the Google Sheet don't list <b>which tests</b> were deferred yet.</div><button onclick="cdBackfillDeferredTests()" style="font-size:11px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:7px;padding:6px 14px;cursor:pointer">Fill them in</button></div>`:""; })()}
     ${cdItemsTableHtml(filtered, "deferreditems", allItems.length?"No items match your search.":`No deferred items yet — right-click an item in Monitoring and choose "Deferred".`)}
   </div>`;
 }
