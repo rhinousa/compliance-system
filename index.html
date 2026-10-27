@@ -222,9 +222,11 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
 .pmm-photo-preview{max-width:100%;max-height:220px;border-radius:8px;display:block;margin:0 auto}
 .pmm-entry-card{background:#fff;border:1.5px solid #e0e3ea;border-radius:12px;overflow:hidden}
 .pmm-entry-hdr{padding:14px 20px;background:#f8f9fb;border-bottom:1px solid #e8eaed;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
-.pmm-photo-title{display:flex;align-items:center;gap:12px;padding:14px 20px 0 20px;background:#fff;font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:#333}
-.pmm-photo-title::before,.pmm-photo-title::after{content:"";flex:1;height:1px;background:#d9dde6}
-.pmm-entry-photo-section{padding:10px 20px 0 20px;text-align:center;background:#fff}
+.pmm-section-title{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:22px 0 0;padding-bottom:8px;border-bottom:2px solid #1a1a1a;font-size:20px;font-weight:800;color:#222}
+.pmm-section-title small{font-size:11px;font-weight:600;color:#888}
+.pmm-g-mirror{color:#9aa3b5 !important;background:#f6f7fa !important;font-style:italic;cursor:default}
+.cd-ta{font-family:inherit}
+.pmm-entry-photo-section{padding:14px 20px 0 20px;text-align:center;background:#fff}
 .pmm-entry-photo-section img{max-width:420px;max-height:300px;width:100%;border-radius:8px;border:1px solid #ddd;object-fit:contain;cursor:zoom-in}
 .pmm-cat-badge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;background:#e8f2ff;color:#0055bb;border:1px solid #c0d8f8}
 .pmm-tier-badge{font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;background:#f0efff;color:#5b21b6;border:1px solid #d8d0f8}
@@ -515,13 +517,11 @@ let pmmAckGenerated = false; // whether "Generate Report" has been clicked for t
 let pmmAckEntries = []; // entries included in the last generated report
 let pmmAckExporting = false;
 let pmmCostSavingsSnapshots = []; // [{id, savedDate, filterSummary, skus:[...], chemical:{...}, corrosion:{...}, total:{...}}]
-const PMM_EXTRAS_HEADER = "Additional Tests"; // header of the optional 28th column in the Product Matrix tab
+const PMM_EXTRAS_HEADER = "Additional Test Labs"; // the optional 28th column of the Product Matrix tab (older sheets call it "Additional Tests" -- still read) // header of the optional 28th column in the Product Matrix tab
 const PMM_FINALQ_SHEET = "Final Quotes"; // tab holding the final quotes the test labs gave after the consolidated materials were sent
 let pmmFilterTest = "ALL"; // Compiled View / Database filters: by test ...
 let pmmFilterLabs = [], pmmLabMenuOpen = false; // ... and by test lab (one or several can be ticked)
-let pmmDraftExtraTests = [];   // New Entry: additional tests [{test,lab,cost,sample}]
 let pmmHasExtrasColumn = false; // the "Additional Tests" column exists in the live Product Matrix tab
-let pmmPendingAddTest = null;  // entry id whose edit form should open with a new blank test row
 let pmmFinalQuotes = {};       // "scope||chem|corr" -> saved final quote
 let pmmFinalQuoteDraft = null, pmmLastInsight = null; // the final-quote form, and the numbers behind the summary table
 let pmmDraftLabs = [], pmmPendingAddLab = null; // New Entry: extra test labs; and an entry whose edit form should open with a new blank lab section
@@ -800,7 +800,7 @@ async function fetchSheetData(){
 
     pmmEntries=pmmBuildEntriesFromRows(pmmRowsToObjectsWithIndex(pmmRange));
     pmmCostSavingsSnapshots=pmmBuildCostSnapshotsFromRows(pmmRowsToObjectsWithIndex(costRange));
-    pmmHasExtrasColumn=(pmmRange[0]||[]).some(h=>String(h||"").trim()==="Additional Tests");
+    pmmHasExtrasColumn=(pmmRange[0]||[]).some(h=>["Additional Test Labs","Additional Tests"].includes(String(h||"").trim()));
     pmmLoadFinalQuotes(); // fire-and-forget -- a missing "Final Quotes" tab just means nothing has been entered yet
     pmmLoadLookupCatalogue(); // fire-and-forget — doesn't block the main sync if it fails
 
@@ -2873,6 +2873,8 @@ function renderModals(){
         </div>
       </div>
     </div>`;
+  } else if(modal.type==="pmmGrid"){
+    root.innerHTML=pmmGridModalHtml(); pmmGridFixHeader(); pmmGridSync(); cdAutoGrowAll(); pmmGridRefresh();
   } else if(modal.type==="pmmFinalQuote"){
     const d=pmmFinalQuoteDraft, ins=pmmLastInsight; if(!d||!ins){ root.innerHTML=""; return; }
     const usd=n=>"$"+Number(n).toLocaleString("en-US",{maximumFractionDigits:2});
@@ -3019,7 +3021,6 @@ function renderModals(){
               ${e.chemTest?`<div><strong style="color:#0055bb">Chemical Test:</strong> ${esc(e.chemTest)}${e.chemTestCost?` (${esc(e.chemTestCost)})`:""}</div>`:""}
               ${e.physTest?`<div><strong style="color:#0055bb">Physical Test:</strong> ${esc(e.physTest)}${e.physTestCost?` (${esc(e.physTestCost)})`:""}</div>`:""}
               ${e.corrTest?`<div><strong style="color:#0055bb">Corrosion Test:</strong> ${esc(e.corrTest)}${e.corrTestCost?` (${esc(e.corrTestCost)})`:""}</div>`:""}
-              ${pmmCleanExtras(e.extraTests).map(x=>`<div><strong style="color:#0055bb">${esc(x.test||"Test")}:</strong> ${esc(x.lab||"")}${x.cost?` (${esc(x.cost)})`:""}</div>`).join("")}
               ${e.testLab?`<div><strong style="color:#0055bb">Test Lab:</strong> ${esc(e.testLab)}</div>`:""}
               ${e.quotationDate?`<div><strong style="color:#0055bb">Quotation Date:</strong> ${esc(e.quotationDate)}</div>`:""}
               ${pmmLabSectionsHtml(e)}
@@ -3107,14 +3108,6 @@ function renderModals(){
               </div>
               ${pmmLabFormHtml(Array.isArray(e.extraLabs)?e.extraLabs:[],"detail",e.id)}
               <div style="font-size:9.5px;color:#aaa;margin-top:6px">Each extra lab has its own Chemical, Physical and Corrosion tests. The first lab is the Test Lab above.</div>
-            </div>
-            <div id="pmm-detail-extra" style="margin-top:14px;padding-top:12px;border-top:1px solid #f0f1f3">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-                <div style="font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.3px">Additional Tests</div>
-                <button onclick="pmmDetailAddExtra('${e.id}')" style="font-size:10.5px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:4px 10px;cursor:pointer">+ Add test</button>
-              </div>
-              ${pmmExtraRowsHtml(pmmEntryExtras(e),"detail",e.id)}
-              <div style="font-size:9.5px;color:#aaa;margin-top:4px">Anything besides Chemical, Physical and Corrosion. A test with no lab uses the Test Lab above.</div>
             </div>
           </div>
         </div>
@@ -6437,7 +6430,7 @@ function pmmBuildEntriesFromRows(rows){
         components:[],
         rowIndexes:[],
       };
-      { const px=pmmParseExtrasCell(pmmPick(row,"Additional Tests")); byId[entryId].extraTests=px.tests; byId[entryId].extraLabs=px.labs; }
+      { const px=pmmParseExtrasCell(pmmPick(row,"Additional Test Labs","Additional Tests")); byId[entryId].extraTests=px.tests; byId[entryId].extraLabs=px.labs; }
     }
     if(row.__rowIndex) byId[entryId].rowIndexes.push(row.__rowIndex);
     const comp=pmmPick(row,"Component"), item=pmmPick(row,"Item"), material=pmmPick(row,"Material");
@@ -6582,14 +6575,6 @@ function pmmRenderNewEntry(){
         <div id="pmm-labs-wrap">${pmmLabFormHtml(pmmDraftLabs,"draft")}</div>
         <div style="margin-top:10px"><button type="button" id="pmm-add-lab-btn" onclick="pmmAddLab()" style="font-size:11px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1.5px dashed #9cc0f0;border-radius:7px;padding:7px 14px;cursor:pointer">+ Add test lab</button><span style="font-size:10px;color:#aaa;margin-left:8px">Another lab that also tests this product — it gets its own Chemical, Physical and Corrosion sections.</span></div>
 
-        <div style="margin-top:20px;padding-top:14px;border-top:1px solid #f0f1f3">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px">
-            <div style="font-size:11px;font-weight:700;color:#0073ea;text-transform:uppercase;letter-spacing:.3px">Additional Tests</div>
-            <button type="button" id="pmm-add-extra-btn" onclick="pmmAddExtraTest()" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:5px 12px;cursor:pointer">+ Add test</button>
-          </div>
-          <div id="pmm-extra-rows">${pmmExtraRowsHtml(pmmDraftExtraTests,"draft")}</div>
-          <div style="font-size:10px;color:#aaa;margin-top:4px">For any test besides Chemical (Prop 65), Physical (Tensile) and Corrosion — e.g. Flammability, REACH, Phthalates. Each can name its own lab; leave the lab empty to use Test Lab 1.</div>
-        </div>
       </div>
 
       <div class="pmm-card">
@@ -6907,14 +6892,6 @@ function pmmOpenEntryDetail(entryId){
     const el=e&&document.getElementById("pmm-le-"+(e.extraLabs.length-1)+"-lab"); if(el){ el.focus(); try{ el.scrollIntoView({block:"center"}); }catch(_){} }
     return;
   }
-  if(pmmPendingAddTest===entryId){                      // came from "+ Add test" on a card: open with a new blank test row
-    pmmPendingAddTest=null;
-    const e=pmmEntries.find(x=>x.id===entryId);
-    if(e){ if(!Array.isArray(e.extraTests)) e.extraTests=[]; e.extraTests.push({test:"",lab:"",cost:"",sample:""}); }
-    openModal({type:"pmmDetail", entryId});
-    const el=e&&document.getElementById("pmm-xe-test-"+(e.extraTests.length-1)); if(el){ el.focus(); try{ el.scrollIntoView({block:"center"}); }catch(_){} }
-    return;
-  }
   openModal({type:"pmmDetail", entryId});
 }
 
@@ -6980,7 +6957,6 @@ async function pmmSaveEntryDetail(entryId){
   const btn=document.getElementById("pmm-detail-save-btn");
   if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
   try{
-    if(pmmExtrasMissingName(e.extraTests)) throw new Error("Give each additional test a name (or remove the empty row).");
     const labProblem=pmmLabProblem(e.extraLabs); if(labProblem) throw new Error(labProblem);
     const extras=pmmCleanExtras(e.extraTests), labs=pmmCleanLabs(e.extraLabs);
     const withExtras=pmmHasExtrasColumn||extras.length>0||labs.length>0;
@@ -7116,10 +7092,9 @@ async function pmmSubmitEntry(){
   const corrTest=pmmDraftCorrTest.trim(), corrTestCost=pmmDraftCorrCost.trim(), corrTestSample=pmmDraftCorrSample.trim();
   const testLab=pmmDraftTestLab.trim(), quotationDate=pmmDraftQuotationDate.trim();
   const retailSku=pmmDraftRetailSku.trim();
-  if(pmmExtrasMissingName(pmmDraftExtraTests)){ alert("Give each additional test a name (or remove the empty row)."); return; }
   const labProblem=pmmLabProblem(pmmDraftLabs); if(labProblem){ alert(labProblem); return; }
-  const extraTests=pmmCleanExtras(pmmDraftExtraTests), extraLabs=pmmCleanLabs(pmmDraftLabs);
-  const withExtras=pmmHasExtrasColumn||extraTests.length>0||extraLabs.length>0;
+  const extraTests=[], extraLabs=pmmCleanLabs(pmmDraftLabs);   // (there are no "other tests" any more)
+  const withExtras=pmmHasExtrasColumn||extraLabs.length>0;
   if(!sku){ alert("SKU is required."); return; }
   const components=pmmDraftComponents.filter(c=>c.item||c.component||c.material);
   if(!components.length){ alert("Add at least one Item / Component / Material row."); return; }
@@ -7158,7 +7133,7 @@ async function pmmSubmitEntry(){
     pmmDraftChemTest=""; pmmDraftChemCost=""; pmmDraftChemSample="";
     pmmDraftPhysTest=""; pmmDraftPhysCost=""; pmmDraftPhysSample="";
     pmmDraftCorrTest=""; pmmDraftCorrCost=""; pmmDraftCorrSample="";
-    pmmDraftTestLab=""; pmmDraftQuotationDate=""; pmmDraftRetailSku=""; pmmDraftExtraTests=[]; pmmDraftLabs=[];
+    pmmDraftTestLab=""; pmmDraftQuotationDate=""; pmmDraftRetailSku=""; pmmDraftLabs=[];
     pmmSwitchTab("compiled");
   }catch(e){
     alert("Could not save entry: "+e.message);
@@ -7423,8 +7398,8 @@ function pmmGetFilteredEntries(){
   if(pmmFilterTest!=="ALL") entries=entries.filter(e=>pmmEntryHasTest(e,pmmFilterTest));
   if(pmmFilterLabs.length) entries=entries.filter(e=>pmmEntryMatchesLab(e));
   if(pmmSearchSku){
-    const q=pmmSearchSku.toLowerCase();
-    entries=entries.filter(e=>(e.sku||"").toLowerCase().includes(q) || (e.supplier||"").toLowerCase().includes(q));
+    const words=pmmSearchWords(pmmSearchSku);        // every word typed must be found somewhere in the product
+    if(words.length) entries=entries.filter(e=>{ const t=pmmEntrySearchText(e); return words.every(w=>t.includes(w)); });
   }
   if(pmmInsightDateFrom||pmmInsightDateTo){
     entries=entries.filter(e=>[e.quotationDate,...pmmCleanLabs(e.extraLabs).map(S=>S.date)].filter(Boolean).some(d=>(!pmmInsightDateFrom||d>=pmmInsightDateFrom)&&(!pmmInsightDateTo||d<=pmmInsightDateTo)));
@@ -7440,36 +7415,33 @@ function pmmGetSupplierList(){
 // Live suggestions shown under the search box as you type — matches against both
 // SKU and Supplier, tagging each result with which field it matched (mirrors the
 // reference screenshot's "SUPPLIER" tag + highlighted match pattern).
+function pmmSearchWords(q){ return String(q||"").toLowerCase().split(/[\s,;]+/).filter(Boolean); }
+// everything about a product that can be searched: SKUs and their families, product name, supplier, category, every component and material,
+// every test and its quotation, every test lab and its quotation date
+function pmmEntrySearchText(e){
+  const p=[e.sku,e.description,pmmNormalizeProductName(e.description),e.category,e.supplier,e.tier,e.parentSku,e.skuFamily,e.skuFamilyB,e.skuFamilyC,e.retailSku,
+    e.chemTest,e.chemTestCost,e.chemTestSample,e.physTest,e.physTestCost,e.physTestSample,e.corrTest,e.corrTestCost,e.corrTestSample,e.testLab,e.quotationDate];
+  (e.components||[]).forEach(c=>p.push(c.item,c.component,c.material));
+  pmmCleanLabs(e.extraLabs).forEach(S=>{ p.push(S.lab,S.date); PMM_LAB_KINDS.forEach(k=>p.push(S[k+"Test"],S[k+"Cost"],S[k+"Sample"])); });
+  return p.filter(x=>x!=null&&String(x).trim()!=="").join(" \n ").toLowerCase();
+}
 function pmmSearchSuggestionsHtml(query){
   if(!query) return "";
-  const q=query.toLowerCase();
-  const results=[];
-  const seen=new Set();
-  pmmEntries.forEach(e=>{
-    if((e.sku||"").toLowerCase().includes(q) && !seen.has("SKU:"+e.sku)){
-      seen.add("SKU:"+e.sku);
-      results.push({tag:"SKU", text:e.sku, entryId:e.id});
-    }
-  });
-  pmmEntries.forEach(e=>{
-    if(e.supplier && e.supplier.toLowerCase().includes(q) && !seen.has("SUP:"+e.supplier)){
-      seen.add("SUP:"+e.supplier);
-      results.push({tag:"SUPPLIER", text:e.supplier, entryId:e.id});
-    }
-  });
-  if(!results.length) return `<div style="padding:10px 14px;font-size:11px;color:#aaa">No matches</div>`;
-  const highlight=(text)=>{
-    const idx=text.toLowerCase().indexOf(q);
-    if(idx===-1) return esc(text);
-    return esc(text.slice(0,idx))+`<mark style="background:#fff3b0;padding:0 1px;border-radius:2px">${esc(text.slice(idx,idx+q.length))}</mark>`+esc(text.slice(idx+q.length));
-  };
-  return results.slice(0,8).map(r=>`
-    <div onclick="pmmSelectSearchSuggestion('${esc(r.text).replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">
-      <span style="font-size:8.5px;font-weight:700;color:${r.tag==="SKU"?"#0055bb":"#0a7a46"};border:1px solid ${r.tag==="SKU"?"#c0d8f8":"#c3f0da"};border-radius:4px;padding:2px 6px;flex-shrink:0">${r.tag}</span>
+  if(pmmSearchWords(query).length!==1) return "";     // several words: the list below IS the answer (every word has to match)
+  const q=query.trim().toLowerCase(); if(!q) return "";
+  const groups={}, seen=new Set();
+  const add=(tag,text)=>{ text=String(text==null?"":text).trim(); if(!text||!text.toLowerCase().includes(q)) return; const k=tag+":"+text.toLowerCase(); if(seen.has(k)) return; seen.add(k); (groups[tag]=groups[tag]||[]).push(text); };
+  pmmEntries.forEach(e=>{ add("SKU",e.sku); add("PRODUCT",pmmNormalizeProductName(e.description)); add("SUPPLIER",e.supplier); (e.components||[]).forEach(c=>String(c.material||"").split("+").forEach(m=>add("MATERIAL",m))); pmmEntryLabs(e).forEach(l=>add("TEST LAB",l)); add("CATEGORY",e.category); });
+  const order=["SKU","PRODUCT","SUPPLIER","MATERIAL","TEST LAB","CATEGORY"], color={SKU:["#0055bb","#c0d8f8"],PRODUCT:["#7c3aed","#e3d4ff"],SUPPLIER:["#0a7a46","#c3f0da"],MATERIAL:["#b07000","#fde8c0"],"TEST LAB":["#c0392b","#ffd0d0"],CATEGORY:["#555","#dde0e7"]};
+  const results=[]; order.forEach(t=>(groups[t]||[]).slice(0,3).forEach(x=>results.push({tag:t,text:x})));
+  if(!results.length) return pmmEntries.some(e=>pmmEntrySearchText(e).includes(q))?"":`<div style="padding:10px 14px;font-size:11px;color:#aaa">No matches</div>`;
+  const highlight=(text)=>{ const idx=text.toLowerCase().indexOf(q); if(idx===-1) return esc(text); return esc(text.slice(0,idx))+`<mark style="background:#fff3b0;padding:0 1px;border-radius:2px">${esc(text.slice(idx,idx+q.length))}</mark>`+esc(text.slice(idx+q.length)); };
+  return results.slice(0,10).map(r=>`
+    <div onclick="pmmSelectSearchSuggestion('${esc(r.text).replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f5f9ff'" onmouseout="this.style.background=''">
+      <span style="font-size:8.5px;font-weight:700;color:${color[r.tag][0]};border:1px solid ${color[r.tag][1]};border-radius:4px;padding:2px 6px;flex-shrink:0;min-width:58px;text-align:center">${r.tag}</span>
       <span style="font-size:12px;color:#333">${highlight(r.text)}</span>
     </div>`).join("");
 }
-
 function pmmRerenderActiveTab(){
   if(pmmActiveTab==="database") pmmRenderDatabase();
   else pmmRenderCompiled();
@@ -7485,14 +7457,15 @@ function pmmInitSearchBar(){
   pmmSearchBarInitialized=true;
   const wrap=document.getElementById("pmm-search-wrap"); if(!wrap) return;
   wrap.innerHTML=`<div style="position:relative;max-width:320px">
-    <input id="pmm-search-input" value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this)" onfocus="pmmOnSearchFocus()" onblur="pmmCloseSearchSuggest()" placeholder="Search SKU or Supplier…" class="pmm-input"/>
+    <input id="pmm-search-input" value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this)" onfocus="pmmOnSearchFocus()" onblur="pmmCloseSearchSuggest()" placeholder="Search any word — SKU, material, lab…" class="pmm-input"/>
     <button type="button" class="sc-clear" title="Clear search" aria-label="Clear search" onmousedown="event.preventDefault()" onclick="scClear('pmm-search-input')">✕</button>
     <div id="pmm-search-suggest" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto"></div>`;
 }
 function pmmUpdateSuggestDisplay(){
   const el=document.getElementById("pmm-search-suggest"); if(!el) return;
-  if(pmmSearchSuggestOpen && pmmSearchSku){
-    el.innerHTML=pmmSearchSuggestionsHtml(pmmSearchSku);
+  const sugg=(pmmSearchSuggestOpen&&pmmSearchSku)?pmmSearchSuggestionsHtml(pmmSearchSku):"";
+  if(sugg){
+    el.innerHTML=sugg;
     el.style.display="block";
   } else {
     el.style.display="none";
@@ -7531,7 +7504,6 @@ function pmmClearInsightDates(){
 }
 
 // ══ Additional tests · Test / Lab filters · Final lab quotes · Lab-spend summary · Coverage export ══════════════
-const PMM_EXTRA_SUGGESTIONS=["Flammability","REACH","Phthalates","Heavy metals","CPSIA","Abrasion","UV resistance","Proof load test","Break strength"];
 const PMM_BASE_TESTS=[{key:"chem",label:"Chemical (Prop 65)"},{key:"phys",label:"Physical (Tensile)"},{key:"corr",label:"Corrosion"}];
 function pmmNormTest(n){ return String(n||"").trim().toLowerCase(); }
 function pmmCleanExtras(arr){
@@ -7587,7 +7559,6 @@ function pmmTestLines(e){
   const add=(kind,name,cost,sample,lab)=>{ name=String(name||"").trim(); cost=String(cost||"").trim(); sample=String(sample||"").trim(); if(!(name||cost||sample)) return; L.push({kind,key:kind,name,lab:lab||"",cost:pmmParseNum(cost),samples:pmmParseNum(sample),costRaw:cost}); };
   add("chem",e.chemTest,e.chemTestCost,e.chemTestSample,base); add("phys",e.physTest,e.physTestCost,e.physTestSample,base); add("corr",e.corrTest,e.corrTestCost,e.corrTestSample,base);
   pmmCleanLabs(e.extraLabs).forEach(S=>{ const lab=S.lab||base; PMM_LAB_KINDS.forEach(k=>add(k,S[k+"Test"],S[k+"Cost"],S[k+"Sample"],lab)); });
-  pmmCleanExtras(e.extraTests).forEach(x=>L.push({kind:"other",key:"x:"+pmmNormTest(x.test),name:x.test,lab:x.lab||base,cost:pmmParseNum(x.cost),samples:pmmParseNum(x.sample),costRaw:x.cost}));
   return L;
 }
 function pmmLineMatchesTest(l){ return pmmFilterTest==="ALL"||l.key===pmmFilterTest; }
@@ -7598,13 +7569,7 @@ function pmmLinesInView(e,kinds){
 }
 function pmmKindSamples(e,kind){ return pmmLinesInView(e,[kind]).reduce((a,l)=>a+l.samples,0); }
 function pmmEntryHasTest(e,key){ if(key==="ALL") return true; return pmmTestLines(e).some(l=>l.key===key); }
-function pmmTestOptions(){
-  const opts=PMM_BASE_TESTS.map(t=>({key:t.key,label:t.label,count:pmmEntries.filter(e=>pmmEntryHasTest(e,t.key)).length}));
-  const seen={};
-  pmmEntries.forEach(e=>pmmTestLines(e).forEach(l=>{ if(l.kind==="other"&&l.name&&!seen[l.key]) seen[l.key]={key:l.key,label:l.name,count:0}; }));
-  Object.values(seen).forEach(o=>{ o.count=pmmEntries.filter(e=>pmmEntryHasTest(e,o.key)).length; });
-  return opts.concat(Object.values(seen).sort((a,b)=>a.label.localeCompare(b.label)));
-}
+function pmmTestOptions(){ return PMM_BASE_TESTS.map(t=>({key:t.key,label:t.label,count:pmmEntries.filter(e=>pmmEntryHasTest(e,t.key)).length})); }
 function pmmEntryLabs(e){ const out=[]; if(String(e.testLab||"").trim()) out.push(e.testLab.trim()); pmmTestLines(e).forEach(l=>{ if(l.lab&&!out.some(x=>x.toLowerCase()===l.lab.toLowerCase())) out.push(l.lab); }); return out; }
 // a product matches when ANY ticked lab tests it (for the chosen test, if one is chosen too)
 function pmmEntryMatchesLab(e){
@@ -7629,22 +7594,20 @@ function pmmLabSectionsHtml(e){
   }).join("");
 }
 function pmmExtrasSummaryText(e){
-  const o=pmmCleanExtras(e.extraTests).map(x=>x.test+((x.lab||x.cost)?` (${[x.lab,x.cost].filter(Boolean).join(", ")})`:""));
-  const l=pmmCleanLabs(e.extraLabs).map(S=>S.lab+": "+PMM_LAB_KINDS.filter(k=>S[k+"Test"]||S[k+"Cost"]||S[k+"Sample"]).map(k=>PMM_KIND_LABEL[k]+" "+[S[k+"Test"],S[k+"Cost"]&&`(${S[k+"Cost"]})`].filter(Boolean).join(" ")).join("; "));
-  return o.concat(l).join(" | ");
+  return pmmCleanLabs(e.extraLabs).map(S=>S.lab+": "+PMM_LAB_KINDS.filter(k=>S[k+"Test"]||S[k+"Cost"]||S[k+"Sample"]).map(k=>PMM_KIND_LABEL[k]+" "+[S[k+"Test"],S[k+"Cost"]&&`(${S[k+"Cost"]})`].filter(Boolean).join(" ")).join("; ")).join(" | ");
 }
-
 // ---- the form: one section per extra test lab (New Entry and an item's edit form) ----
 function pmmLabFormHtml(list,mode,entryId){
   const pre=mode==="draft"?"pmm-ld":"pmm-le";
   const upd=(i,k)=>mode==="draft"?`pmmUpdateLab(${i},'${k}',this.value)`:`pmmDetailUpdateLab('${entryId}',${i},'${k}',this.value)`;
   const rem=i=>mode==="draft"?`pmmRemoveLab(${i})`:`pmmDetailRemoveLab('${entryId}',${i})`;
-  if(!list.length) return `<div style="font-size:11px;color:#aaa;padding:6px 0 0">No other test lab yet — add one if another lab also tests this product.</div>`;
+  const labNames=`<datalist id="pmm-lab-names">${pmmLabOptions().map(o=>`<option value="${esc(o.label)}"></option>`).join("")}</datalist>`;
+  if(!list.length) return `${labNames}<div style="font-size:11px;color:#aaa;padding:6px 0 0">No other test lab yet — add one if another lab also tests this product.</div>`;
   const inp=(id,ph,val,k,i,extra,type)=>`<input id="${id}" ${type?`type="${type}"`:""} class="pmm-input" ${extra||""} placeholder="${ph}" value="${esc(val)}" oninput="${upd(i,k)}" style="width:100%;padding:7px 9px;font-size:12px"/>`;
   const block=(S,i,k)=>`<div style="font-size:10.5px;font-weight:700;color:#0073ea;text-transform:uppercase;letter-spacing:.3px;margin:10px 0 5px">${PMM_KIND_LABEL[k]} Testing</div>
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px;margin-bottom:3px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.3px"><span>Test</span><span>Quotation</span><span>Recommended Sample</span></div>
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px">${inp(`${pre}-${i}-${k}Test`,k==="chem"?"Test (e.g. Prop 65)":k==="phys"?"Test (e.g. Tensile)":"Test (e.g. Salt Spray)",S[k+"Test"],k+"Test",i)}${inp(`${pre}-${i}-${k}Cost`,"Quotation $0.00",S[k+"Cost"],k+"Cost",i)}${inp(`${pre}-${i}-${k}Sample`,"Recommended sample",S[k+"Sample"],k+"Sample",i)}</div>`;
-  return list.map((S,i)=>`<div style="border:1.5px solid #c0d8f8;background:#f7fbff;border-radius:10px;padding:12px 14px;margin-top:12px">
+  return labNames+list.map((S,i)=>`<div style="border:1.5px solid #c0d8f8;background:#f7fbff;border-radius:10px;padding:12px 14px;margin-top:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><div style="font-size:12px;font-weight:800;color:#0055bb">Test Lab ${i+2}</div><button type="button" onclick="${rem(i)}" title="Remove this test lab" style="background:none;border:none;color:#e2445c;cursor:pointer;font-size:12px;font-weight:600">✕ Remove</button></div>
       <div class="pmm-grid2"><div class="pmm-field"><label class="pmm-label">Test Lab</label>${inp(`${pre}-${i}-lab`,"Lab name",S.lab,"lab",i,'list="pmm-lab-names"')}</div><div class="pmm-field"><label class="pmm-label">Quotation Date</label>${inp(`${pre}-${i}-date`,"",S.date,"date",i,"","date")}</div></div>
       ${block(S,i,"chem")}${block(S,i,"phys")}${block(S,i,"corr")}
@@ -7683,10 +7646,7 @@ function pmmExportGeneralCoverage(entries, scopeText){
   XLSX.writeFile(wb,"Material_Coverage_"+new Date().toISOString().slice(0,10)+".xlsx");
 }
 
-function pmmEntryExtras(e){ return Array.isArray(e.extraTests)?e.extraTests:[]; }
 // a row with a lab / cost / sample but no test name cannot be told apart later -- ask for the name
-function pmmExtrasMissingName(arr){ return (Array.isArray(arr)?arr:[]).some(x=>!String(x&&x.test||"").trim()&&(String(x&&x.lab||"").trim()||String(x&&x.cost||"").trim()||String(x&&x.sample||"").trim())); }
-
 function pmmLabOptions(){
   const m={}; pmmEntries.forEach(e=>pmmEntryLabs(e).forEach(l=>{ const k=l.toLowerCase(); if(!m[k]) m[k]={label:l,count:0}; }));
   Object.keys(m).forEach(k=>{ m[k].count=pmmEntries.filter(e=>pmmEntryLabs(e).some(l=>l.toLowerCase()===k)).length; });
@@ -7733,39 +7693,7 @@ function pmmFilterSummaryText(){
 }
 
 // ---- Additional tests: the rows in New Entry and in an item's edit form ----
-function pmmExtraRowsHtml(list, mode, entryId){
-  const pre=mode==="draft"?"pmm-xd":"pmm-xe";
-  const upd=(i,k)=>mode==="draft"?`pmmUpdateExtraTest(${i},'${k}',this.value)`:`pmmDetailUpdateExtra('${entryId}',${i},'${k}',this.value)`;
-  const rem=i=>mode==="draft"?`pmmRemoveExtraTest(${i})`:`pmmDetailRemoveExtra('${entryId}',${i})`;
-  const names=[...new Set([...PMM_EXTRA_SUGGESTIONS,...pmmEntries.flatMap(e=>pmmCleanExtras(e.extraTests).map(x=>x.test))])];
-  const labs=pmmLabOptions().map(o=>o.label);
-  const lists=`<datalist id="pmm-extra-names">${names.map(n=>`<option value="${esc(n)}"></option>`).join("")}</datalist><datalist id="pmm-lab-names">${labs.map(n=>`<option value="${esc(n)}"></option>`).join("")}</datalist>`;
-  if(!list.length) return `${lists}<div style="font-size:11px;color:#aaa;padding:2px 0 4px">No additional tests yet.</div>`;
-  const inp=(id,ph,val,k,i,extra)=>`<input id="${id}" class="pmm-input" ${extra||""} placeholder="${ph}" value="${esc(val)}" oninput="${upd(i,k)}" style="width:100%;padding:7px 9px;font-size:12px"/>`;
-  const grid="display:grid;grid-template-columns:1.7fr 1.2fr .9fr .9fr 26px;gap:8px;align-items:center";
-  return `${lists}<div style="${grid};font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px"><span>Test</span><span>Lab</span><span>Quotation</span><span>Rec. Sample</span><span></span></div>
-    ${list.map((x,i)=>`<div style="${grid};margin-bottom:6px">
-      ${inp(pre+"-test-"+i,"e.g. Flammability",x.test,"test",i,'list="pmm-extra-names"')}
-      ${inp(pre+"-lab-"+i,"Lab (optional)",x.lab,"lab",i,'list="pmm-lab-names"')}
-      ${inp(pre+"-cost-"+i,"$0.00",x.cost,"cost",i)}
-      ${inp(pre+"-sample-"+i,"e.g. 1",x.sample,"sample",i)}
-      <button type="button" onclick="${rem(i)}" title="Remove this test" style="background:none;border:none;color:#e2445c;cursor:pointer;font-size:14px">✕</button></div>`).join("")}`;
-}
-function pmmRefreshExtraRows(){ const el=document.getElementById("pmm-extra-rows"); if(el) el.innerHTML=pmmExtraRowsHtml(pmmDraftExtraTests,"draft"); }
-function pmmAddExtraTest(){ pmmDraftExtraTests.push({test:"",lab:"",cost:"",sample:""}); pmmRefreshExtraRows(); const el=document.getElementById("pmm-xd-test-"+(pmmDraftExtraTests.length-1)); if(el) el.focus(); } // focus now, not from a timer that could pull focus back from a field the user has already moved to
-function pmmUpdateExtraTest(i,k,v){ if(pmmDraftExtraTests[i]) pmmDraftExtraTests[i][k]=v; }
-function pmmRemoveExtraTest(i){ pmmDraftExtraTests.splice(i,1); pmmRefreshExtraRows(); }
-function pmmDetailAddExtra(id){
-  const e=pmmEntries.find(x=>x.id===id); if(!e) return;
-  if(!Array.isArray(e.extraTests)) e.extraTests=[];
-  e.extraTests.push({test:"",lab:"",cost:"",sample:""}); renderModals();
-  const el=document.getElementById("pmm-xe-test-"+(e.extraTests.length-1)); if(el){ el.focus(); try{ el.scrollIntoView({block:"center"}); }catch(_){} }
-}
-function pmmDetailUpdateExtra(id,i,k,v){ const e=pmmEntries.find(x=>x.id===id); if(e&&e.extraTests&&e.extraTests[i]) e.extraTests[i][k]=v; }
-function pmmDetailRemoveExtra(id,i){ const e=pmmEntries.find(x=>x.id===id); if(!e||!e.extraTests) return; e.extraTests.splice(i,1); renderModals(); }
 // "+ Add test" on a compiled card: same Edit password as the ✏ Edit button, then the edit form opens with a new test row ready
-function pmmRequestAddTest(id){ pmmRequestEdit(id); pmmPendingAddTest=id; }
-
 // ---- Sheet plumbing: a tab needs a free column before something can be written into it ----
 async function pmmEnsureColumns(sheetName, needed){
   const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties`,{headers:{Authorization:"Bearer "+accessToken}});
@@ -7891,43 +7819,29 @@ async function pmmSaveFinalQuote(){
 // ---- Second summary: what the test labs will charge for Tensile (Physical) and the additional tests ----
 function pmmSpendSummaryHtml(entries){
   const rows=[];
-  entries.forEach(e=>pmmTestLines(e).forEach(l=>{
-    if(l.kind==="phys") rows.push({key:"phys",test:"Tensile / Physical",lab:l.lab,id:e.id,cost:l.cost,samples:l.samples});
-    else if(l.kind==="other"&&l.name) rows.push({key:l.key,test:l.name,lab:l.lab,id:e.id,cost:l.cost,samples:l.samples});
-  }));
+  entries.forEach(e=>pmmTestLines(e).forEach(l=>{ if(l.kind==="phys") rows.push({lab:l.lab,id:e.id,cost:l.cost,samples:l.samples}); }));
   let use=rows;
-  if(pmmFilterTest!=="ALL") use=use.filter(r=>r.key===pmmFilterTest);
+  if(pmmFilterTest==="chem"||pmmFilterTest==="corr") use=[];
   if(pmmFilterLabs.length){ const want=pmmLabSet(); use=use.filter(r=>want.has(r.lab.toLowerCase())); }
-  const total={cost:0,samples:0,ids:new Set(),tests:use.length,unquoted:use.filter(r=>!r.cost).length};
-  const byTest={}, byLab={};
-  use.forEach(r=>{
-    total.cost+=r.cost; total.samples+=r.samples; total.ids.add(r.id);
-    const t=byTest[r.key]||(byTest[r.key]={label:r.test,ids:new Set(),samples:0,cost:0}); t.ids.add(r.id); t.samples+=r.samples; t.cost+=r.cost;
-    const lk=(r.lab||"").toLowerCase(), l=byLab[lk]||(byLab[lk]={label:r.lab||"No lab set",ids:new Set(),tests:0,samples:0,cost:0}); l.ids.add(r.id); l.tests++; l.samples+=r.samples; l.cost+=r.cost;
-  });
+  const total={cost:0,samples:0,ids:new Set(),tests:use.length,unquoted:use.filter(r=>!r.cost).length}, byLab={};
+  use.forEach(r=>{ total.cost+=r.cost; total.samples+=r.samples; total.ids.add(r.id);
+    const lk=(r.lab||"").toLowerCase(), l=byLab[lk]||(byLab[lk]={label:r.lab||"No lab set",ids:new Set(),tests:0,samples:0,cost:0}); l.ids.add(r.id); l.tests++; l.samples+=r.samples; l.cost+=r.cost; });
   const tHead=h=>`<th style="text-align:${h[1]};padding:5px 8px;font-size:9px;font-weight:700;color:#7a5500;text-transform:uppercase">${h[0]}</th>`;
   const td=(v,al,b)=>`<td style="padding:6px 8px;text-align:${al||"right"};${b?"font-weight:700;":""}">${v}</td>`;
   const box=inner=>`<div id="pmm-spend-summary" style="margin-top:14px;background:#fffaf0;border:1.5px solid #f3dfb3;border-radius:12px;padding:16px 18px">${inner}</div>`;
-  const title=`<div style="font-size:10px;font-weight:700;color:#7a5500;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">🧾 Tensile &amp; Other Testing — Test Lab Spend</div>
-    <div style="font-size:10.5px;color:#8a6d2f;margin-bottom:12px">What the test labs will charge. These tests check the whole assembled product, so they are not consolidated by material — this is spend, not savings.</div>`;
-  if(!use.length) return box(`${title}<div style="font-size:11px;color:#8a6d2f">${rows.length?"No Tensile or additional tests match the current filters.":"No Tensile (Physical) or additional tests have been entered yet — add a quotation under Physical Testing, or use “+ Add test”."}</div>`);
+  const title=`<div style="font-size:10px;font-weight:700;color:#7a5500;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">🧾 Tensile (Physical) Testing — Test Lab Spend</div>
+    <div style="font-size:10.5px;color:#8a6d2f;margin-bottom:12px">What the test labs will charge for Tensile testing. It checks the whole assembled product, so it is not consolidated by material — this is spend, not savings.</div>`;
+  if(!use.length) return box(`${title}<div style="font-size:11px;color:#8a6d2f">${rows.length?"No Tensile tests match the current filters.":"No Tensile (Physical) tests have been entered yet — add a quotation under Physical Testing in a Test Lab section."}</div>`);
   const usd=pmmFqUsd, avg=(c,s)=>s>0?usd(Math.round((c/s)*100)/100):"—";
-  const testRows=Object.values(byTest).sort((a,b)=>(a.label==="Tensile / Physical"?-1:b.label==="Tensile / Physical"?1:b.cost-a.cost));
   const labRows=Object.values(byLab).sort((a,b)=>b.cost-a.cost);
   const kpi=(v,l)=>`<div style="background:#fff;border:1px solid #f3dfb3;border-radius:9px;padding:9px 14px;min-width:120px"><div style="font-size:20px;font-weight:800;color:#5c4200">${v}</div><div style="font-size:9.5px;font-weight:700;color:#8a6d2f;text-transform:uppercase;letter-spacing:.3px">${l}</div></div>`;
   return box(`${title}
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kpi(usd(total.cost),"Total lab spend")}${kpi(total.tests,"Tests quoted")}${kpi(total.ids.size,"Products")}${kpi(Number(total.samples.toLocaleString("en-US",{maximumFractionDigits:1})),"Samples")}</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px">
-      <div><div style="font-size:10.5px;font-weight:700;color:#5c4200;margin-bottom:6px">By test</div>
-        <table style="width:100%;border-collapse:collapse;font-size:11px;background:#fff;border:1px solid #f3dfb3;border-radius:8px"><thead><tr style="border-bottom:1px solid #f3dfb3">${tHead(["Test","left"])}${tHead(["Products","right"])}${tHead(["Samples","right"])}${tHead(["Lab spend","right"])}${tHead(["Per sample","right"])}</tr></thead>
-        <tbody>${testRows.map(t=>`<tr style="border-bottom:1px solid #f7ecd0">${td(esc(t.label),"left",1)}${td(t.ids.size)}${td(t.samples)}${td(usd(t.cost),"right",1)}${td(avg(t.cost,t.samples))}</tr>`).join("")}</tbody></table></div>
-      <div><div style="font-size:10.5px;font-weight:700;color:#5c4200;margin-bottom:6px">By test lab</div>
-        <table style="width:100%;border-collapse:collapse;font-size:11px;background:#fff;border:1px solid #f3dfb3;border-radius:8px"><thead><tr style="border-bottom:1px solid #f3dfb3">${tHead(["Test lab","left"])}${tHead(["Tests","right"])}${tHead(["Products","right"])}${tHead(["Lab spend","right"])}${tHead(["Share","right"])}</tr></thead>
-        <tbody>${labRows.map(l=>`<tr style="border-bottom:1px solid #f7ecd0">${td(esc(l.label),"left",1)}${td(l.tests)}${td(l.ids.size)}${td(usd(l.cost),"right",1)}${td(total.cost>0?Math.round(l.cost/total.cost*1000)/10+"%":"—")}</tr>`).join("")}</tbody></table></div>
-    </div>
-    ${total.unquoted?`<div style="font-size:10px;color:#b07000;margin-top:10px">⚠ ${total.unquoted} test${total.unquoted!==1?"s":""} ha${total.unquoted!==1?"ve":"s"} no quotation yet, so ${total.unquoted!==1?"they are":"it is"} not in the spend.</div>`:""}`);
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kpi(usd(total.cost),"Total lab spend")}${kpi(total.tests,"Tensile tests quoted")}${kpi(total.ids.size,"Products")}${kpi(Number(total.samples.toLocaleString("en-US",{maximumFractionDigits:1})),"Samples")}${kpi(avg(total.cost,total.samples),"Per sample")}</div>
+    <div style="font-size:10.5px;font-weight:700;color:#5c4200;margin-bottom:6px">By test lab</div>
+    <table style="width:100%;max-width:760px;border-collapse:collapse;font-size:11px;background:#fff;border:1px solid #f3dfb3;border-radius:8px"><thead><tr style="border-bottom:1px solid #f3dfb3">${tHead(["Test lab","left"])}${tHead(["Tests","right"])}${tHead(["Products","right"])}${tHead(["Samples","right"])}${tHead(["Lab spend","right"])}${tHead(["Share","right"])}</tr></thead>
+    <tbody>${labRows.map(l=>`<tr style="border-bottom:1px solid #f7ecd0">${td(esc(l.label),"left",1)}${td(l.tests)}${td(l.ids.size)}${td(l.samples)}${td(usd(l.cost),"right",1)}${td(total.cost>0?Math.round(l.cost/total.cost*1000)/10+"%":"—")}</tr>`).join("")}</tbody></table>
+    ${total.unquoted?`<div style="font-size:10px;color:#b07000;margin-top:10px">⚠ ${total.unquoted} Tensile test${total.unquoted!==1?"s":""} ha${total.unquoted!==1?"ve":"s"} no quotation yet, so ${total.unquoted!==1?"they are":"it is"} not in the spend.</div>`:""}`);
 }
-
 // ---- Excel export for General Material Coverage ----
 function pmmExportSnapshotCoverage(snapshotId){
   const snap=pmmCostSavingsSnapshots.find(s=>s.id===snapshotId); if(!snap) return;
@@ -7936,6 +7850,301 @@ function pmmExportSnapshotCoverage(snapshotId){
   pmmExportGeneralCoverage(ents,(snap.filterSummary||"All entries")+" (snapshot, products as they exist now)");
 }
 
+// ══ Table editor ("Excel-style") for the Actual Compilation: one row per product + test lab ══════════════════════
+const PMM_GRID_COLS=[
+  {key:"item",title:"Product Item",sub:"Product Item",grp:"prod",w:18,alias:["productitem","product","productname","item","description","productdescription"]},
+  {key:"sku",title:"SKU (Mother SKU)",sub:"SKU (Mother SKU)",grp:"prod",w:14,alias:["skumothersku","sku","mothersku","skumother"]},
+  {key:"supplier",title:"Supplier",sub:"Supplier",grp:"prod",w:10,alias:["supplier","preferredsupplier","vendor"]},
+  {key:"lab",title:"Test Lab",sub:"Test Lab",grp:"lab",w:8,alias:["testlab","lab","laboratory"]},
+  {key:"date",title:"Quotation Date",sub:"Date",grp:"lab",w:8.5,alias:["quotationdate","quotedate","date"]},
+  {key:"chemTest",title:"Chemical Test",sub:"Test",grp:"chem",w:7.4,alias:["chemicaltest","chemtest","chemical"]},
+  {key:"chemCost",title:"Chemical Cost",sub:"Cost",grp:"chem",w:5.5,alias:["chemicalcost","chemcost","chemicalquotation","chemquotation"]},
+  {key:"chemSample",title:"Chemical Sample",sub:"Sample",grp:"chem",w:4.6,alias:["chemicalsample","chemsample","chemicalrecommendedsample"]},
+  {key:"physTest",title:"Physical Test",sub:"Test",grp:"phys",w:7.4,alias:["physicaltest","phystest","physical","tensiletest","tensile"]},
+  {key:"physCost",title:"Physical Cost",sub:"Cost",grp:"phys",w:5.5,alias:["physicalcost","physcost","physicalquotation","physquotation","tensilecost"]},
+  {key:"physSample",title:"Physical Sample",sub:"Sample",grp:"phys",w:4.6,alias:["physicalsample","physsample","physicalrecommendedsample","tensilesample"]},
+  {key:"corrTest",title:"Corrosion Test",sub:"Test",grp:"corr",w:7.4,alias:["corrosiontest","corrtest","corrosion"]},
+  {key:"corrCost",title:"Corrosion Cost",sub:"Cost",grp:"corr",w:5.5,alias:["corrosioncost","corrcost","corrosionquotation","corrquotation"]},
+  {key:"corrSample",title:"Corrosion Sample",sub:"Sample",grp:"corr",w:4.6,alias:["corrosionsample","corrsample","corrosionrecommendedsample"]},
+];
+const PMM_GRID_GROUPS=[{k:"prod",label:"Product",bg:"#eef0f5",fg:"#4a5470"},{k:"lab",label:"Test Lab",bg:"#efe8ff",fg:"#5b21b6"},{k:"chem",label:"Chemical Testing",bg:"#e3efff",fg:"#0055bb"},{k:"phys",label:"Physical Testing",bg:"#fff1d6",fg:"#8a5a00"},{k:"corr",label:"Corrosion Testing",bg:"#dff5ec",fg:"#0a7a46"}];
+const PMM_GRID_N=PMM_GRID_COLS.length;
+let pmmGrid={rows:[],meta:[],orig:[],notice:""};
+function pmmGridNorm(s){ return String(s||"").toLowerCase().replace(/[^a-z0-9]/g,""); }
+function pmmGridBlank(){ return new Array(PMM_GRID_N).fill(""); }
+function pmmGridClean(v){ return String(v==null?"":v).trim(); }
+function pmmGridIsBlank(row){ return row.every(c=>!pmmGridClean(c)); }
+// SKU -> the rows (in grid order) that belong to that product; the first one is the product's first (main) test lab
+function pmmGridGroups(){ const g={}, order=[]; pmmGrid.rows.forEach((row,i)=>{ if(pmmGridIsBlank(row)) return; const k=pmmGridClean(row[1]).toLowerCase(); if(!g[k]){ g[k]=[]; order.push(k); } g[k].push(i); }); return {g,order}; }
+function pmmGridEff(key,ci){ const {g}=pmmGridGroups(); const idxs=g[key]||[]; for(const r of idxs){ const v=pmmGridClean(pmmGrid.rows[r][ci]); if(v) return v; } return ""; }
+function pmmGridOpen(){
+  const rows=[], meta=[];
+  pmmEntries.forEach(e=>{
+    const first={lab:e.testLab||"",date:e.quotationDate||"",chemTest:e.chemTest||"",chemCost:e.chemTestCost||"",chemSample:e.chemTestSample||"",physTest:e.physTest||"",physCost:e.physTestCost||"",physSample:e.physTestSample||"",corrTest:e.corrTest||"",corrCost:e.corrTestCost||"",corrSample:e.corrTestSample||""};
+    [first].concat(pmmCleanLabs(e.extraLabs)).forEach((S,i)=>{ rows.push([e.description||"",e.sku||"",e.supplier||"",S.lab,S.date,S.chemTest,S.chemCost,S.chemSample,S.physTest,S.physCost,S.physSample,S.corrTest,S.corrCost,S.corrSample]); meta.push({entryId:e.id,labIdx:i}); });
+  });
+  if(!rows.length){ rows.push(pmmGridBlank()); meta.push(null); }
+  pmmGrid={rows,meta,orig:rows.map(r=>r.slice()),notice:""};
+  openModal({type:"pmmGrid"});
+}
+function pmmGridDate(v){
+  v=pmmGridClean(v); if(!v) return "";
+  let m=v.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/), y,mo,d;
+  if(m){ y=+m[1]; mo=+m[2]; d=+m[3]; }
+  else if((m=v.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2}|\d{4})$/))){ mo=+m[1]; d=+m[2]; y=+m[3]; if(y<100) y+=2000; }
+  else { const t=Date.parse(v); if(isNaN(t)) return null; const dt=new Date(t); y=dt.getFullYear(); mo=dt.getMonth()+1; d=dt.getDate(); }
+  if(mo<1||mo>12||d<1||d>31) return null;
+  return `${y}-${String(mo).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+}
+function pmmEntryColumns(e,withExtras){   // the sheet's columns for one entry; the 3 component columns (Item / Component / Material) are left blank
+  const c=[e.sku,e.description,e.category,e.supplier,e.chemCost,e.tier,e.id,e.photoUrl,"","","",e.parentSku,e.skuFamily,e.skuFamilyB,e.skuFamilyC,e.chemTest,e.chemTestCost,e.chemTestSample,e.physTest,e.physTestCost,e.physTestSample,e.corrTest,e.corrTestCost,e.corrTestSample,e.testLab,e.quotationDate,e.retailSku].map(v=>v==null?"":v);
+  if(withExtras) c.push(pmmExtrasCell({extraTests:e.extraTests,extraLabs:e.extraLabs}));
+  return c;
+}
+// ---- what saving would do (also drives the live summary and the Save button) ----
+function pmmGridPlan(){
+  const P={errors:[],added:[],changed:[],deleted:[],unchanged:0,products:0,needExtras:false}, rows=pmmGrid.rows, meta=pmmGrid.meta, orig=pmmGrid.orig;
+  const {g,order}=pmmGridGroups(), used=new Set(), err=(r,m)=>P.errors.push(`Row ${r+1}: ${m}`);
+  const cellOf=(r,ci)=>pmmGridClean(rows[r][ci]);
+  order.forEach(key=>{
+    const idxs=g[key];
+    if(!key){ idxs.forEach(r=>err(r,"enter the SKU (Mother SKU) — it tells the table which product the row belongs to")); return; }
+    P.products++;
+    const ids=[...new Set(idxs.map(r=>meta[r]&&meta[r].entryId).filter(Boolean))];
+    if(ids.length>1){ err(idxs[0],`SKU "${cellOf(idxs[0],1)}" is used by ${ids.length} different products — every product needs its own SKU`); return; }
+    const old=ids.length?pmmEntries.find(e=>e.id===ids[0]):null;
+    if(old){ if(used.has(old.id)){ err(idxs[0],`this row belongs to a product that is now listed under another SKU — change the SKU on all of that product's rows together`); return; } used.add(old.id); }
+    const sec=r=>{
+      const o={lab:cellOf(r,3),date:cellOf(r,4),chemTest:cellOf(r,5),chemCost:cellOf(r,6),chemSample:cellOf(r,7),physTest:cellOf(r,8),physCost:cellOf(r,9),physSample:cellOf(r,10),corrTest:cellOf(r,11),corrCost:cellOf(r,12),corrSample:cellOf(r,13)};
+      const edited=ci=>pmmGridClean(rows[r][ci])!==pmmGridClean((orig[r]||[])[ci]);
+      if(edited(4)){ const d=pmmGridDate(o.date); if(d===null) err(r,`"${o.date}" is not a date — use YYYY-MM-DD (or M/D/YYYY)`); else o.date=d; }
+      [[6,"Chemical cost"],[9,"Physical cost"],[12,"Corrosion cost"]].forEach(([ci,n])=>{ if(edited(ci)&&cellOf(r,ci)&&!/\d/.test(cellOf(r,ci))) err(r,`${n} "${cellOf(r,ci)}" is not an amount`); });
+      [[7,"Chemical sample"],[10,"Physical sample"],[13,"Corrosion sample"]].forEach(([ci,n])=>{ if(edited(ci)&&cellOf(r,ci)&&!/^\d+(\.\d+)?$/.test(cellOf(r,ci))) err(r,`${n} "${cellOf(r,ci)}" has to be a number of samples`); });
+      return o;
+    };
+    const secs=idxs.map(sec), lead=secs[0];
+    const extras=[], seenLab={};
+    idxs.slice(1).forEach((r,i)=>{ const S=secs[i+1], data=PMM_LAB_KINDS.some(k=>S[k+"Test"]||S[k+"Cost"]||S[k+"Sample"]);
+      if(!S.lab&&!data&&!S.date) return;                                  // an empty extra row is just ignored
+      if(data&&!S.lab){ err(r,"enter the Test Lab name for this extra lab row"); return; }
+      if(S.lab&&!data){ err(r,`test lab "${S.lab}" has no tests yet — add a chemical, physical or corrosion test, or delete the row`); return; }
+      if(seenLab[S.lab.toLowerCase()]){ err(r,`test lab "${S.lab}" is already on another row of this SKU — put each lab on one row`); return; }
+      seenLab[S.lab.toLowerCase()]=1; extras.push(pmmBlankLab(S.lab,S.date)); const X=extras[extras.length-1]; PMM_LAB_KINDS.forEach(k=>{ X[k+"Test"]=S[k+"Test"]; X[k+"Cost"]=S[k+"Cost"]; X[k+"Sample"]=S[k+"Sample"]; }); });
+    const item=pmmGridEff(key,0), supplier=pmmGridEff(key,2);
+    const base={sku:cellOf(idxs[0],1),description:item,supplier,testLab:lead.lab,quotationDate:lead.date,chemTest:lead.chemTest,chemTestCost:lead.chemCost,chemTestSample:lead.chemSample,physTest:lead.physTest,physTestCost:lead.physCost,physTestSample:lead.physSample,corrTest:lead.corrTest,corrTestCost:lead.corrCost,corrTestSample:lead.corrSample,extraLabs:extras};
+    if(extras.length) P.needExtras=true;
+    if(old){
+      const keep={}; ['sku','description','supplier','testLab','quotationDate','chemTest','chemTestCost','chemTestSample','physTest','physTestCost','physTestSample','corrTest','corrTestCost','corrTestSample'].forEach(k=>{ keep[k]=pmmGridClean(old[k])===base[k]?old[k]:base[k]; });
+      const next=Object.assign({},old,base,keep);
+      if(JSON.stringify(pmmEntryColumns(next,true))!==JSON.stringify(pmmEntryColumns(old,true))) P.changed.push({old,next}); else P.unchanged++;
+    } else {
+      P.added.push(Object.assign({id:"pmm_"+Date.now()+"_"+P.added.length,category:"",tier:"",chemCost:"",parentSku:"",skuFamily:"",skuFamilyB:"",skuFamilyC:"",retailSku:"",photoUrl:"",components:[],extraTests:[],rowIndexes:[]},base));
+    }
+  });
+  // an existing product none of whose rows are left in the table
+  P.deleted=pmmEntries.filter(e=>!used.has(e.id));
+  return P;
+}
+// ---- the modal ----
+function pmmGridModalHtml(){
+  const total=PMM_GRID_COLS.reduce((a,c)=>a+c.w,0), avail=91;
+  const w=c=>(c.w/total*avail).toFixed(2)+"%";
+  const cols=`<colgroup><col style="width:2.6%">${PMM_GRID_COLS.map(c=>`<col style="width:${w(c)}">`).join("")}<col style="width:4%"></colgroup>`;
+  const grp=PMM_GRID_GROUPS.map(G=>{ const n=PMM_GRID_COLS.filter(c=>c.grp===G.k).length; return `<th colspan="${n}" style="padding:4px 5px;font-size:9px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:${G.fg};background:${G.bg};border:1px solid #dde3ee">${G.label}</th>`; }).join("");
+  const head=PMM_GRID_COLS.map(c=>{ const G=PMM_GRID_GROUPS.find(x=>x.k===c.grp); return `<th style="width:${w(c)};padding:5px 5px;font-size:9px;font-weight:800;color:#5b6479;text-transform:uppercase;letter-spacing:.2px;text-align:left;background:#f6f8fc;border:1px solid #dde3ee;border-top:3px solid ${G.fg}">${esc(c.sub)}</th>`; }).join("");
+  const body=pmmGrid.rows.map((row,r)=>`<tr id="pmm-g-row-${r}"><td id="pmm-g-n-${r}" style="width:2.6%;text-align:center;font-size:9.5px;font-weight:700;border:1px solid #dde3ee;background:#f4f5f9;color:#9aa3b5;vertical-align:top;padding-top:8px">${r+1}<div id="pmm-g-tag-${r}" style="font-size:7px;font-weight:800;margin-top:2px;letter-spacing:.2px"></div></td>${
+    PMM_GRID_COLS.map((c,ci)=>`<td style="padding:0;border:1px solid #dde3ee;vertical-align:top"><textarea class="cd-ta cd-cell" rows="1" data-r="${r}" data-c="${ci}" oninput="pmmGridSet(${r},${ci},this)" onkeydown="pmmGridKey(event,${r},${ci})" onpaste="pmmGridPaste(event,${r},${ci})">${esc(row[ci]||"")}</textarea></td>`).join("")
+  }<td style="width:4%;text-align:center;border:1px solid #dde3ee;vertical-align:top;padding-top:5px;white-space:nowrap"><button type="button" title="Add a test lab row for this SKU" onclick="pmmGridAddLab(${r})" style="border:none;background:none;color:#0073ea;cursor:pointer;font-size:13px;font-weight:800;padding:0 3px">＋</button><button type="button" title="Delete this row" onclick="pmmGridDelRow(${r})" style="border:none;background:none;color:#c9cfdb;cursor:pointer;font-size:12px;padding:0 3px">✕</button></td></tr>`).join("");
+  return `<div class="modal-wrap">
+    <div class="modal-box" style="width:min(1680px,98vw);max-width:none;max-height:94vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="background:#0055bb;padding:12px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        <div style="color:#fff;font-weight:800;font-size:14px">📋 Actual Compilation — table view <span style="font-weight:500;font-size:11px;opacity:.85;margin-left:8px">one row per product and test lab · rows with the same SKU are the same product</span></div>
+        <button onclick="pmmGridClose()" style="background:rgba(255,255,255,.2);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px">✕</button>
+      </div>
+      <div style="padding:10px 16px 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-shrink:0">
+        <button onclick="document.getElementById('pmm-grid-file').click()" style="font-size:11px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:7px;padding:7px 14px;cursor:pointer">⬆ Upload Excel / CSV</button>
+        <input type="file" id="pmm-grid-file" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none" onchange="pmmGridUpload(this.files[0]);this.value=''"/>
+        <button onclick="pmmGridExport()" style="font-size:11px;font-weight:700;color:#0a7a46;background:#f0fff8;border:1px solid #c3f0da;border-radius:7px;padding:7px 14px;cursor:pointer">⬇ Download as Excel</button>
+        <div style="font-size:10.5px;color:#777;line-height:1.45;flex:1;min-width:300px">Edit like Excel, or <b>paste</b> rows copied from Excel / Google Sheets. A second row with the <b>same SKU</b> is that product's second test lab (use <b>＋</b> to add one). Delete a row with <b>✕</b>. Nothing changes until you press <b>Save changes</b>.</div>
+      </div>
+      ${pmmGrid.notice?`<div style="margin:0 16px 6px;padding:7px 12px;background:#eef6ff;border:1px solid #c0d8f8;border-radius:7px;font-size:11px;color:#0055bb;flex-shrink:0">${esc(pmmGrid.notice)}</div>`:""}
+      <div id="pmm-grid-hwrap" style="padding:0 16px;flex-shrink:0">
+        <table id="pmm-grid-head" style="width:100%;table-layout:fixed;border-collapse:collapse;background:#fff">${cols}<thead><tr><th rowspan="2" style="background:#f1f4fa;border:1px solid #dde3ee"></th>${grp}<th rowspan="2" style="background:#f1f4fa;border:1px solid #dde3ee"></th></tr><tr>${head}</tr></thead></table>
+      </div>
+      <div id="pmm-grid-scroll" style="padding:0 16px;flex:1;min-height:0;overflow-y:auto;overflow-x:hidden">
+        <table id="pmm-grid" style="width:100%;table-layout:fixed;border-collapse:collapse;background:#fff">${cols}<tbody>${body}</tbody></table>
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid #e6eaf2;background:#fcfdff;display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0">
+        <button onclick="pmmGridAddRow()" style="font-size:11px;font-weight:700;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:7px;padding:6px 12px;cursor:pointer">+ Add row</button>
+        <div id="pmm-grid-sum" style="flex:1;min-width:260px;font-size:11.5px"></div>
+        <input id="pmm-grid-pw" type="password" placeholder="Edit password" onkeydown="if(event.key==='Enter')pmmGridSave()" style="width:150px;padding:7px 10px;border:1.5px solid #c8cdd7;border-radius:7px;font-size:12px;outline:none"/>
+        <button onclick="pmmGridClose()" style="padding:8px 16px;font-size:12px;font-weight:600;color:#555;background:#f0f2f5;border:none;border-radius:7px;cursor:pointer">Cancel</button>
+        <button id="pmm-grid-save" onclick="pmmGridSave()" style="padding:8px 20px;font-size:12px;font-weight:700;color:#fff;background:#9bbfe9;border:none;border-radius:7px;cursor:default">💾 Save changes</button>
+      </div>
+    </div>
+  </div>`;
+}
+const pmmGridCell=(r,c)=>document.querySelector(`#pmm-grid textarea[data-r="${r}"][data-c="${c}"]`);
+// repaint what depends on the SKU grouping: rows that continue an earlier row's product mirror its item + supplier (read-only)
+function pmmGridSync(){
+  pmmGridFixHeader();
+  const {g}=pmmGridGroups(), meta=pmmGrid.meta;
+  pmmGrid.rows.forEach((row,r)=>{
+    const key=pmmGridClean(row[1]).toLowerCase(), grp=key?g[key]:null, pos=grp?grp.indexOf(r):-1, cont=pos>0;
+    [0,2].forEach(ci=>{ const ta=pmmGridCell(r,ci); if(!ta) return; ta.readOnly=cont; ta.classList.toggle("pmm-g-mirror",cont); const want=cont?pmmGridEff(key,ci):row[ci]; if(ta.value!==want){ ta.value=want; cdAutoGrow(ta); } });
+    const tr=document.getElementById("pmm-g-row-"+r); if(tr) tr.style.borderTop=(pos>0||!grp)?"":"2px solid #b8c4dc";
+    const tag=document.getElementById("pmm-g-tag-"+r); if(tag){ const isNew=grp&&!grp.some(i=>meta[i]&&meta[i].entryId); tag.textContent=cont?("LAB "+(pos+1)):(isNew?"NEW":""); tag.style.color=cont?"#5b21b6":"#0a7a46"; }
+  });
+}
+// the rows scroll and may have a scrollbar; the header above them must be exactly as wide, so the columns line up
+function pmmGridFixHeader(){ const sc=document.getElementById("pmm-grid-scroll"), hw=document.getElementById("pmm-grid-hwrap"); if(!sc||!hw) return; hw.style.paddingRight=(16+(sc.offsetWidth-sc.clientWidth))+"px"; }
+function pmmGridRefresh(){
+  const P=pmmGridPlan(), el=document.getElementById("pmm-grid-sum"), btn=document.getElementById("pmm-grid-save");
+  const n=P.added.length+P.changed.length+P.deleted.length, labRows=pmmGrid.rows.filter(r=>!pmmGridIsBlank(r)).length;
+  if(el){
+    const bits=[`<b>${P.products}</b> product${P.products!==1?"s":""} · <b>${labRows}</b> row${labRows!==1?"s":""}`];
+    if(P.changed.length) bits.push(`<span style="color:#0055bb"><b>${P.changed.length}</b> edited</span>`);
+    if(P.added.length) bits.push(`<span style="color:#0a7a46"><b>${P.added.length}</b> new</span>`);
+    if(P.deleted.length) bits.push(`<span style="color:#c0392b"><b>${P.deleted.length}</b> to delete</span>`);
+    if(!n&&!P.errors.length) bits.push(`<span style="color:#888">no changes yet</span>`);
+    el.innerHTML=bits.join(" · ")+(P.errors.length?`<div id="pmm-grid-errs" style="color:#c0392b;margin-top:3px;font-size:11px">${P.errors.slice(0,3).map(esc).join("<br>")}${P.errors.length>3?`<br>…and ${P.errors.length-3} more`:""}</div>`:"");
+  }
+  if(btn){ const ready=!P.errors.length&&n>0; btn.style.background=ready?"#0073ea":"#9bbfe9"; btn.style.cursor=ready?"pointer":"default"; btn.dataset.ready=ready?"1":""; }
+  return P;
+}
+function pmmGridSet(r,c,el){ pmmGrid.rows[r][c]=el.value; cdAutoGrow(el); pmmGridSync(); pmmGridRefresh(); }
+function pmmGridRerender(fr,fc){ renderModals(); if(fr!=null){ const el=pmmGridCell(fr,fc); if(el){ el.focus(); try{ el.setSelectionRange(el.value.length,el.value.length); }catch(_){} } } }
+function pmmGridAddRow(){ pmmGrid.rows.push(pmmGridBlank()); pmmGrid.meta.push(null); pmmGrid.orig.push(pmmGridBlank()); pmmGridRerender(pmmGrid.rows.length-1,0); }
+function pmmGridDelRow(r){ pmmGrid.rows.splice(r,1); pmmGrid.meta.splice(r,1); pmmGrid.orig.splice(r,1); if(!pmmGrid.rows.length){ pmmGrid.rows.push(pmmGridBlank()); pmmGrid.meta.push(null); pmmGrid.orig.push(pmmGridBlank()); } pmmGrid.notice=""; pmmGridRerender(); }
+function pmmGridAddLab(r){
+  const sku=pmmGridClean(pmmGrid.rows[r][1]); if(!sku){ pmmGrid.notice="Enter the SKU on this row first, then add its test lab."; pmmGridRerender(); return; }
+  let last=r; pmmGrid.rows.forEach((rw,i)=>{ if(pmmGridClean(rw[1]).toLowerCase()===sku.toLowerCase()) last=Math.max(last,i); });
+  const row=pmmGridBlank(); row[1]=sku; pmmGrid.rows.splice(last+1,0,row); pmmGrid.meta.splice(last+1,0,null); pmmGrid.orig.splice(last+1,0,pmmGridBlank()); pmmGrid.notice="";
+  pmmGridRerender(last+1,3);
+}
+function pmmGridKey(e,r,c){
+  if(e.key==="Enter"&&!e.altKey){ e.preventDefault(); const nr=e.shiftKey?r-1:r+1; if(nr<0) return; const next=pmmGridCell(nr,c);
+    if(next){ next.focus(); next.select(); } else if(!e.shiftKey){ pmmGrid.rows.push(pmmGridBlank()); pmmGrid.meta.push(null); pmmGrid.orig.push(pmmGridBlank()); pmmGridRerender(nr,c); } }
+}
+// ---- paste / upload / export ----
+function pmmGridRecords(rows){
+  rows=rows.filter(r=>r.some(x=>pmmGridClean(x)));
+  const first=rows[0]||[], map=first.map(h=>{ const n=pmmGridNorm(h); const col=n?PMM_GRID_COLS.find(c=>pmmGridNorm(c.title)===n||c.alias.includes(n)):null; return col?col.key:null; });
+  const hits=map.filter(Boolean).length;
+  if(hits<3||!map.includes("sku")) return {header:false,records:[]};
+  const records=rows.slice(1).map(r=>{ const o={}; map.forEach((k,i)=>{ if(k) o[k]=pmmGridClean(r[i]); }); return o; }).filter(o=>Object.values(o).some(Boolean));
+  return {header:true,records};
+}
+function pmmGridUpsert(records,src){
+  let upd=0,add=0,skip=0; const same=(a,b)=>pmmGridClean(a).toLowerCase()===pmmGridClean(b).toLowerCase();
+  records.forEach(rec=>{
+    const sku=pmmGridClean(rec.sku); if(!sku){ skip++; return; } const lab=pmmGridClean(rec.lab);
+    let at=pmmGrid.rows.findIndex(rw=>same(rw[1],sku)&&same(rw[3],lab));
+    if(at<0&&!lab) at=pmmGrid.rows.findIndex(rw=>same(rw[1],sku));
+    if(at>=0){ PMM_GRID_COLS.forEach((col,ci)=>{ const v=pmmGridClean(rec[col.key]); if(v!=="") pmmGrid.rows[at][ci]=v; }); upd++; }
+    else{ const row=pmmGridBlank(); PMM_GRID_COLS.forEach((col,ci)=>{ row[ci]=pmmGridClean(rec[col.key]); }); let ins=-1; pmmGrid.rows.forEach((rw,i)=>{ if(same(rw[1],sku)) ins=i; });
+      const pos=ins>=0?ins+1:pmmGrid.rows.length; pmmGrid.rows.splice(pos,0,row); pmmGrid.meta.splice(pos,0,null); pmmGrid.orig.splice(pos,0,pmmGridBlank()); add++; }
+  });
+  // drop trailing blank rows left over from a fresh table
+  while(pmmGrid.rows.length>1&&pmmGridIsBlank(pmmGrid.rows[pmmGrid.rows.length-1])){ pmmGrid.rows.pop(); pmmGrid.meta.pop(); pmmGrid.orig.pop(); }
+  pmmGrid.notice=`Read ${src}: ${upd} row${upd!==1?"s":""} updated, ${add} added${skip?`, ${skip} skipped (no SKU)`:""}. Press Save changes to apply them.`;
+}
+function pmmGridPaste(e,r,c){
+  const text=(e.clipboardData||window.clipboardData).getData("text");
+  if(!text||!/[\t\n]/.test(text)) return;                 // one value: paste it normally
+  e.preventDefault();
+  const rows=cdParseDelimited(text,"\t").filter(rw=>rw.some(x=>pmmGridClean(x))), parsed=pmmGridRecords(rows);
+  if(parsed.header) pmmGridUpsert(parsed.records,"the pasted table");
+  else{
+    rows.forEach((rw,i)=>{ while(pmmGrid.rows.length<=r+i){ pmmGrid.rows.push(pmmGridBlank()); pmmGrid.meta.push(null); pmmGrid.orig.push(pmmGridBlank()); } rw.forEach((val,j)=>{ if(c+j<PMM_GRID_N) pmmGrid.rows[r+i][c+j]=pmmGridClean(val); }); });
+    pmmGrid.notice=`Pasted ${rows.length} row${rows.length!==1?"s":""} from the cell you clicked. Press Save changes to apply them.`;
+  }
+  pmmGridRerender();
+}
+function pmmGridUpload(file){
+  if(!file) return; const name=file.name||"table", reader=new FileReader();
+  const finish=rows=>{ const parsed=pmmGridRecords(rows);
+    if(!parsed.header){ pmmGrid.notice=`"${name}" isn't in this table's format. Its first row has to use the column titles (Product Item, SKU (Mother SKU), Supplier, Test Lab, Quotation Date, Chemical Test …). Use “Download as Excel” to get a file in the right format.`; pmmGridRerender(); return; }
+    pmmGridUpsert(parsed.records,`"${name}"`); pmmGridRerender(); };
+  if(/\.(xlsx|xls)$/i.test(name)){
+    if(typeof XLSX==="undefined"){ pmmGrid.notice="The Excel reader could not load. Save the file as .csv, or paste the table instead."; pmmGridRerender(); return; }
+    reader.onload=ev=>{ try{ const wb=XLSX.read(ev.target.result,{type:"binary"}); let pick=null;
+      for(const sn of wb.SheetNames){ const r=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:false,defval:""}); if(pmmGridRecords(r).header){ pick=r; break; } if(!pick) pick=r; }
+      finish(pick||[]); }catch(err){ pmmGrid.notice="Could not read that file: "+err.message; pmmGridRerender(); } };
+    reader.readAsBinaryString(file);
+  } else {
+    reader.onload=ev=>{ const t=String(ev.target.result||""), first=t.split("\n")[0]||""; const delim=(/\.(tsv|txt)$/i.test(name)||first.split("\t").length>2)?"\t":","; finish(cdParseDelimited(t,delim)); };
+    reader.readAsText(file);
+  }
+}
+function pmmGridExport(){
+  if(typeof XLSX==="undefined"){ alert("The Excel library has not loaded yet — check your connection and try again."); return; }
+  const {g}=pmmGridGroups(), aoa=[PMM_GRID_COLS.map(c=>c.title)];
+  pmmGrid.rows.forEach((row,r)=>{ if(pmmGridIsBlank(row)) return; const key=pmmGridClean(row[1]).toLowerCase(); aoa.push(PMM_GRID_COLS.map((c,ci)=>(ci===0||ci===2)&&key&&g[key]&&g[key].indexOf(r)>0?pmmGridEff(key,ci):pmmGridClean(row[ci]))); });
+  const ws=XLSX.utils.aoa_to_sheet(aoa); ws["!cols"]=[40,20,18,14,14,16,10,10,16,10,10,16,10,10].map(w=>({wch:w}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Actual Compilation");
+  XLSX.writeFile(wb,"Actual_Compilation_Table_"+new Date().toISOString().slice(0,10)+".xlsx");
+}
+function pmmGridClose(){
+  const P=pmmGridPlan();
+  if((P.added.length||P.changed.length||P.deleted.length)&&!confirm("Close the table without saving? Your changes will be lost.")) return;
+  closeModal();
+}
+// ---- saving: edits are written IN PLACE (rows never move); new products are appended; deleted products' rows are removed ----
+async function pmmGridWrite(P){
+  const auth={Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, api=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}`;
+  const withExtras=pmmHasExtrasColumn||P.needExtras;
+  const touched=P.changed.map(c=>c.old).concat(P.deleted).filter(e=>(e.rowIndexes||[]).length);
+  if(touched.length){      // the rows must still be where this page thinks they are, or an in-place write would hit the wrong rows
+    const res=await fetch(`${api}/values/${encodeURIComponent("'"+PMM_SHEET+"'!G:G")}`,{headers:auth});
+    if(!res.ok) throw new Error(`Could not check the sheet (${res.status}).`);
+    const col=(await res.json()).values||[];
+    for(const e of touched) for(const ri of e.rowIndexes) if(String((col[ri-1]||[])[0]||"")!==e.id) throw new Error("The sheet has changed since you opened the table (rows were added, moved or removed by someone else). Close the table, let it refresh, and open it again.");
+  }
+  if(P.changed.length||P.added.length) await pmmEnsureHeaders(withExtras);
+  const last=withExtras?"AB":"AA", data=[];
+  P.changed.forEach(({old,next})=>{ const cols=pmmEntryColumns(next,withExtras); (old.rowIndexes||[]).forEach(ri=>{ data.push({range:`'${PMM_SHEET}'!A${ri}:H${ri}`,values:[cols.slice(0,8)]}); data.push({range:`'${PMM_SHEET}'!L${ri}:${last}${ri}`,values:[cols.slice(11)]}); }); });
+  if(data.length){ const r=await fetch(`${api}/values:batchUpdate`,{method:"POST",headers:auth,body:JSON.stringify({valueInputOption:"USER_ENTERED",data})}); if(!r.ok){ const t=await r.text(); throw new Error(`Sheet update failed (${r.status}): ${t.slice(0,150)}`); } }
+  if(P.added.length){
+    const rows=P.added.map(e=>pmmEntryColumns(e,withExtras));
+    const r=await fetch(`${api}/values/${encodeURIComponent(PMM_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,{method:"POST",headers:auth,body:JSON.stringify({values:rows})});
+    if(!r.ok){ const t=await r.text(); throw new Error(`Sheet append failed (${r.status}): ${t.slice(0,150)}`); }
+  }
+  const delRows=P.deleted.flatMap(e=>e.rowIndexes||[]).sort((a,b)=>b-a);
+  if(delRows.length){
+    const gid=await pmmGetSheetGid();
+    const r=await fetch(`${api}:batchUpdate`,{method:"POST",headers:auth,body:JSON.stringify({requests:delRows.map(x=>({deleteDimension:{range:{sheetId:gid,dimension:"ROWS",startIndex:x-1,endIndex:x}}}))})});
+    if(!r.ok){ const t=await r.text(); throw new Error(`Sheet delete failed (${r.status}): ${t.slice(0,150)}`); }
+  }
+}
+async function pmmGridSave(){
+  const P=pmmGridRefresh();
+  const say=m=>{ const sum=document.getElementById("pmm-grid-sum"); if(!sum) return; let d=document.getElementById("pmm-grid-msg"); if(!d){ d=document.createElement("div"); d.id="pmm-grid-msg"; sum.appendChild(d); } d.style.cssText="color:#c0392b;margin-top:3px;font-size:11px"; d.textContent=m; };
+  if(P.errors.length) return;
+  if(!P.added.length&&!P.changed.length&&!P.deleted.length) return;
+  const pwd=document.getElementById("pmm-grid-pw")?.value||"";
+  if(!pwd){ say("Enter the Edit password to save."); return; }
+  if(!accessToken){ say('Please "Connect & Sync" with Google first.'); return; }
+  if((await pmmHashText(pwd))!==PMM_EDIT_PASSWORD_HASH){ say("Incorrect password."); const pw=document.getElementById("pmm-grid-pw"); if(pw){ pw.value=""; pw.focus(); } return; }
+  if(P.deleted.length&&!confirm(`Saving will permanently delete ${P.deleted.length} product${P.deleted.length!==1?"s":""} from the sheet, with their components, SKU families and photo:\n\n${P.deleted.map(e=>"• "+e.sku).join("\n")}\n\nContinue?`)) return;
+  const btn=document.getElementById("pmm-grid-save"); if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
+  try{
+    await pmmGridWrite(P);
+    await fetchSheetData();
+    closeModal(); pmmRenderCompiled();
+  }catch(e){
+    const msg=String(e.message||e);
+    try{ await fetchSheetData(); }catch(_){}
+    pmmGridOpen(); pmmGrid.notice="Could not save: "+msg+" — the table was reloaded from the sheet, so it shows what is really saved. Redo any edit that is missing.";
+    renderModals(); pmmGridSync(); pmmGridRefresh();
+  }
+}
+
+// heading above the product cards, with the button that opens the table editor
+function pmmSectionTitleHtml(entries){
+  const n=entries.length, all=pmmEntries.length;
+  return `<div class="pmm-section-title" id="pmm-section-title"><span>Actual Compilation</span> <small>${n===all?`${n} product${n!==1?"s":""}`:`${n} of ${all} products`}</small><button id="pmm-grid-open" type="button" onclick="pmmGridOpen()" title="Open every product and its test labs as an Excel-style table you can edit" style="margin-left:auto;align-self:center;font-size:12px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:7px 14px;cursor:pointer">📋 Table view — edit like Excel</button></div>`;
+}
 function pmmInsightsHtml(){
   const entries=pmmInsightEntries();
   const dateFilterActive=!!(pmmInsightDateFrom||pmmInsightDateTo);
@@ -8287,7 +8496,7 @@ function pmmEntryCardHtml(e){
         <button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1">✕</button>
       </div>
     </div>
-    ${e.photoUrl?`<div class="pmm-photo-title">Actual Compilation</div><div class="pmm-entry-photo-section"><img src="${pmmPhotoDisplayUrl(e.photoUrl)}" onclick="pmmOpenViewLarge('${e.id}')" title="Click to view larger"/></div>`:""}
+    ${e.photoUrl?`<div class="pmm-entry-photo-section"><img src="${pmmPhotoDisplayUrl(e.photoUrl)}" onclick="pmmOpenViewLarge('${e.id}')" title="Click to view larger"/></div>`:""}
     <div style="padding:12px 14px">
       <div style="background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:9px 11px;font-size:10px;line-height:1.7;color:#333">
         <div><strong>SKU:</strong> ${esc(e.sku)}</div>
@@ -8305,15 +8514,11 @@ function pmmEntryCardHtml(e){
         ${e.chemTest?`<div><strong style="color:#0055bb">Chemical Test:</strong> ${esc(e.chemTest)}${e.chemTestCost?` (${esc(e.chemTestCost)})`:""}</div>`:""}
         ${e.physTest?`<div><strong style="color:#0055bb">Physical Test:</strong> ${esc(e.physTest)}${e.physTestCost?` (${esc(e.physTestCost)})`:""}</div>`:""}
         ${e.corrTest?`<div><strong style="color:#0055bb">Corrosion Test:</strong> ${esc(e.corrTest)}${e.corrTestCost?` (${esc(e.corrTestCost)})`:""}</div>`:""}
-        ${pmmCleanExtras(e.extraTests).map(x=>`<div><strong style="color:#0055bb">${esc(x.test||"Test")}:</strong> ${esc(x.lab||"")}${x.cost?` (${esc(x.cost)})`:""}</div>`).join("")}
         ${e.testLab?`<div><strong style="color:#0055bb">Test Lab:</strong> ${esc(e.testLab)}</div>`:""}
         ${e.quotationDate?`<div><strong style="color:#0055bb">Quotation Date:</strong> ${esc(e.quotationDate)}</div>`:""}
         ${pmmLabSectionsHtml(e)}
-        ${!e.parentSku&&!e.supplier&&!e.chemTest&&!e.physTest&&!e.corrTest&&!e.testLab&&!e.quotationDate&&!pmmCleanExtras(e.extraTests).length&&!pmmCleanLabs(e.extraLabs).length?`<div style="color:#aaa">No testing info yet</div>`:""}
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-          <button onclick="event.stopPropagation();pmmRequestAddLab('${e.id}')" title="Add another test lab for this item (asks for the Edit password)" style="font-size:9.5px;font-weight:700;color:#0055bb;background:#fff;border:1px dashed #9cc0f0;border-radius:5px;padding:2px 9px;cursor:pointer">+ Add test lab</button>
-          <button onclick="event.stopPropagation();pmmRequestAddTest('${e.id}')" title="Add another test to this item (asks for the Edit password)" style="font-size:9.5px;font-weight:700;color:#0055bb;background:#fff;border:1px dashed #9cc0f0;border-radius:5px;padding:2px 9px;cursor:pointer">+ Add test</button>
-        </div>
+        ${!e.parentSku&&!e.supplier&&!e.chemTest&&!e.physTest&&!e.corrTest&&!e.testLab&&!e.quotationDate&&!pmmCleanLabs(e.extraLabs).length?`<div style="color:#aaa">No testing info yet</div>`:""}
+        <button onclick="event.stopPropagation();pmmRequestAddLab('${e.id}')" title="Add another test lab for this item (asks for the Edit password)" style="margin-top:6px;font-size:9.5px;font-weight:700;color:#0055bb;background:#fff;border:1px dashed #9cc0f0;border-radius:5px;padding:2px 9px;cursor:pointer">+ Add test lab</button>
       </div>
       <div style="flex:1;min-width:260px">
         <div id="pmm-table-wrap-${e.id}" onclick="pmmOpenViewLarge('${e.id}')" title="Click to view larger" style="max-height:${pmmExpandedCards.has(e.id)?"none":"175px"};overflow:hidden;position:relative;cursor:zoom-in">
@@ -8422,7 +8627,7 @@ async function pmmConfirmSaveGate(){
   pmmSaveCostSavingsSnapshot();
 }
 function pmmRequestEdit(entryId){
-  pmmPendingAddTest=null; pmmPendingAddLab=null;
+  pmmPendingAddLab=null;
   openModal({type:"pmmEditGate", entryId});
   setTimeout(()=>document.getElementById("pmm-editgate-input")?.focus(), 50);
 }
@@ -9014,7 +9219,7 @@ function pmmRenderDatabase(){
   } else {
     // Same columns as the actual Google Sheet — just without the Photo URL or internal Entry ID columns.
     const cols=["","SKU","A SKU Family","B SKU Family","C SKU Family","Retail SKU","Product Description","Category","Preferred Supplier","Tier","Parent SKU",
-      "Chemical Test","Chem. Quotation","Chem. Sample","Physical Test","Phys. Quotation","Phys. Sample","Corrosion Test","Corr. Quotation","Corr. Sample","Test Lab","Quotation Date","Additional Tests","Item","Component","Material"];
+      "Chemical Test","Chem. Quotation","Chem. Sample","Physical Test","Phys. Quotation","Phys. Sample","Corrosion Test","Corr. Quotation","Corr. Sample","Test Lab","Quotation Date","Additional Test Labs","Item","Component","Material"];
     html+=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
       <table style="width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap">
         <thead><tr style="background:#f2f3f6">
@@ -9084,13 +9289,14 @@ function pmmRenderCompiled(){
   </div>`;
 
   if(!pmmEntries.length){
-    html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">🧩</div><div style="font-size:12px">No entries yet — submit one from the "New Entry" tab.</div></div>`;
+    html+=pmmSectionTitleHtml([])+`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">🧩</div><div style="font-size:12px">No entries yet — submit one from the "New Entry" tab, or open the table view above and type them in.</div></div>`;
   } else {
     html+=pmmInsightsHtml();
     if(entries.length) html+=pmmSpendSummaryHtml(entries);   // 2nd summary: what the labs will charge for Tensile + the additional tests
     if(!entries.length){
-      html+=`<div style="text-align:center;padding:40px;color:#aaa"><div style="font-size:12px">No entries match the current filter/search.</div></div>`;
+      html+=pmmSectionTitleHtml(entries)+`<div style="text-align:center;padding:40px;color:#aaa"><div style="font-size:12px">No entries match the current filter/search.</div></div>`;
     } else {
+      html+=pmmSectionTitleHtml(entries);
       html+=`<div class="pmm-compiled-grid" style="margin-top:14px">`;
       entries.forEach(e=>{ html+=pmmEntryCardHtml(e); });
       html+=`</div>`;
