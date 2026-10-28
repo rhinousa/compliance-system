@@ -66,6 +66,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .sync-cta{display:inline-flex;align-items:center;gap:8px;background:#0073ea;color:#fff;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;border:none;cursor:pointer}.sync-cta:hover{background:#005cc8}
 .tab-btn{padding:8px 16px;font-size:12px;background:none;border:none;border-bottom:2px solid transparent;color:rgba(255,255,255,.65);font-weight:500;cursor:pointer;white-space:nowrap}
 .tab-btn.active{border-bottom-color:#fff;color:#fff;font-weight:700}
+.sub-btn{font-size:11.5px;padding:8px 15px;color:rgba(255,255,255,.6)}
+.sub-btn.active{background:rgba(255,255,255,.12);border-radius:6px 6px 0 0}
+.hdr-refresh{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;min-width:30px;border-radius:8px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;position:relative;transition:background .15s;font-size:11.5px;font-weight:600;padding:0}
+.hdr-refresh:hover{background:rgba(255,255,255,.2)}
+.hdr-refresh svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.hdr-refresh .lbl{display:none}
+.hdr-refresh.ready{background:#0073ea;border-color:#0073ea;padding:0 13px}.hdr-refresh.ready .lbl{display:inline}
+.hdr-refresh.loading{cursor:wait}.hdr-refresh.loading svg{animation:spin .9s linear infinite}
+.hdr-refresh.stale::after,.hdr-refresh.error::after{content:"";position:absolute;top:3px;right:3px;width:8px;height:8px;border-radius:50%;background:#fdab3d;border:1.5px solid #0e1b3d}
+.hdr-refresh.error::after{background:#e2445c}
 /* search — kept out of innerHTML cycle so typing is uninterrupted */
 #search-wrap{position:relative;flex:1;min-width:150px;max-width:230px}
 #search-wrap svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#aaa;pointer-events:none}
@@ -222,7 +232,24 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
 .pmm-photo-preview{max-width:100%;max-height:220px;border-radius:8px;display:block;margin:0 auto}
 .pmm-entry-card{background:#fff;border:1.5px solid #e0e3ea;border-radius:12px;overflow:hidden}
 .pmm-entry-hdr{padding:14px 20px;background:#f8f9fb;border-bottom:1px solid #e8eaed;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
-.pmm-section-title{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:22px 0 0;padding-bottom:8px;border-bottom:2px solid #1a1a1a;font-size:20px;font-weight:800;color:#222}
+.pmm-section-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:26px 0 16px;padding:0 2px 14px;border-bottom:1px solid #e3e8f2}
+.pmm-section-bar{width:5px;align-self:stretch;min-height:40px;border-radius:3px;background:linear-gradient(180deg,#0073ea,#0055bb);flex-shrink:0}
+.pmm-section-text{flex:1;min-width:200px}
+.pmm-section-name{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:20px;font-weight:700;color:#1b2540;letter-spacing:-.25px;line-height:1.2}
+.pmm-section-count{font-size:11px;font-weight:600;color:#0055bb;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:20px;padding:2px 11px;letter-spacing:0}
+.pmm-section-sub{margin-top:4px;font-size:12px;color:#7a869c;font-weight:500}
+.pmm-card-hdr{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 18px 13px;background:linear-gradient(180deg,#fbfcfe,#f3f6fb);border-bottom:1px solid #e3e8f2;border-left:4px solid #0073ea}
+.pmm-card-title{font-size:15.5px;font-weight:700;color:#1b2540;line-height:1.3;letter-spacing:-.1px}
+.pmm-card-sub{margin-top:3px;font-size:10.5px;font-weight:600;color:#7a869c;letter-spacing:.25px}
+.pmm-card-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex-shrink:0}
+.pmm-btn-ghost{background:#fff;border:1px solid #c9d6ea;color:#0055bb;border-radius:6px;padding:4px 11px;cursor:pointer;font-size:10.5px;font-weight:600;white-space:nowrap}
+.pmm-btn-ghost:hover{background:#eef5ff}
+.pmm-btn-del{background:#fff;border:1px solid #f1d0d4;color:#d0384e;border-radius:6px;width:24px;height:24px;cursor:pointer;font-size:11px;line-height:1}
+.pmm-btn-del:hover{background:#fff0f2}
+.pmm-chip{display:inline-block;background:#eef2f8;border:1px solid #dde4f0;color:#4a5878;border-radius:20px;padding:2px 10px;font-size:10px;font-weight:600}
+.pmm-box-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.pmm-box-eyebrow{font-size:10px;font-weight:800;color:#0055bb;text-transform:uppercase;letter-spacing:.9px}
+.pmm-box-title{margin-top:2px;font-size:15px;font-weight:700;color:#1b2540;letter-spacing:-.15px}
 .pmm-section-title small{font-size:11px;font-weight:600;color:#888}
 .pmm-g-mirror{color:#9aa3b5 !important;background:#f6f7fa !important;font-style:italic;cursor:default}
 .cd-ta{font-family:inherit}
@@ -286,16 +313,21 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
         <div id="hdr-acctBtn" style="display:none;align-items:center;gap:6px;color:rgba(255,255,255,.6);font-size:11px">
           <span style="width:7px;height:7px;border-radius:50%;background:#00c875;display:inline-block;flex-shrink:0"></span>Signed in with Google
         </div>
+        <button id="hdr-refresh" class="hdr-refresh ready" onclick="triggerSync()" title="Connect &amp; sync with Google Sheets" aria-label="Refresh from Google Sheets"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg><span class="lbl">Connect &amp; Sync</span></button>
       </div>
     </div>
     <div style="display:flex;margin-top:10px;padding:0 10px;border-top:1px solid rgba(255,255,255,.2)">
       <button class="tab-btn active" id="tab-table" onclick="switchTab('table')">Main Table</button>
       <button class="tab-btn" id="tab-monitoring" onclick="switchTab('monitoring')">Monitoring <span id="mon-badge" style="display:none;background:#e2445c;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px"></span></button>
       <button class="tab-btn" id="tab-expense" onclick="switchTab('expense')">💰 Test Expense</button>
-      <button class="tab-btn" id="tab-newentry" onclick="switchTab('newentry')">➕ New Entry</button>
-      <button class="tab-btn" id="tab-tracking" onclick="switchTab('tracking')">📝 Tracking</button>
-      <button class="tab-btn" id="tab-completedtest" onclick="switchTab('completedtest')">✅ Completed Test</button>
-      <button class="tab-btn" id="tab-deferreditems" onclick="switchTab('deferreditems')">🔵 Deferred Items</button>
+    </div>
+    <div id="hdr-progress" style="display:none;height:2px;background:#0073ea;width:0%;transition:width .4s ease"></div>
+    <div id="mon-subtabs" style="display:none;align-items:center;padding:0 10px 0 18px;background:rgba(0,0,0,.22);border-top:1px solid rgba(255,255,255,.1)">
+      <button class="tab-btn sub-btn active" id="sub-annual" onclick="switchTab('monitoring')">🗓 Annual Test</button>
+      <button class="tab-btn sub-btn" id="sub-newentry" onclick="switchTab('newentry')">➕ New Entry</button>
+      <button class="tab-btn sub-btn" id="sub-tracking" onclick="switchTab('tracking')">📝 Tracking</button>
+      <button class="tab-btn sub-btn" id="sub-completedtest" onclick="switchTab('completedtest')">✅ Completed Test</button>
+      <button class="tab-btn sub-btn" id="sub-deferreditems" onclick="switchTab('deferreditems')">🔵 Deferred Items</button>
     </div>
   </div>
 
@@ -321,7 +353,7 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
       <div id="search-wrap" style="position:relative">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input id="searchBox" placeholder="Search products &amp; tests…" autocomplete="off" spellcheck="false" oninput="onSearch(this.value)" onfocus="if(searchQ)mainOpenSearchSuggest()" onblur="mainCloseSearchSuggest()"/>
+        <input id="searchBox" placeholder="Search any word…" title="Every word you type is searched: SKU, product, test, supplier, lab, country…" autocomplete="off" spellcheck="false" oninput="onSearch(this.value)" onfocus="if(searchQ)mainOpenSearchSuggest()" onblur="mainCloseSearchSuggest()"/>
         <button type="button" class="sc-clear" title="Clear search" aria-label="Clear search" onmousedown="event.preventDefault()" onclick="scClear('searchBox')">✕</button>
         <div id="main-search-suggest" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:60;max-height:280px;overflow-y:auto"></div>
       </div>
@@ -415,7 +447,6 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
       <div style="display:flex;margin-top:10px;padding:0 10px;border-top:1px solid rgba(255,255,255,.2)">
         <button class="pmm-subtab active" id="pmm-tab-new" onclick="pmmSwitchTab('new')">➕ New Entry</button>
         <button class="pmm-subtab" id="pmm-tab-compiled" onclick="pmmSwitchTab('compiled')">📋 Compiled View <span id="pmm-count-badge" style="display:none;background:#0073ea;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px"></span></button>
-        <button class="pmm-subtab" id="pmm-tab-database" onclick="pmmSwitchTab('database')">🗄️ Database</button>
         <button class="pmm-subtab" id="pmm-tab-suppack" onclick="pmmSwitchTab('suppack')">🖊️ Supplier Ack.</button>
         <button class="pmm-subtab" id="pmm-tab-costsavings" onclick="pmmSwitchTab('costsavings')">💰 Cost Savings</button>
       </div>
@@ -1302,27 +1333,7 @@ function matchF(item){
     });
     if(!hasMatch) return false;
   }
-  if(searchQ){
-    const q=searchQ.toLowerCase();
-    // Build a comprehensive haystack — name, description, parentSku, all skus, subs
-    const haystack=[
-      item.name,
-      item.description,
-      item.parentSku,
-      item.prioritySku,
-      item.country,
-      item.channel,
-      item.colors,
-      item.mechTesting,
-      item.chemTesting,
-      item.corrTesting,
-      item.meetsClaim,
-      // Also search each word segment of the name (e.g. "HDKIT" matches "HDKIT-4PK-GRN")
-      ...item.name.split(/[-_\s]/),
-      ...item.subs.map(s=>s.name+" "+s.criteria)
-    ].join(" ").toLowerCase();
-    if(!haystack.includes(q)) return false;
-  }
+  if(searchQ){ const sw=cdSearchWords(searchQ); if(sw.length){ const ht=cdItemSearchText(item); if(!sw.every(w=>ht.includes(w))) return false; } }
   return true;
 }
 function getVis(){
@@ -1436,6 +1447,15 @@ function setSyncUI(status,title,sub,progress){
   btn.className="refresh-btn "+bs.cls;
   btn.innerHTML=status==="loading"?`<span class="spin"></span> Syncing…`:bs.txt;
   btn.disabled=bs.disabled;
+  // the green "synced" banner is gone: it only shows while there is something to act on (not connected / an error); otherwise an icon in the header refreshes
+  const wrapEl=document.getElementById("sync-banner-wrap"); if(wrapEl) wrapEl.style.display=(status==="ready"||status==="error")?"":"none";
+  const hb=document.getElementById("hdr-refresh");
+  if(hb){
+    hb.className="hdr-refresh "+status; hb.disabled=status==="loading";
+    hb.title=status==="done"?`Refresh from Google Sheets — ${sub}`:status==="stale"?`${sub}`:status==="loading"?(title||"Syncing…"):status==="error"?`${title}: ${sub} — click to retry`:"Connect & sync with Google Sheets";
+    hb.setAttribute("aria-label",hb.title);
+  }
+  const hp=document.getElementById("hdr-progress"); if(hp){ if(status==="loading"&&progress>0){ hp.style.display="block"; hp.style.width=progress+"%"; } else hp.style.display="none"; }
 }
 
 // ── MAIN RENDER ───────────────────────────────────────────────────────────────
@@ -1753,13 +1773,13 @@ function renderTable(){
         if(iOpen){
           // Only filter subtests if the search term specifically matches subtest content
           // If the item was matched by its own name/SKU, show ALL subtests unfiltered
-          const itemMatchedDirectly = !searchQ || [item.name, item.description, item.parentSku, item.prioritySku, item.country, item.channel, ...item.name.split(/[-_\s]/)].some(v=>(v||"").toLowerCase().includes(searchQ.toLowerCase()));
-          const fsubs = searchQ && !itemMatchedDirectly
-            ? item.subs.filter(s=>(s.name||"").toLowerCase().includes(searchQ.toLowerCase()))
-            : item.subs;
+          const sw=cdSearchWords(searchQ), ownT=sw.length?cdItemOwnText(item):"", restW=sw.filter(w=>!ownT.includes(w));   // words the product itself already satisfies
+          const itemMatchedDirectly = !restW.length;
+          const fsubs0 = restW.length ? item.subs.filter(sb=>{ const t=cdSubText(sb); return restW.every(w=>t.includes(w)); }) : item.subs;
+          const fsubs = fsubs0.length ? fsubs0 : item.subs;       // words spread over several tests: show them all rather than none
           const tabSel=iTab[item.id]||"rhino";
           html+=`<div style="background:#f6f7fb;border-bottom:0.5px solid #e0e0e0">${itemTabsHtml(item,tabSel)}`;
-          if(tabSel==="supplier"){ html+=supplierTableHtml(item, (searchQ&&!itemMatchedDirectly)?searchQ:""); }
+          if(tabSel==="supplier"){ html+=supplierTableHtml(item, restW.join(" ")); }
           else{
           const rg="minmax(200px,0.9fr) 96px minmax(0,4fr)";
           const heads=["Test Type","Result","Test Results by Year"];
@@ -1920,12 +1940,8 @@ function renderMonitoring(){
   let rows=allRows.filter(r=>!cdMonitoringClosedIds.has(r.donor.id)||reflectedRow(r));
   if(monFocusParent) rows=rows.filter(r=>r.parentKey===monFocusParent);
   if(monSearchQ){
-    const q=monSearchQ.toLowerCase();
-    rows=rows.filter(r=>
-      r.donor.name.toLowerCase().includes(q)||
-      r.siblingNames.some(n=>n.toLowerCase().includes(q))||
-      r.allSubs.some(s=>s.name.toLowerCase().includes(q))
-    );
+    const mw=cdSearchWords(monSearchQ);
+    if(mw.length) rows=rows.filter(r=>{ const t=cdItemSearchText(r.donor)+" \n "+r.siblingNames.join(" ").toLowerCase(); return mw.every(w=>t.includes(w)); });
   }
   if(monFilterDecision!=="ALL"){
     rows=rows.filter(r=>r.subsWith2024.some(s=>getRetestDecision(r.donor.id,s.id)===monFilterDecision));
@@ -2102,8 +2118,8 @@ function renderExpense(){
   if(expFilterCategory!=="ALL") rows=rows.filter(r=>r.category===expFilterCategory);
   if(expFilterYear!=="ALL") rows=rows.filter(r=>r.year===expFilterYear);
   if(expSearchQ){
-    const q=expSearchQ.toLowerCase();
-    rows=rows.filter(r=>(r.item.name||"").toLowerCase().includes(q)||(r.item.description||"").toLowerCase().includes(q)||(r.subName||"").toLowerCase().includes(q)||(r.supplier||"").toLowerCase().includes(q));
+    const ew=cdSearchWords(expSearchQ);
+    if(ew.length) rows=rows.filter(r=>{ const t=cdItemOwnText(r.item)+" \n "+[r.subName,r.supplier,r.year,r.category,r.cost].filter(x=>x!=null).join(" ").toLowerCase(); return ew.every(w=>t.includes(w)); });
   }
 
   // ── Aggregations ──
@@ -2966,6 +2982,7 @@ function renderModals(){
         </div>
         <div style="padding:20px;overflow-y:auto">
           ${pmmCostSnapshotRowsHtml(snap)}
+          ${matchedEntries.length?`<div style="background:#0e1b3d;border-radius:8px;padding:0 14px 12px;margin-top:10px">${pmmLabCompareHtml(matchedEntries,{respectFilter:false}).replace('margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.15)','margin-top:0;padding-top:12px')}</div>${pmmSpendSummaryHtml(matchedEntries,{respectFilter:false})}`:""}
           ${missingCount>0?`<div style="font-size:10.5px;color:#b07000;margin-top:10px">⚠ ${missingCount} of ${snap.skus.length} products from this snapshot could not be found (likely edited or deleted since it was saved) — showing details for the ${matchedEntries.length} still available.</div>`:""}
 
           ${(cover||metalCover)?`<div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
@@ -3223,8 +3240,8 @@ function itemTabsHtml(item,tabSel){
 }
 function supplierTableHtml(item,q){
   const grid="minmax(0,2.4fr) minmax(0,1.2fr) 110px 140px";
-  const needle=(q||"").toLowerCase();
-  const list=(item.supplierTests||[]).filter(e=>!needle||((e.description||"")+" "+(e.supplier||"")).toLowerCase().includes(needle));
+  const needles=cdSearchWords(q);
+  const list=(item.supplierTests||[]).filter(e=>{ if(!needles.length) return true; const t=((e.description||"")+" "+(e.supplier||"")+" "+(e.date||"")).toLowerCase(); return needles.every(w=>t.includes(w)); });
   const th=(h,i)=>`<div style="padding:5px 10px 5px ${i===0?"44px":"10px"};font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;border-right:0.5px solid #dde0e9">${h}</div>`;
   let html=`<div style="display:grid;grid-template-columns:${grid};background:#eeeff5;border-bottom:0.5px solid #dde0e9">${["Test Type","Supplier","Tested Date","Test Report"].map(th).join("")}</div>`;
   if(!list.length){
@@ -3257,29 +3274,14 @@ function mainOpenSearchSuggest(){ mainRenderSearchSuggest(); }
 function mainCloseSearchSuggest(){ setTimeout(()=>{ const el=document.getElementById("main-search-suggest"); if(el) el.style.display="none"; }, 150); }
 function mainRenderSearchSuggest(){
   const el=document.getElementById("main-search-suggest"); if(!el) return;
-  const q=(searchQ||"").trim().toLowerCase();
-  if(!q){ el.style.display="none"; el.innerHTML=""; return; }
-  const seen=new Set(); const results=[];
-  GROUPS.forEach(g=>g.items.forEach(item=>{
-    if(item.name && item.name.toLowerCase().includes(q) && !seen.has("sku:"+item.name)){
-      seen.add("sku:"+item.name); results.push({type:"SKU", label:item.name});
-    }
-    (item.subs||[]).forEach(s=>{
-      if(s.name && s.name.toLowerCase().includes(q) && !seen.has("test:"+s.name)){
-        seen.add("test:"+s.name); results.push({type:"TEST", label:s.name});
-      }
-    });
-  }));
+  const results=cdSuggestResults(searchQ);
   if(!results.length){ el.style.display="none"; el.innerHTML=""; return; }
-  el.innerHTML=results.slice(0,12).map(r=>{
+  const q=cdSearchWords(searchQ)[0];
+  el.innerHTML=results.map(r=>{
     const idx=r.label.toLowerCase().indexOf(q);
-    let highlighted=esc(r.label);
-    if(idx!==-1){
-      highlighted=`${esc(r.label.slice(0,idx))}<span style="color:#0a7a46;font-weight:700">${esc(r.label.slice(idx,idx+q.length))}</span>${esc(r.label.slice(idx+q.length))}`;
-    }
-    const badgeColor = r.type==="SKU" ? "#0073ea" : "#7c3aed";
-    return `<div onclick="mainSelectSearchSuggestion('${esc(r.label).replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">
-      <span style="font-size:9px;font-weight:800;color:#fff;background:${badgeColor};border-radius:4px;padding:2px 6px;letter-spacing:.3px;flex-shrink:0">${r.type}</span>
+    const highlighted=idx===-1?esc(r.label):`${esc(r.label.slice(0,idx))}<span style="color:#0a7a46;font-weight:700">${esc(r.label.slice(idx,idx+q.length))}</span>${esc(r.label.slice(idx+q.length))}`;
+    return `<div onclick="mainSelectSearchSuggestion('${esc(r.label).replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background=''">
+      <span style="font-size:8.5px;font-weight:800;color:#fff;background:${CD_SUG_COLOR[r.type]||"#7c3aed"};border-radius:4px;padding:2px 6px;letter-spacing:.3px;flex-shrink:0">${r.type}</span>
       <span style="font-size:12.5px;color:#333">${highlighted}</span>
     </div>`;
   }).join("");
@@ -3302,22 +3304,7 @@ function cdRegisterSearch(id, getter, handler){
   CD_SEARCH_QUERY_GETTERS[id]=getter;
   CD_SEARCH_SELECT_HANDLERS[id]=handler;
 }
-function cdGenericSuggestions(query){
-  const q=(query||"").trim().toLowerCase();
-  if(!q) return [];
-  const seen=new Set(); const results=[];
-  GROUPS.forEach(g=>g.items.forEach(item=>{
-    if(item.name && item.name.toLowerCase().includes(q) && !seen.has("sku:"+item.name)){
-      seen.add("sku:"+item.name); results.push({type:"SKU", label:item.name});
-    }
-    (item.subs||[]).forEach(s=>{
-      if(s.name && s.name.toLowerCase().includes(q) && !seen.has("test:"+s.name)){
-        seen.add("test:"+s.name); results.push({type:"TEST", label:s.name});
-      }
-    });
-  }));
-  return results.slice(0,12);
-}
+function cdGenericSuggestions(query){ return cdSuggestResults(query); }
 function cdSuggestDropdownHtml(id, query){
   const results=cdGenericSuggestions(query);
   if(!results.length) return "";
@@ -3328,7 +3315,7 @@ function cdSuggestDropdownHtml(id, query){
     if(idx!==-1){
       highlighted=`${esc(r.label.slice(0,idx))}<span style="color:#0a7a46;font-weight:700">${esc(r.label.slice(idx,idx+q.length))}</span>${esc(r.label.slice(idx+q.length))}`;
     }
-    const badgeColor = r.type==="SKU" ? "#0073ea" : "#7c3aed";
+    const badgeColor = CD_SUG_COLOR[r.type]||"#7c3aed";
     return `<div onclick="cdSelectSuggestion('${id}','${esc(r.label).replace(/'/g,"\\'")}')" style="display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;border-bottom:1px solid #f0f1f3" onmouseover="this.style.background='#f7f8fa'" onmouseout="this.style.background='#fff'">
       <span style="font-size:9px;font-weight:800;color:#fff;background:${badgeColor};border-radius:4px;padding:2px 6px;letter-spacing:.3px;flex-shrink:0">${r.type}</span>
       <span style="font-size:12.5px;color:#333">${highlighted}</span>
@@ -3376,19 +3363,43 @@ function cdOnSearchInput(id, inputEl){
 function cdSearchBarHtml(id, query, placeholder){
   return `<div style="position:relative;flex:1;min-width:200px;max-width:320px">
     <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#aaa" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input id="${id}" value="${esc(query)}" oninput="cdOnSearchInput('${id}', this)" onfocus="cdShowSuggestFor('${id}')" onblur="cdHideSuggestFor('${id}')" placeholder="${esc(placeholder||"Search products & tests…")}" autocomplete="off" style="width:100%;padding:6px 10px 6px 28px;border:1.5px solid #dde0e7;border-radius:7px;font-size:12px;background:#fafbfc;color:#333;outline:none;height:32px"/>
+    <input id="${id}" value="${esc(query)}" oninput="cdOnSearchInput('${id}', this)" onfocus="cdShowSuggestFor('${id}')" onblur="cdHideSuggestFor('${id}')" placeholder="${esc(placeholder||"Search any word — SKU, test, supplier…")}" autocomplete="off" style="width:100%;padding:6px 10px 6px 28px;border:1.5px solid #dde0e7;border-radius:7px;font-size:12px;background:#fafbfc;color:#333;outline:none;height:32px"/>
     <button type="button" class="sc-clear" title="Clear search" aria-label="Clear search" onmousedown="event.preventDefault()" onclick="scClear('${id}')">✕</button>
     <div id="${id}-suggest" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:60;max-height:280px;overflow-y:auto"></div>
   </div>`;
 }
-function cdFilterItemsBySearch(items, q){
-  if(!q) return items;
-  const s=q.toLowerCase();
-  return items.filter(i=>
-    (i.name||"").toLowerCase().includes(s) ||
-    (i.description||"").toLowerCase().includes(s) ||
-    (i.subs||[]).some(sub=>(sub.name||"").toLowerCase().includes(s))
-  );
+// "Search any word": every word typed has to be found somewhere on the product -- name, SKUs, description, country, channel,
+// colours, and every test with its results, suppliers, labs and dates. Same rule as the Product Material Matrix.
+function cdSearchWords(q){ return String(q||"").toLowerCase().split(/[\s,;]+/).filter(Boolean); }
+function cdLeafText(v,out,d){ if(v==null) return; const t=typeof v; if(t==="string"){ if(!/^https?:\/\//i.test(v)) out.push(v); } else if(t==="number"){ out.push(String(v)); } else if(d>=4){ return; } else if(Array.isArray(v)){ v.forEach(x=>cdLeafText(x,out,d+1)); } else if(t==="object"){ Object.values(v).forEach(x=>cdLeafText(x,out,d+1)); } }
+const CD_SEARCH_CACHE={};
+function cdItemOwnText(item){
+  const p=[item.name,item.description,item.parentSku,item.prioritySku,item.country,item.channel,item.colors,item.meetsClaim,item.mechTesting,item.chemTesting,item.corrTesting,item.status,item._gtitle,...String(item.name||"").split(/[-_\s]+/)];
+  cdLeafText(item.supplierTests,p,0);
+  return p.filter(x=>x!=null&&String(x).trim()!=="").join(" \n ").toLowerCase();
+}
+function cdSubText(sub){ const p=[sub.name,sub.std,sub.criteria,sub.target,sub.equipment,sub.accreditation,sub.labs]; cdLeafText(sub.yearBlocks,p,0); return p.filter(x=>x!=null&&String(x).trim()!=="").join(" \n ").toLowerCase(); }
+function cdItemSearchText(item){
+  const tag=(item.name||"")+"|"+(item._gtitle||""), hit=item.id?CD_SEARCH_CACHE[item.id]:null;
+  if(hit&&hit.subs===item.subs&&hit.sup===item.supplierTests&&hit.tag===tag) return hit.text;
+  const text=cdItemOwnText(item)+" \n "+(item.subs||[]).map(cdSubText).join(" \n ");
+  if(item.id) CD_SEARCH_CACHE[item.id]={subs:item.subs,sup:item.supplierTests,tag,text};
+  return text;
+}
+function cdItemMatches(item,q){ const w=cdSearchWords(q); if(!w.length) return true; const t=cdItemSearchText(item); return w.every(x=>t.includes(x)); }
+function cdFilterItemsBySearch(items, q){ if(!cdSearchWords(q).length) return items; return items.filter(i=>cdItemMatches(i,q)); }
+const CD_SUG_COLOR={SKU:"#0073ea","PARENT SKU":"#3b82c4",PRODUCT:"#7c3aed",TEST:"#9b5de5",SUPPLIER:"#0a7a46",COUNTRY:"#6b7280",CHANNEL:"#6b7280"};
+// suggestions for a single typed word, from every field (several words: the list itself is the answer)
+function cdSuggestResults(query){
+  const w=cdSearchWords(query); if(w.length!==1) return []; const q=w[0], groups={}, seen=new Set();
+  const add=(type,label)=>{ label=String(label==null?"":label).trim(); if(!label||!label.toLowerCase().includes(q)) return; const k=type+":"+label.toLowerCase(); if(seen.has(k)) return; seen.add(k); (groups[type]=groups[type]||[]).push(label); };
+  GROUPS.forEach(g=>g.items.forEach(item=>{
+    add("SKU",item.name); add("PARENT SKU",item.parentSku); add("PRODUCT",item.description);
+    (item.subs||[]).forEach(sb=>{ add("TEST",sb.name); Object.values(sb.yearBlocks||{}).forEach(bl=>(bl||[]).forEach(b=>add("SUPPLIER",b.supplier))); });
+    (item.supplierTests||[]).forEach(e=>add("SUPPLIER",e.supplier)); add("COUNTRY",item.country); add("CHANNEL",item.channel);
+  }));
+  const out=[]; ["SKU","PARENT SKU","PRODUCT","TEST","SUPPLIER","COUNTRY","CHANNEL"].forEach(t=>(groups[t]||[]).slice(0,3).forEach(x=>out.push({type:t,label:x})));
+  return out.slice(0,12);
 }
 let cdTrackingSearchQ="", cdCompletedSearchQ="", cdDeferredSearchQ="", expSearchQ="";
 cdRegisterSearch("mon-search-box", ()=>monSearchQ, (text)=>{ monSearchQ=text; renderMonitoring(); });
@@ -3406,11 +3417,11 @@ function cdInitSearchBars(){
   cdSearchBarsInitialized=true;
   const set=(wrapId, boxId, q, ph)=>{ const el=document.getElementById(wrapId); if(el) el.innerHTML=cdSearchBarHtml(boxId, q, ph); };
   { const el=document.getElementById("mon-search-wrap");
-    if(el) el.innerHTML=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap">${cdSearchBarHtml("mon-search-box",monSearchQ,"Search SKU or test name…").replace("flex:1;min-width:200px;max-width:320px","flex:0 1 225px;min-width:160px")}<div id="mon-filter-slot" style="display:contents"></div></div>`; }
-  set("exp-search-wrap","exp-search-box",expSearchQ,"Search products & tests…");
-  set("trk-search-wrap","trk-search-box",cdTrackingSearchQ,"Search products & tests…");
-  set("cmp-search-wrap","cmp-search-box",cdCompletedSearchQ,"Search products & tests…");
-  set("def-search-wrap","def-search-box",cdDeferredSearchQ,"Search products & tests…");
+    if(el) el.innerHTML=`<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap">${cdSearchBarHtml("mon-search-box",monSearchQ,"Search any word — SKU, test, supplier…").replace("flex:1;min-width:200px;max-width:320px","flex:0 1 225px;min-width:160px")}<div id="mon-filter-slot" style="display:contents"></div></div>`; }
+  set("exp-search-wrap","exp-search-box",expSearchQ,"Search any word — SKU, test, supplier…");
+  set("trk-search-wrap","trk-search-box",cdTrackingSearchQ,"Search any word — SKU, test, supplier…");
+  set("cmp-search-wrap","cmp-search-box",cdCompletedSearchQ,"Search any word — SKU, test, supplier…");
+  set("def-search-wrap","def-search-box",cdDeferredSearchQ,"Search any word — SKU, test, supplier…");
 }
 
 // Clears a search box and re-runs whatever that box's own oninput handler does.
@@ -3501,15 +3512,15 @@ function exportMonitoringExcel(){
   XLSX.utils.book_append_sheet(wb,ws,"Monitoring");
   downloadXLSX(wb,"Compliance-Monitoring-"+new Date().toISOString().slice(0,10)+".xlsx");
 }
+const CD_MON_GROUP=["monitoring","newentry","tracking","completedtest","deferreditems"];
 function switchTab(t){
   activeTab=t;
   document.getElementById("tab-table").className="tab-btn"+(t==="table"?" active":"");
-  document.getElementById("tab-monitoring").className="tab-btn"+(t==="monitoring"?" active":"");
   document.getElementById("tab-expense").className="tab-btn"+(t==="expense"?" active":"");
-  const newEntryTab=document.getElementById("tab-newentry"); if(newEntryTab) newEntryTab.className="tab-btn"+(t==="newentry"?" active":"");
-  const trackingTab=document.getElementById("tab-tracking"); if(trackingTab) trackingTab.className="tab-btn"+(t==="tracking"?" active":"");
-  const completedTestTab=document.getElementById("tab-completedtest"); if(completedTestTab) completedTestTab.className="tab-btn"+(t==="completedtest"?" active":"");
-  const completedItemsTab=document.getElementById("tab-deferreditems"); if(completedItemsTab) completedItemsTab.className="tab-btn"+(t==="deferreditems"?" active":"");
+  const inMon=CD_MON_GROUP.includes(t);                 // Annual Test / New Entry / Tracking / Completed Test / Deferred Items all belong to Monitoring
+  document.getElementById("tab-monitoring").className="tab-btn"+(inMon?" active":"");
+  const subBar=document.getElementById("mon-subtabs"); if(subBar) subBar.style.display=inMon?"flex":"none";
+  [["sub-annual","monitoring"],["sub-newentry","newentry"],["sub-tracking","tracking"],["sub-completedtest","completedtest"],["sub-deferreditems","deferreditems"]].forEach(([id,k])=>{ const b=document.getElementById(id); if(b) b.className="tab-btn sub-btn"+(t===k?" active":""); });
   const kpiEl=document.getElementById("kpi-section");
   if(kpiEl) kpiEl.style.display=t==="table"?"":"none";
   const tbEl=document.getElementById("toolbar-wrap");
@@ -5709,6 +5720,28 @@ async function cdAppendCompletedTestRow(item){
   cdCheckAuthError(res);
   if(!res.ok){ const t=await res.text(); throw new Error(`Could not save to "${CD_COMPLETED_TEST_SHEET}" (${res.status}): ${t.slice(0,150)}`); }
 }
+let cdCompletedAddQ="";
+function cdCompletedAddResultsHtml(){
+  if(!cdSearchWords(cdCompletedAddQ).length) return "";
+  const out=[]; GROUPS.forEach(g=>g.items.forEach(i=>{ if(!cdCompletedTestIds.has(i.id)&&cdItemMatches(i,cdCompletedAddQ)) out.push(i); }));
+  if(!out.length) return `<div style="padding:10px 14px;border-top:1px solid #f0f1f3;font-size:11.5px;color:#9aa3b5">No product found — or it is already in Completed Test.</div>`;
+  return out.slice(0,8).map(i=>`<div style="display:flex;align-items:center;gap:12px;padding:9px 14px;border-top:1px solid #f0f1f3"><div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:700;color:#222">${esc(i.name)}</div><div style="font-size:10.5px;color:#8a93a6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(i.description||"")}${i.description?" · ":""}${i.subs.length} test item${i.subs.length!==1?"s":""}</div></div><button onclick="cdAddToCompleted('${i.id}')" style="background:#e3f9ee;border:1px solid #c3f0da;color:#0a7a46;border-radius:6px;padding:5px 14px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">➕ Add</button></div>`).join("")+(out.length>8?`<div style="padding:8px 14px;border-top:1px solid #f0f1f3;font-size:10.5px;color:#9aa3b5">…and ${out.length-8} more — type more words to narrow it down.</div>`:"");
+}
+function cdCompletedAddHtml(){
+  return `<div id="cmp-add" style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;margin-bottom:14px;overflow:hidden"><div style="padding:11px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><div style="font-size:12px;font-weight:700;color:#0a7a46">➕ Add a product to Completed Test</div><input id="cmp-add-box" value="${esc(cdCompletedAddQ)}" oninput="cdCompletedAddInput(this)" placeholder="Type any word — e.g. 2PUR or TD-RSRE1X10…" autocomplete="off" style="flex:1;min-width:240px;max-width:420px;padding:7px 11px;border:1.5px solid #dde0e7;border-radius:7px;font-size:12px;outline:none"/><span style="font-size:10.5px;color:#9aa3b5">The product and all its test items then show in this tab.</span></div><div id="cmp-add-results">${cdCompletedAddResultsHtml()}</div></div>`;
+}
+function cdCompletedAddInput(el){ cdCompletedAddQ=el.value; const r=document.getElementById("cmp-add-results"); if(r) r.innerHTML=cdCompletedAddResultsHtml(); }
+async function cdAddToCompleted(itemId){
+  let item=null; GROUPS.forEach(g=>g.items.forEach(i=>{ if(i.id===itemId) item=i; }));
+  if(!item) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  if(!confirm(`Add ${item.name} and its ${item.subs.length} test item${item.subs.length!==1?"s":""} to Completed Test?`)) return;
+  try{
+    await cdAppendCompletedTestRow({rowId:item.rowId,name:item.name});
+    cdCompletedTestIds.add(itemId); localStorage.setItem(CD_COMPLETED_TEST_LS, JSON.stringify([...cdCompletedTestIds]));
+    cdCompletedAddQ=""; cdRenderCompletedTest();
+  }catch(e){ alert("Could not add it to Completed Test: "+e.message); }
+}
 function cdRenderCompletedTest(){
   cdHydrateCompletedTestSet();
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
@@ -5716,11 +5749,11 @@ function cdRenderCompletedTest(){
   GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdCompletedTestIds.has(i.id)) allItems.push(i); }));
   const filtered=cdFilterItemsBySearch(allItems, cdCompletedSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
-    ${cdCompletedSearchQ?`<div style="margin-bottom:12px"><button onclick="cdCompletedSearchQ='';const b=document.getElementById('cmp-search-box');if(b)b.value='';cdRenderCompletedTest()" style="font-size:11px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:500">✕ Clear search</button></div>`:""}
-    ${cdItemsTableHtml(filtered, "completedtest", allItems.length?"No items match your search.":"No completed tests yet — mark one completed from Tracking.")}
+    ${cdCompletedAddHtml()}
+    ${cdCompletedSearchQ?`<div style="margin-bottom:12px"><button onclick="cdCompletedSearchQ='';const b=document.getElementById('cmp-search-box');if(b)b.value='';cdRenderCompletedTest()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:6px;padding:4px 10px;cursor:pointer">✕ Clear search</button></div>`:""}
+    ${cdItemsTableHtml(filtered, "completedtest", allItems.length?"No items match your search.":"No completed tests yet — mark one completed from Tracking, or add a product with the box above.")}
   </div>`;
 }
-
 // ── Monitoring: right-click "Transfer to Tracking" / "Deferred" ────────────
 // Both actions are now backed by real sheet tabs the person created --
 // "Tracking" and "Deferred items" -- so the curation is shared across
@@ -6471,10 +6504,10 @@ function pmmMaterialColor(material){
 }
 
 function pmmSwitchTab(t){
+  if(t==="database") t="compiled";            // the Database tab is gone: the Google Sheet is the database
   pmmActiveTab=t; pmmLabMenuOpen=false;
   document.getElementById("pmm-tab-new").className="pmm-subtab"+(t==="new"?" active":"");
   document.getElementById("pmm-tab-compiled").className="pmm-subtab"+(t==="compiled"?" active":"");
-  document.getElementById("pmm-tab-database").className="pmm-subtab"+(t==="database"?" active":"");
   document.getElementById("pmm-tab-suppack").className="pmm-subtab"+(t==="suppack"?" active":"");
   document.getElementById("pmm-tab-costsavings").className="pmm-subtab"+(t==="costsavings"?" active":"");
   const searchWrap=document.getElementById("pmm-search-wrap");
@@ -7443,8 +7476,10 @@ function pmmSearchSuggestionsHtml(query){
     </div>`).join("");
 }
 function pmmRerenderActiveTab(){
-  if(pmmActiveTab==="database") pmmRenderDatabase();
-  else pmmRenderCompiled();
+  // Only the views that show filters / final quotes are redrawn from here. New Entry, Supplier Ack. etc. must never be
+  // replaced by the Compiled View when a background load (final quotes, filters) finishes while you are on them.
+  if(pmmActiveTab==="costsavings") pmmRenderCostSavings();
+  else if(pmmActiveTab==="compiled"||pmmActiveTab==="database") pmmRenderCompiled();
 }
 // The search box now lives in a permanent static container (#pmm-search-wrap,
 // populated once by pmmInitSearchBar) that neither pmmRenderDatabase nor
@@ -7668,11 +7703,7 @@ document.addEventListener("click",e=>{ if(pmmLabMenuOpen&&!(e.target.closest&&e.
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") pmmCloseLabMenu(); });
 function pmmTestLabFilterHtml(rerender){
   const t=pmmTestOptions(), l=pmmLabOptions();
-  return `<select onchange="pmmFilterTest=this.value;${rerender}()" class="pmm-input" style="max-width:230px" title="Show only the products that have this test">
-      <option value="ALL" ${pmmFilterTest==="ALL"?"selected":""}>All Tests</option>
-      ${t.map(o=>`<option value="${esc(o.key)}" ${pmmFilterTest===o.key?"selected":""}>${esc(o.label)} (${o.count})</option>`).join("")}
-    </select>
-    <div id="pmm-lab-filter" style="position:relative">
+  return `<div id="pmm-lab-filter" style="position:relative">
       <button type="button" id="pmm-lab-btn" onclick="pmmToggleLabMenu()" title="Show only the products tested by the ticked labs — tick one or several" style="min-width:190px;max-width:270px;display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;cursor:pointer;padding:9px 12px;border:1.5px solid ${pmmFilterLabs.length?"#0073ea":"#c8cdd7"};border-radius:7px;font-size:12.5px;color:${pmmFilterLabs.length?"#0055bb":"#333"};background:${pmmFilterLabs.length?"#eaf3ff":"#efefef"};font-weight:${pmmFilterLabs.length?700:400}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(!pmmFilterLabs.length?"All Test Labs":pmmFilterLabs.length<=2?pmmFilterLabs.join(", "):pmmFilterLabs.length+" labs selected")}</span><span style="font-size:10px">▾</span></button>
       <div id="pmm-lab-panel" style="display:${pmmLabMenuOpen?"block":"none"};position:absolute;top:calc(100% + 4px);left:0;z-index:70;min-width:230px;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);padding:6px">
         ${l.map((o,i)=>`<label style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:6px;cursor:pointer;font-size:12.5px;color:#222"><input type="checkbox" ${pmmLabSet().has(o.label.toLowerCase())?"checked":""} onchange="pmmToggleLab(${i},this.checked);${rerender}()"/><span style="flex:1">${esc(o.label)}</span><span style="color:#999;font-size:11px">${o.count}</span></label>`).join("")}
@@ -7809,7 +7840,7 @@ async function pmmSaveFinalQuote(){
       }
     }
     await pmmLoadFinalQuotes();
-    closeModal(); pmmRenderCompiled();
+    closeModal(); pmmRender();
   }catch(e){
     const errEl=document.getElementById("pmm-fq-err"); if(errEl) errEl.textContent="Could not save: "+e.message;
     if(btn){ btn.disabled=false; btn.textContent="💾 Save final quote"; }
@@ -7817,31 +7848,6 @@ async function pmmSaveFinalQuote(){
 }
 
 // ---- Second summary: what the test labs will charge for Tensile (Physical) and the additional tests ----
-function pmmSpendSummaryHtml(entries){
-  const rows=[];
-  entries.forEach(e=>pmmTestLines(e).forEach(l=>{ if(l.kind==="phys") rows.push({lab:l.lab,id:e.id,cost:l.cost,samples:l.samples}); }));
-  let use=rows;
-  if(pmmFilterTest==="chem"||pmmFilterTest==="corr") use=[];
-  if(pmmFilterLabs.length){ const want=pmmLabSet(); use=use.filter(r=>want.has(r.lab.toLowerCase())); }
-  const total={cost:0,samples:0,ids:new Set(),tests:use.length,unquoted:use.filter(r=>!r.cost).length}, byLab={};
-  use.forEach(r=>{ total.cost+=r.cost; total.samples+=r.samples; total.ids.add(r.id);
-    const lk=(r.lab||"").toLowerCase(), l=byLab[lk]||(byLab[lk]={label:r.lab||"No lab set",ids:new Set(),tests:0,samples:0,cost:0}); l.ids.add(r.id); l.tests++; l.samples+=r.samples; l.cost+=r.cost; });
-  const tHead=h=>`<th style="text-align:${h[1]};padding:5px 8px;font-size:9px;font-weight:700;color:#7a5500;text-transform:uppercase">${h[0]}</th>`;
-  const td=(v,al,b)=>`<td style="padding:6px 8px;text-align:${al||"right"};${b?"font-weight:700;":""}">${v}</td>`;
-  const box=inner=>`<div id="pmm-spend-summary" style="margin-top:14px;background:#fffaf0;border:1.5px solid #f3dfb3;border-radius:12px;padding:16px 18px">${inner}</div>`;
-  const title=`<div style="font-size:10px;font-weight:700;color:#7a5500;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">🧾 Tensile (Physical) Testing — Test Lab Spend</div>
-    <div style="font-size:10.5px;color:#8a6d2f;margin-bottom:12px">What the test labs will charge for Tensile testing. It checks the whole assembled product, so it is not consolidated by material — this is spend, not savings.</div>`;
-  if(!use.length) return box(`${title}<div style="font-size:11px;color:#8a6d2f">${rows.length?"No Tensile tests match the current filters.":"No Tensile (Physical) tests have been entered yet — add a quotation under Physical Testing in a Test Lab section."}</div>`);
-  const usd=pmmFqUsd, avg=(c,s)=>s>0?usd(Math.round((c/s)*100)/100):"—";
-  const labRows=Object.values(byLab).sort((a,b)=>b.cost-a.cost);
-  const kpi=(v,l)=>`<div style="background:#fff;border:1px solid #f3dfb3;border-radius:9px;padding:9px 14px;min-width:120px"><div style="font-size:20px;font-weight:800;color:#5c4200">${v}</div><div style="font-size:9.5px;font-weight:700;color:#8a6d2f;text-transform:uppercase;letter-spacing:.3px">${l}</div></div>`;
-  return box(`${title}
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kpi(usd(total.cost),"Total lab spend")}${kpi(total.tests,"Tensile tests quoted")}${kpi(total.ids.size,"Products")}${kpi(Number(total.samples.toLocaleString("en-US",{maximumFractionDigits:1})),"Samples")}${kpi(avg(total.cost,total.samples),"Per sample")}</div>
-    <div style="font-size:10.5px;font-weight:700;color:#5c4200;margin-bottom:6px">By test lab</div>
-    <table style="width:100%;max-width:760px;border-collapse:collapse;font-size:11px;background:#fff;border:1px solid #f3dfb3;border-radius:8px"><thead><tr style="border-bottom:1px solid #f3dfb3">${tHead(["Test lab","left"])}${tHead(["Tests","right"])}${tHead(["Products","right"])}${tHead(["Samples","right"])}${tHead(["Lab spend","right"])}${tHead(["Share","right"])}</tr></thead>
-    <tbody>${labRows.map(l=>`<tr style="border-bottom:1px solid #f7ecd0">${td(esc(l.label),"left",1)}${td(l.tests)}${td(l.ids.size)}${td(l.samples)}${td(usd(l.cost),"right",1)}${td(total.cost>0?Math.round(l.cost/total.cost*1000)/10+"%":"—")}</tr>`).join("")}</tbody></table>
-    ${total.unquoted?`<div style="font-size:10px;color:#b07000;margin-top:10px">⚠ ${total.unquoted} Tensile test${total.unquoted!==1?"s":""} ha${total.unquoted!==1?"ve":"s"} no quotation yet, so ${total.unquoted!==1?"they are":"it is"} not in the spend.</div>`:""}`);
-}
 // ---- Excel export for General Material Coverage ----
 function pmmExportSnapshotCoverage(snapshotId){
   const snap=pmmCostSavingsSnapshots.find(s=>s.id===snapshotId); if(!snap) return;
@@ -8131,7 +8137,7 @@ async function pmmGridSave(){
   try{
     await pmmGridWrite(P);
     await fetchSheetData();
-    closeModal(); pmmRenderCompiled();
+    closeModal(); pmmRender();
   }catch(e){
     const msg=String(e.message||e);
     try{ await fetchSheetData(); }catch(_){}
@@ -8141,10 +8147,116 @@ async function pmmGridSave(){
 }
 
 // heading above the product cards, with the button that opens the table editor
+// ══ Test-lab comparison (replaces the wordy bullets) · one-line Tensile strip · section headings · Cost Savings in the same format ══
+const PMM_KIND_COLOR={chem:"#8ab4f8",phys:"#ffd27a",corr:"#7ee8b8"};
+// per test lab: for each test (Chemical / Physical / Corrosion) how many products, and what it costs / needs in samples
+function pmmLabStats(entries, respectFilter){
+  const by={}, order=[];
+  entries.forEach(e=>(respectFilter?pmmLinesInView(e):pmmTestLines(e)).forEach(l=>{
+    if(!PMM_LAB_KINDS.includes(l.kind)) return; const lab=String(l.lab||"").trim(); if(!lab) return;
+    const k=lab.toLowerCase(); let L=by[k]; if(!L){ L=by[k]={label:lab,ids:new Set(),kinds:{}}; order.push(k); }
+    L.ids.add(e.id); const K=L.kinds[l.kind]||(L.kinds[l.kind]={ids:new Set(),costSum:0,costN:0,sampSum:0,sampN:0});
+    K.ids.add(e.id); if(l.cost>0){ K.costSum+=l.cost; K.costN++; } if(l.samples>0){ K.sampSum+=l.samples; K.sampN++; }
+  }));
+  return order.map(k=>by[k]);
+}
+// Quick comparison of the test labs: average cost and samples per product for each test, the better lab in green, and who wins what
+function pmmLabCompareHtml(entries, opts){
+  opts=opts||{}; const respect=opts.respectFilter!==false;
+  const labs=pmmLabStats(entries,respect).sort((a,b)=>b.ids.size-a.ids.size||a.label.localeCompare(b.label));
+  const head=`<div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">⚖️ Test lab comparison <span style="font-weight:500;text-transform:none;letter-spacing:0;color:#a8b8d8;margin-left:6px">average per product · lower is better</span></div>`;
+  const wrap=inner=>`<div id="pmm-lab-compare" style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.15)">${head}${inner}</div>`;
+  if(labs.length<2) return wrap(`<div style="font-size:11px;color:#a8b8d8">${labs.length?`Only <b style="color:#fff">${esc(labs[0].label)}</b> has quotes in this view`:"No test lab is named on these products"} — add a second lab's quotes to compare labs.</div>`);
+  const kinds=PMM_LAB_KINDS.filter(k=>labs.some(L=>L.kinds[k]));
+  const avg=(K,f)=>K&&K[f+"N"]>0?K[f+"Sum"]/K[f+"N"]:null;
+  const best={}; kinds.forEach(k=>{ const cs=labs.map(L=>avg(L.kinds[k],"cost")).filter(v=>v!=null), ss=labs.map(L=>avg(L.kinds[k],"samp")).filter(v=>v!=null); best[k]={c:cs.length>1?Math.min(...cs):null,s:ss.length>1?Math.min(...ss):null}; });
+  const near=(v,m)=>v!=null&&m!=null&&Math.abs(v-m)<=m*0.005+1e-9;
+  const fU=n=>"$"+Number(n).toLocaleString("en-US",{maximumFractionDigits:2}), fN=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:1});
+  const td=(v,m,fmt,what,attrs,bl)=>{
+    const st=`padding:6px 8px;text-align:right;${bl?"border-left:1px solid rgba(255,255,255,.14);":""}`;
+    if(v==null) return `<td ${attrs} style="${st}color:#6f7d99">—</td>`;
+    if(near(v,m)) return `<td ${attrs} style="${st}color:#7ee8b8;font-weight:800" title="Best ${what} among these labs">✓ ${fmt(v)}</td>`;
+    return `<td ${attrs} style="${st}">${fmt(v)}${m?` <span style="color:#a8b8d8;font-size:9px" title="${Math.round((v/m-1)*100)}% above the best ${what}">+${Math.round((v/m-1)*100)}%</span>`:""}</td>`;
+  };
+  const th=(t,c,al,extra)=>`<th ${c?`colspan="${c}"`:""} style="text-align:${al||"right"};padding:4px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase;${extra||""}">${t}</th>`;
+  const hdr1=`<tr style="border-bottom:1px solid rgba(255,255,255,.12)">${th("","1","left")}${kinds.map(k=>th(PMM_KIND_LABEL[k],2,"center","border-left:1px solid rgba(255,255,255,.14);color:"+PMM_KIND_COLOR[k])).join("")}</tr>`;
+  const hdr2=`<tr style="border-bottom:1px solid rgba(255,255,255,.2)">${th("Test lab","","left")}${kinds.map(()=>th("Avg cost","","right","border-left:1px solid rgba(255,255,255,.14)")+th("Samples","","right")).join("")}</tr>`;
+  const rows=labs.map(L=>`<tr style="border-bottom:1px solid rgba(255,255,255,.08)"><td style="padding:6px 8px;font-weight:700;color:#fff;white-space:nowrap">${esc(L.label)} <span style="color:#a8b8d8;font-weight:400;font-size:9.5px">${L.ids.size} product${L.ids.size!==1?"s":""}</span></td>${kinds.map(k=>{ const K=L.kinds[k], a=`data-lab="${esc(L.label)}" data-kind="${k}"`; return td(avg(K,"cost"),best[k].c,fU,"cost",a+' data-metric="cost"',true)+td(avg(K,"samp"),best[k].s,fN,"samples per product",a+' data-metric="samples"',false); }).join("")}</tr>`).join("");
+  // who wins what
+  const wins={}, add=(lab,t,k)=>{ (wins[lab]=wins[lab]||{cost:[],samp:[]})[t].push(PMM_KIND_LABEL[k]); }; let comparable=0;
+  kinds.forEach(k=>{ if(best[k].c!=null) comparable++; if(best[k].s!=null) comparable++; labs.forEach(L=>{ if(near(avg(L.kinds[k],"cost"),best[k].c)) add(L.label,"cost",k); if(near(avg(L.kinds[k],"samp"),best[k].s)) add(L.label,"samp",k); }); });
+  const score=lab=>(wins[lab]?wins[lab].cost.length+wins[lab].samp.length:0), top=Math.max(0,...labs.map(L=>score(L.label))), leaders=labs.filter(L=>score(L.label)===top&&top>0);
+  const chip=(bg,fg,t)=>`<span style="display:inline-block;background:${bg};color:${fg};border-radius:20px;padding:3px 11px;font-size:10.5px;font-weight:600;margin:3px 6px 0 0">${t}</span>`;
+  const chips=labs.flatMap(L=>{ const w=wins[L.label]; if(!w) return []; const out=[]; if(w.cost.length) out.push(chip("rgba(126,232,184,.16)","#7ee8b8",`💲 <b>${esc(L.label)}</b> lowest cost: ${w.cost.join(", ")}`)); if(w.samp.length) out.push(chip("rgba(138,180,248,.18)","#a9c8ff",`📦 <b>${esc(L.label)}</b> fewest samples: ${w.samp.join(", ")}`)); return out; }).join("");
+  const verdict=!comparable?`<div style="font-size:11px;color:#a8b8d8;margin-top:8px">These labs don't test the same type yet, so there is nothing to compare side by side.</div>`
+    :`<div style="margin-top:8px;display:flex;align-items:center;flex-wrap:wrap"><span style="font-size:11px;color:#fff;font-weight:700;margin-right:10px;margin-top:3px">${leaders.length===1?`Best overall: <span style="color:#7ee8b8">${esc(leaders[0].label)}</span> <span style="color:#a8b8d8;font-weight:500">(${top} of ${comparable})</span>`:`No single lab leads (${leaders.map(L=>esc(L.label)).join(" = ")})`}</span>${chips}</div>`;
+  return wrap(`<table style="width:100%;border-collapse:collapse;font-size:10.5px;color:#e8ecf5"><thead>${hdr1}${hdr2}</thead><tbody>${rows}</tbody></table>${verdict}`);
+}
+// Tensile (Physical) spend on ONE horizontal line
+function pmmSpendSummaryHtml(entries, opts){
+  opts=opts||{}; const respect=opts.respectFilter!==false;
+  const rows=[]; entries.forEach(e=>(respect?pmmLinesInView(e):pmmTestLines(e)).forEach(l=>{ if(l.kind==="phys") rows.push({lab:l.lab,id:e.id,cost:l.cost,samples:l.samples}); }));
+  const total={cost:0,samples:0,ids:new Set(),tests:rows.length,unquoted:rows.filter(r=>!r.cost).length}, byLab={};
+  rows.forEach(r=>{ total.cost+=r.cost; total.samples+=r.samples; total.ids.add(r.id); const k=(r.lab||"").toLowerCase(), l=byLab[k]||(byLab[k]={label:r.lab||"No lab set",cost:0}); l.cost+=r.cost; });
+  const base="id=\"pmm-spend-summary\" style=\"margin-top:12px;background:#fffaf0;border:1.5px solid #f3dfb3;border-radius:10px;padding:8px 14px;display:flex;align-items:center;gap:6px 0;flex-wrap:wrap;font-size:11.5px;color:#5c4200\"";
+  const lab=`<span style="font-size:10px;font-weight:800;color:#7a5500;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;padding-right:14px">🧾 Tensile (Physical) · lab spend</span>`;
+  if(!rows.length) return `<div ${base}>${lab}<span style="color:#8a6d2f">No Tensile tests with a quotation yet</span></div>`;
+  const usd=pmmFqUsd, sep=`<span style="width:1px;height:18px;background:#ecd9a8;margin:0 14px;flex-shrink:0"></span>`;
+  const seg=(v,l,t)=>`<span style="white-space:nowrap" ${t?`title="${esc(t)}"`:""}><b style="font-size:14px;color:#3d2c00">${v}</b> <span style="color:#8a6d2f">${l}</span></span>`;
+  const labs=Object.values(byLab).sort((a,b)=>b.cost-a.cost).map(l=>`<span style="display:inline-block;background:#fff;border:1px solid #f0dca8;border-radius:20px;padding:2px 10px;margin-right:6px;white-space:nowrap" title="${total.cost>0?Math.round(l.cost/total.cost*1000)/10:0}% of the Tensile spend"><b>${esc(l.label)}</b> ${usd(l.cost)}</span>`).join("");
+  return `<div ${base}>${lab}${seg(usd(total.cost),"total")}${sep}${seg(total.tests,"tests")}${sep}${seg(total.ids.size,"products")}${sep}${seg(Number(total.samples.toLocaleString("en-US",{maximumFractionDigits:1})),"samples")}${sep}${seg(total.samples>0?usd(Math.round(total.cost/total.samples*100)/100):"—","per sample")}${sep}<span style="display:inline-flex;align-items:center;flex-wrap:wrap;row-gap:4px">${labs}</span>${total.unquoted?`${sep}<span style="color:#b07000;white-space:nowrap" title="Tensile tests without a quotation are not in the spend">⚠ ${total.unquoted} unquoted</span>`:""}</div>`;
+}
+// one heading style for every section of the matrix (Actual Compilation, Cost Savings)
+function pmmSectionHeadHtml(o){
+  return `<div class="pmm-section-head"${o.id?` id="${o.id}"`:""}><span class="pmm-section-bar"></span><div class="pmm-section-text"><div class="pmm-section-name"><span>${esc(o.title)}</span>${o.count?`<span class="pmm-section-count">${esc(o.count)}</span>`:""}</div>${o.sub?`<div class="pmm-section-sub">${esc(o.sub)}</div>`:""}</div>${o.right||""}</div>`;
+}
 function pmmSectionTitleHtml(entries){
   const n=entries.length, all=pmmEntries.length;
-  return `<div class="pmm-section-title" id="pmm-section-title"><span>Actual Compilation</span> <small>${n===all?`${n} product${n!==1?"s":""}`:`${n} of ${all} products`}</small><button id="pmm-grid-open" type="button" onclick="pmmGridOpen()" title="Open every product and its test labs as an Excel-style table you can edit" style="margin-left:auto;align-self:center;font-size:12px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:7px 14px;cursor:pointer">📋 Table view — edit like Excel</button></div>`;
+  return pmmSectionHeadHtml({id:"pmm-section-title",title:"Actual Compilation",count:n===all?`${n} product${n!==1?"s":""}`:`${n} of ${all} products`,sub:"Every product with its materials, test labs and quotations",
+    right:`<button id="pmm-grid-open" type="button" onclick="pmmGridOpen()" title="Open every product and its test labs as an Excel-style table you can edit" style="margin-left:auto;font-size:12px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:8px 15px;cursor:pointer;white-space:nowrap">📋 Table view — edit like Excel</button>`});
 }
+// ---- Cost Savings tab: same summary table (with Final quote), same lab comparison, same card / heading style as the compiled view ----
+function pmmCostSnapshotRowsHtml(snap){
+  const fU=n=>"$"+Number(n||0).toLocaleString("en-US",{maximumFractionDigits:2}), sv=n=>(n<0?"-":"")+"$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:2});
+  const mk=(kind)=>{ const fq=pmmFinalQuotes[pmmFqKey(snap.filterSummary||"All entries",kind)]; return fq||null; };
+  const fC=mk("chem"), fR=mk("corr"), dC=snap.chemical, dR=snap.corrosion, dT=snap.total;
+  const calc=(fq,d)=>{ if(!fq||!d) return null; const saved=Math.round((d.totalCost-fq.final)*100)/100; return {final:fq.final,saved,pct:d.totalCost>0?Math.round(saved/d.totalCost*1000)/10:0,stale:Math.abs((fq.original||0)-d.totalCost)>0.5}; };
+  const cC=calc(fC,dC), cR=calc(fR,dR); let cT=null; if(cC&&cR&&dT){ const fin=cC.final+cR.final, s=Math.round((dT.totalCost-fin)*100)/100; cT={final:fin,saved:s,pct:dT.totalCost>0?Math.round(s/dT.totalCost*1000)/10:0,stale:cC.stale||cR.stale}; }
+  const col=f=>f.saved>0?"#7ee8b8":f.saved<0?"#ff9b9b":"#e8ecf5";
+  const fq=(f,b)=>f?`<td style="padding:6px 8px;text-align:right;font-weight:${b?800:700};color:#ffd27a;border-left:1px solid rgba(255,255,255,.18)">${fU(f.final)}${f.stale?` <span title="The quotes changed after this final quote was entered" style="color:#fdab3d;cursor:help">⚠</span>`:""}</td><td style="padding:6px 8px;text-align:right;font-weight:700;color:${col(f)}">${sv(f.saved)}</td><td style="padding:6px 8px;text-align:right;font-weight:700;color:${col(f)}">${f.saved>0?"✓ ":f.saved<0?"✗ ":""}${f.pct}%</td>`:`<td style="padding:6px 8px;text-align:right;color:#6f7d99;border-left:1px solid rgba(255,255,255,.18)">—</td><td style="padding:6px 8px;text-align:right;color:#6f7d99">—</td><td style="padding:6px 8px;text-align:right;color:#6f7d99">—</td>`;
+  const th=(t,c,l)=>`<th style="text-align:${l?"left":"right"};padding:5px 8px;font-size:9px;font-weight:700;color:${c||"#8ab4f8"};text-transform:uppercase;${c?"border-left:1px solid rgba(255,255,255,.18);":""}">${t}</th>`;
+  const row=(label,d,f,total)=>d?`<tr style="border-bottom:1px solid rgba(255,255,255,${total?".2":".1"});${total?"font-weight:700":""}"><td style="padding:6px 8px;font-weight:${total?800:600};${total?"color:#fff":""}">${label}</td><td style="padding:6px 8px;text-align:right">${d.totalSamples}</td><td style="padding:6px 8px;text-align:right">${d.repSamples}</td><td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${d.samplesSaved}</td><td style="padding:6px 8px;text-align:right">${fU(d.totalCost)}</td><td style="padding:6px 8px;text-align:right">${fU(d.repCost)}</td><td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${fU(d.costSaved)}</td><td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${d.pctSaved}%</td>${fq(f,total)}</tr>`:"";
+  return `<div class="pmm-snap-summary" style="background:#0e1b3d;border-radius:8px;padding:12px 14px"><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Sample Optimization Summary</div>
+    <table style="width:100%;border-collapse:collapse;font-size:10.5px;color:#e8ecf5"><thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">${th("Testing Type","",1)}${th("Samples")}${th("Rep.")}${th("Saved")}${th("Cost")}${th("After")}${th("Saved")}${th("%")}${th("Final quote","#ffd27a")}${th("Actual saved","#ffd27a").replace("border-left:1px solid rgba(255,255,255,.18);","")}${th("Actual %","#ffd27a").replace("border-left:1px solid rgba(255,255,255,.18);","")}</tr></thead>
+    <tbody>${row("Chemical",dC,cC)}${row("Corrosion <span style='color:#a8b8d8;font-weight:400'>(metal)</span>",dR,cR)}${row("Total",dT,cT,true)}</tbody></table>${(cC&&cC.stale)||(cR&&cR.stale)?`<div style="font-size:10px;color:#fdab3d;margin-top:6px">⚠ The quotes changed after a final quote was entered — re-enter it from the Compiled View.</div>`:""}</div>`;
+}
+function pmmRenderCostSavings(){
+  const body=document.getElementById("pmm-body"); if(!body) return;
+  const n=pmmCostSavingsSnapshots.length;
+  let html=`<div style="max-width:1180px;margin:0 auto;padding:0 14px">`+pmmSectionHeadHtml({id:"pmm-section-title",title:"Cost Savings",count:`${n} snapshot${n!==1?"s":""}`,sub:"Saved material-consolidation analyses, with what the test labs finally quoted"});
+  if(!n){
+    html+=`<div style="text-align:center;padding:50px 20px;color:#9aa3b5"><div style="font-size:30px;margin-bottom:8px">💰</div><div style="font-size:12px;line-height:1.7">Nothing saved yet. In the <b>Compiled View</b>, set the view you want and press <b>💾 Save to Cost Savings</b>.</div></div>`;
+  } else {
+    pmmCostSavingsSnapshots.forEach(snap=>{
+      let dateStr=snap.savedDate; try{ dateStr=new Date(snap.savedDate).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"}); }catch(e){}
+      const matched=pmmEntries.filter(e=>snap.skus.includes(e.sku));
+      const suppliers=[...new Set(matched.map(e=>e.supplier).filter(Boolean))], labs=[...new Set(matched.flatMap(e=>pmmEntryLabs(e)))];
+      const chip=(t)=>`<span class="pmm-chip">${esc(t)}</span>`;
+      html+=`<div class="pmm-entry-card" style="margin-bottom:16px">
+        <div class="pmm-card-hdr"><div style="min-width:0;cursor:pointer" onclick="pmmOpenCostSnapshotDetail('${snap.id}')">
+            <div class="pmm-card-title">${esc(dateStr)}</div>
+            <div class="pmm-card-sub">${esc(snap.filterSummary||"All entries")} · ${snap.skus.length} product${snap.skus.length!==1?"s":""}</div>
+            ${(suppliers.length||labs.length)?`<div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap">${suppliers.map(s=>chip("Supplier · "+s)).join("")}${labs.map(l=>chip("Lab · "+l)).join("")}</div>`:""}
+          </div>
+          <div class="pmm-card-actions"><button class="pmm-btn-ghost" onclick="pmmOpenCostSnapshotDetail('${snap.id}')">View full details →</button><button class="pmm-btn-del" onclick="pmmDeleteCostSnapshot('${snap.id}')" title="Delete snapshot">✕</button></div>
+        </div>
+        <div style="padding:14px 16px">${pmmCostSnapshotRowsHtml(snap)}${matched.length?`<div style="background:#0e1b3d;border-radius:8px;padding:0 14px 12px;margin-top:10px">${pmmLabCompareHtml(matched,{respectFilter:false}).replace('margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.15)','margin-top:0;padding-top:12px')}</div>`:""}</div>
+      </div>`;
+    });
+  }
+  body.innerHTML=html+`</div>`;
+}
+
 function pmmInsightsHtml(){
   const entries=pmmInsightEntries();
   const dateFilterActive=!!(pmmInsightDateFrom||pmmInsightDateTo);
@@ -8222,11 +8334,11 @@ function pmmInsightsHtml(){
 
   let html=`<div class="pmm-insight-box">
     ${dateBarHtml}
-    <div style="font-size:10px;font-weight:700;color:#0055bb;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px">🔎 Smart Insights — Material Consolidation &amp; Sample Reduction</div>
+    <div class="pmm-box-head"><div><div class="pmm-box-eyebrow">🔎 Smart Insights</div><div class="pmm-box-title">Material consolidation &amp; sample reduction</div></div><button id="pmm-export-coverage" onclick="pmmExportGeneralCoverage()" title="Download General Material Coverage and Corrosion Coverage as one Excel file" style="font-size:11px;font-weight:700;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;padding:6px 14px;cursor:pointer;white-space:nowrap">📊 Export Excel</button></div>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:14px">
       <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px"><div style="font-size:10.5px;font-weight:700;color:#333">General Material Coverage <span style="color:#aaa;font-weight:400">(${totalMaterials} materials, all types)</span></div><button id="pmm-export-coverage" onclick="pmmExportGeneralCoverage()" title="Download this General Material Coverage as an Excel file" style="font-size:10px;font-weight:700;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:6px;padding:3px 10px;cursor:pointer">📊 Export Excel</button></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:6px"><div style="font-size:10.5px;font-weight:700;color:#333">General Material Coverage <span style="color:#aaa;font-weight:400">(${totalMaterials} materials, all types)</span></div></div>
         ${pmmTopNCardsHtml(generalCover, "#c0d8f8", "gen")}
       </div>
       <div>
@@ -8254,18 +8366,7 @@ function pmmInsightsHtml(){
             <button onclick="pmmRequestSaveCostSavings()" style="font-size:10.5px;font-weight:700;color:#0e1b3d;background:#7ee8b8;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">💾 Save to Cost Savings</button>
           </div>
         </div>
-        <ul style="margin:0 0 4px 0;padding-left:18px;font-size:11px;color:#e8ecf5;line-height:1.7">
-          <li><strong style="color:#fff">Chemical Testing:</strong> ${fmtNum(chem.totalSamples)} samples across all ${totalItems} products at ${fmtUsd(chem.totalCost)} total → consolidating to ${chem.representatives.length} representative product${chem.representatives.length!==1?"s":""} needs only ${fmtNum(chem.repSamples)} samples (${fmtUsd(chem.totalSamples>0?chem.totalCost/chem.totalSamples:0)}/sample rate) ≈ ${fmtUsd(chem.repCost)}. <strong style="color:#7ee8b8">${fmtNum(chem.samplesSaved)} samples saved (${chem.pctSaved}%), ${fmtUsd(chem.costSaved)} saved.</strong>
-            <div style="font-size:9.5px;color:#a8b8d8;margin:3px 0 6px 0">Rep. Samples breakdown: ${chem.representatives.map(r=>esc(r.sku)).join(", ")} — ${chem.representatives.length} representative${chem.representatives.length!==1?"s":""} × 1 confirmatory sample each = ${fmtNum(chem.repSamples)}</div>
-          </li>
-          <li><strong style="color:#fff">Corrosion Testing (metal only):</strong> ${fmtNum(corr.totalSamples)} samples at ${fmtUsd(corr.totalCost)} total → ${corr.representatives.length} representative product${corr.representatives.length!==1?"s":""} cover every unique metal material, needing only ${fmtNum(corr.repSamples)} samples ≈ ${fmtUsd(corr.repCost)}. <strong style="color:#7ee8b8">${fmtNum(corr.samplesSaved)} samples saved (${corr.pctSaved}%), ${fmtUsd(corr.costSaved)} saved.</strong>
-            <div style="font-size:9.5px;color:#a8b8d8;margin:3px 0 6px 0">Rep. Samples breakdown: ${corr.representatives.map(r=>esc(r.sku)).join(", ")} — ${corr.representatives.length} representative${corr.representatives.length!==1?"s":""} × 1 confirmatory sample each = ${fmtNum(corr.repSamples)}</div>
-          </li>
-          <li><strong style="color:#fff">Combined:</strong> <strong style="color:#7ee8b8">${fmtNum(totalSamplesSaved)} total samples saved, ${fmtUsd(totalCostSaved)} in total savings (${totalPctSaved}% overall reduction).</strong></li>
-          ${(fqC||fqR)?`<li><strong style="color:#ffd27a">Final lab quote:</strong> ${[fqWords("Chemical",fqC),fqWords("Corrosion",fqR)].filter(Boolean).join("; ")}${fqT?` — <strong style="color:${fqCol(fqT)}">overall ${fqT.saved>0?`${fmtUsd(fqT.saved)} saved (${fqT.pct}%)`:fqT.saved<0?`${fmtUsd(-fqT.saved)} more than the original`:"no change"}</strong>`:""}.</li>`:""}
-        </ul>
-        <div style="font-size:9.5px;color:#a8b8d8;margin-bottom:10px">All ${totalItems} products' own values: ${entries.map(e=>`${esc(e.sku)} (chem ${pmmKindSamples(e,"chem")}, corr ${pmmKindSamples(e,"corr")})`).join(", ")}</div>
-        <table style="width:100%;border-collapse:collapse;font-size:10.5px">
+        <table id="pmm-savings-table" style="width:100%;border-collapse:collapse;font-size:10.5px">
           <thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">
             <th style="text-align:left;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Testing Type</th>
             <th style="text-align:right;padding:5px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase">Consolidated</th>
@@ -8325,6 +8426,7 @@ function pmmInsightsHtml(){
         </table>
         ${staleNote}
         ${(chem.totalSamples===0&&corr.totalSamples===0)?`<div style="font-size:10px;color:#fdab3d;margin-top:8px">⚠ No Chemical or Corrosion quotation/sample data is filled in yet -- fill in Testing Information per entry for real numbers here.</div>`:""}
+        ${pmmLabCompareHtml(entries)}
       </div>
     </div>`;
 
@@ -8488,12 +8590,15 @@ function pmmEntryCardHtml(e){
   }).join("");
   const normName=pmmNormalizeProductName(e.description);
   return `<div class="pmm-entry-card">
-    <div style="padding:14px 20px 10px 20px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;border-bottom:1.5px solid #1a1a1a">
-      <div style="font-size:17px;font-weight:800;color:#222;padding-bottom:8px">${esc(normName||e.sku)}</div>
-      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;flex-shrink:0">
+    <div class="pmm-card-hdr">
+      <div style="min-width:0">
+        <div class="pmm-card-title">${esc(normName||e.sku)}</div>
+        <div class="pmm-card-sub">${esc(e.sku)}${e.supplier?` · ${esc(e.supplier)}`:""}</div>
+      </div>
+      <div class="pmm-card-actions">
         ${e.category?`<span class="pmm-cat-badge">${esc(e.category)}</span>`:""}
-        <button onclick="pmmRequestEdit('${e.id}')" title="Edit entry" style="background:#e8f2ff;border:1px solid #c0d8f8;color:#0055bb;border-radius:5px;padding:3px 10px;cursor:pointer;font-size:10.5px;font-weight:600">✏ Edit</button>
-        <button onclick="pmmDeleteEntry('${e.id}')" title="Delete entry" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1">✕</button>
+        <button class="pmm-btn-ghost" onclick="pmmRequestEdit('${e.id}')" title="Edit entry">✏ Edit</button>
+        <button class="pmm-btn-del" onclick="pmmDeleteEntry('${e.id}')" title="Delete entry">✕</button>
       </div>
     </div>
     ${e.photoUrl?`<div class="pmm-entry-photo-section"><img src="${pmmPhotoDisplayUrl(e.photoUrl)}" onclick="pmmOpenViewLarge('${e.id}')" title="Click to view larger"/></div>`:""}
@@ -9033,71 +9138,6 @@ function pmmExportSupplierAckPrint(){
 // ── Cost Savings ─────────────────────────────────────────────────────────
 function pmmOpenCostSnapshotDetail(snapshotId){
   openModal({type:"pmmCostSnapshotDetail", snapshotId});
-}
-
-function pmmCostSnapshotRowsHtml(snap){
-  const fmtUsd=n=>"$"+Number(n||0).toLocaleString("en-US",{maximumFractionDigits:2});
-  const rows=[["chemical","Chemical"],["corrosion","Corrosion (metal)"],["total","Total"]];
-  return `<table style="width:100%;border-collapse:collapse;font-size:11px">
-    <thead><tr style="background:#f2f3f6">
-      <th style="text-align:left;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Testing Type</th>
-      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Samples</th>
-      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Rep.</th>
-      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Saved</th>
-      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Cost</th>
-      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">After</th>
-      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">Saved Cost</th>
-      <th style="text-align:right;padding:6px 10px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase">% Reduction</th>
-    </tr></thead>
-    <tbody>
-      ${rows.map(([key,label])=>{
-        const d=snap[key]; if(!d) return "";
-        const isTotal=key==="total";
-        return `<tr style="${isTotal?"background:#f0fff8;font-weight:700":""};border-bottom:1px solid #f0f1f3">
-          <td style="padding:7px 10px">${label}</td>
-          <td style="padding:7px 10px;text-align:right">${d.totalSamples}</td>
-          <td style="padding:7px 10px;text-align:right">${d.repSamples}</td>
-          <td style="padding:7px 10px;text-align:right;color:#0a7a46">${d.samplesSaved}</td>
-          <td style="padding:7px 10px;text-align:right">${fmtUsd(d.totalCost)}</td>
-          <td style="padding:7px 10px;text-align:right">${fmtUsd(d.repCost)}</td>
-          <td style="padding:7px 10px;text-align:right;color:#0a7a46">${fmtUsd(d.costSaved)}</td>
-          <td style="padding:7px 10px;text-align:right;color:#0a7a46">${d.pctSaved}%</td>
-        </tr>`;
-      }).join("")}
-    </tbody>
-  </table>`;
-}
-
-function pmmRenderCostSavings(){
-  const body=document.getElementById("pmm-body"); if(!body) return;
-  let html=`<div style="max-width:1100px;margin:0 auto">`;
-  if(!pmmCostSavingsSnapshots.length){
-    html+=`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">💰</div><div style="font-size:12px">No saved snapshots yet — go to <strong>Compiled View</strong>, review the insights for whatever search/category/date filters you want, then click <strong>"💾 Save to Cost Savings"</strong>.</div></div>`;
-  } else {
-    pmmCostSavingsSnapshots.forEach(snap=>{
-      let dateStr=snap.savedDate;
-      try{ dateStr=new Date(snap.savedDate).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"}); }catch(e){}
-      const matched=pmmEntries.filter(e=>snap.skus.includes(e.sku));
-      const suppliers=[...new Set(matched.map(e=>e.supplier).filter(Boolean))];
-      const testLabs=[...new Set(matched.map(e=>e.testLab).filter(Boolean))];
-      html+=`<div class="pmm-entry-card" style="margin-bottom:16px">
-        <div class="pmm-entry-hdr" style="align-items:flex-start">
-          <div style="cursor:pointer" onclick="pmmOpenCostSnapshotDetail('${snap.id}')">
-            <div style="font-size:13px;font-weight:700;color:#222">${esc(dateStr)}</div>
-            <div style="font-size:10px;color:#888">${esc(snap.filterSummary)} · ${snap.skus.length} product${snap.skus.length!==1?"s":""}</div>
-            <div style="font-size:9.5px;color:#aaa;margin-top:3px">${suppliers.length?`Supplier${suppliers.length!==1?"s":""}: ${esc(suppliers.join(", "))}`:""}${suppliers.length&&testLabs.length?" · ":""}${testLabs.length?`Test Lab${testLabs.length!==1?"s":""}: ${esc(testLabs.join(", "))}`:""}</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
-            <span onclick="pmmOpenCostSnapshotDetail('${snap.id}')" style="font-size:10.5px;color:#0073ea;font-weight:700;white-space:nowrap;cursor:pointer">View full details →</span>
-            <button onclick="pmmDeleteCostSnapshot('${snap.id}')" title="Delete snapshot" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;width:22px;height:22px;cursor:pointer;font-size:11px;line-height:1;flex-shrink:0">✕</button>
-          </div>
-        </div>
-        <div style="padding:12px 14px">${pmmCostSnapshotRowsHtml(snap)}</div>
-      </div>`;
-    });
-  }
-  html+=`</div>`;
-  body.innerHTML=html;
 }
 
 function pmmRenderSupplierAck(){
