@@ -2982,7 +2982,7 @@ function renderModals(){
         </div>
         <div style="padding:20px;overflow-y:auto">
           ${pmmCostSnapshotRowsHtml(snap)}
-          ${matchedEntries.length?`${pmmLabCompareSectionHtml(matchedEntries,{snapshot:true,scopeBase:snap.filterSummary||"All entries"})}${pmmSpendSummaryHtml(matchedEntries,{respectFilter:false})}`:""}
+          ${matchedEntries.length?`${pmmLabCompareSectionHtml(matchedEntries,{snapshot:true,scopeBase:snap.filterSummary||"All entries"})}${pmmSpendSummaryHtml(matchedEntries,{respectFilter:false,standalone:true})}`:""}
           ${missingCount>0?`<div style="font-size:10.5px;color:#b07000;margin-top:10px">⚠ ${missingCount} of ${snap.skus.length} products from this snapshot could not be found (likely edited or deleted since it was saved) — showing details for the ${matchedEntries.length} still available.</div>`:""}
 
           ${(cover||metalCover)?`<div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
@@ -8236,67 +8236,77 @@ function pmmLabCompareSectionHtml(entries,opts){
   const labsLower=labs.map(l=>l.toLowerCase()), fU=pmmFqUsd, fN=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:1}), sv=n=>(n<0?"-":"")+"$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:2});
   const KINDS=[["chem","Chemical"],["corr","Corrosion <span style=\"color:#a8b8d8;font-weight:400\">(metal)</span>"]];
   const data={}; KINDS.forEach(([k])=>{ data[k]={all:pmmSavingsFor(entries,k,snap?null:labsLower), labs:labs.map(l=>({lab:l,r:pmmSavingsFor(entries,k,[l.toLowerCase()])})).filter(x=>x.r.has)}; });
-  const best={}; KINDS.forEach(([k])=>{ const rs=data[k].labs; best[k]={cost:rs.length>1?Math.max(...rs.map(x=>x.r.costSaved)):null, samp:rs.length>1?Math.max(...rs.map(x=>x.r.samplesSaved)):null}; });
+  const best={}; KINDS.forEach(([k])=>{ const rs=data[k].labs; best[k]={cost:rs.length>1?Math.max(...rs.map(x=>x.r.costSaved)):null, samp:rs.length>1?Math.max(...rs.map(x=>x.r.samplesSaved)):null, act:null}; });
   const fq=(kind,scope,r)=>{ if(!scope) return null; const q=pmmFinalQuotes[pmmFqKey(scope,kind)]; if(!q) return null; const s=Math.round((r.totalCost-q.final)*100)/100; return {final:q.final,saved:s,pct:r.totalCost>0?Math.round(s/r.totalCost*1000)/10:0,stale:Math.abs((q.original||0)-r.totalCost)>0.5}; };
+  KINDS.forEach(([k])=>{ data[k].labs.forEach(x=>{ x.f=snap?null:fq(k,pmmScopeWithLabs([x.lab]),x.r); }); const fs=data[k].labs.filter(x=>x.f); best[k].act=fs.length>1?Math.max(...fs.map(x=>x.f.saved)):null; });
   const td=(v,st)=>`<td style="padding:3px 6px;text-align:right;white-space:nowrap;${st||""}">${v}</td>`;
-  const fqCells=f=>f?`${td(fU(f.final)+(f.stale?' <span title="The quotes changed after this final quote was entered" style="color:#fdab3d;cursor:help">⚠</span>':""),"color:#ffd27a;font-weight:700;border-left:1px solid rgba(255,255,255,.16)")}${td(sv(f.saved),`font-weight:700;color:${f.saved>0?"#7ee8b8":f.saved<0?"#ff9b9b":"#e8ecf5"}`)}${td((f.saved>0?"✓ ":f.saved<0?"✗ ":"")+f.pct+"%",`font-weight:700;color:${f.saved>0?"#7ee8b8":f.saved<0?"#ff9b9b":"#e8ecf5"}`)}`:`${td("—","color:#6f7d99;border-left:1px solid rgba(255,255,255,.16)")}${td("—","color:#6f7d99")}${td("—","color:#6f7d99")}`;
+  const fqCells=(f,star)=>f?`${td(fU(f.final)+(f.stale?' <span title="The quotes changed after this final quote was entered" style="color:#fdab3d;cursor:help">⚠</span>':""),"color:#ffd27a;font-weight:700;border-left:1px solid rgba(255,255,255,.16)")}${td((star?"★ ":"")+sv(f.saved),`font-weight:700;color:${f.saved>0?"#7ee8b8":f.saved<0?"#ff9b9b":"#e8ecf5"}${star?";background:rgba(255,210,122,.2)":""}`)}${td((f.saved>0?"✓ ":f.saved<0?"✗ ":"")+f.pct+"%",`font-weight:700;color:${f.saved>0?"#7ee8b8":f.saved<0?"#ff9b9b":"#e8ecf5"}`)}`:`${td("—","color:#6f7d99;border-left:1px solid rgba(255,255,255,.16)")}${td("—","color:#6f7d99")}${td("—","color:#6f7d99")}`;
   const HL="background:rgba(126,232,184,.10);font-weight:800;color:#7ee8b8;", HLB="background:rgba(126,232,184,.26);font-weight:800;color:#b6f5d8;";
-  const rowCells=(r,isBest,f)=>`${td(fN(r.consolidated))}${td(fN(r.totalSamples))}${td(fN(r.repSamples))}${td(r.repPct+"%","color:#8ab4f8")}${td((isBest&&isBest.samp?"★ ":"")+fN(r.samplesSaved),isBest&&isBest.samp?HLB:HL)}${td(fU(r.totalCost))}${td(fU(r.repCost))}${td((isBest&&isBest.cost?"★ ":"")+fU(r.costSaved),isBest&&isBest.cost?HLB:HL)}${td(r.pctSaved+"%","color:#7ee8b8;font-weight:600")}${fqCells(f)}`;
+  const rowCells=(r,isBest,f)=>`${td(fN(r.consolidated))}${td(fN(r.totalSamples))}${td(fN(r.repSamples))}${td(r.repPct+"%","color:#8ab4f8")}${td((isBest&&isBest.samp?"★ ":"")+fN(r.samplesSaved),isBest&&isBest.samp?HLB:HL)}${td(fU(r.totalCost))}${td(fU(r.repCost))}${td((isBest&&isBest.cost?"★ ":"")+fU(r.costSaved),isBest&&isBest.cost?HLB:HL)}${td(r.pctSaved+"%","color:#7ee8b8;font-weight:600")}${fqCells(f,isBest&&isBest.act)}`;
   const th=(t,al,st)=>`<th style="text-align:${al||"right"};padding:4px 6px;font-size:8.5px;font-weight:700;text-transform:uppercase;white-space:nowrap;${st||"color:#8ab4f8"}">${t}</th>`;
   const body=KINDS.map(([k,label])=>{
     const D=data[k]; if(!D.all.has) return "";
     const scopeAll=snap?(opts.scopeBase||null):pmmScopeWithLabs(labs);
     const head=`<tr style="border-top:1px solid rgba(255,255,255,.18);border-bottom:1px solid rgba(255,255,255,.08)"><td style="padding:4px 6px;font-weight:800;color:#fff;white-space:nowrap">${label} <span style="color:#a8b8d8;font-weight:400;font-size:8.5px">${snap?"all labs":"all selected labs"}</span></td>${rowCells(D.all,null,fq(k,scopeAll,D.all))}</tr>`;
-    const lr=D.labs.map(({lab,r})=>{ const isBest={cost:best[k].cost!=null&&Math.abs(r.costSaved-best[k].cost)<0.005, samp:best[k].samp!=null&&r.samplesSaved===best[k].samp};
-      return `<tr data-lab="${esc(lab)}" data-kind="${k}" style="border-bottom:1px solid rgba(255,255,255,.06)"><td style="padding:3px 6px 3px 20px;border-left:3px solid ${pmmLabColor(lab)};white-space:nowrap">${pmmLabChip(lab)} <span style="color:#a8b8d8;font-size:8.5px">${r.products} product${r.products!==1?"s":""}</span></td>${rowCells(r,isBest,snap?null:fq(k,pmmScopeWithLabs([lab]),r))}</tr>`; }).join("");
+    const lr=D.labs.map(({lab,r,f})=>{ const isBest={cost:best[k].cost!=null&&Math.abs(r.costSaved-best[k].cost)<0.005, samp:best[k].samp!=null&&r.samplesSaved===best[k].samp, act:best[k].act!=null&&!!f&&Math.abs(f.saved-best[k].act)<0.005};
+      return `<tr data-lab="${esc(lab)}" data-kind="${k}" style="border-bottom:1px solid rgba(255,255,255,.06)"><td style="padding:3px 6px 3px 20px;border-left:3px solid ${pmmLabColor(lab)};white-space:nowrap">${pmmLabChip(lab)} <span style="color:#a8b8d8;font-size:8.5px">${r.products} product${r.products!==1?"s":""}</span></td>${rowCells(r,isBest,f)}</tr>`; }).join("");
     return head+lr;
   }).join("");
-  // ---- insight: which lab is better ----
-  const wins={}, lines=[]; let metrics=0;
-  const near=(a,b)=>Math.abs(a-b)<0.005;
-  KINDS.forEach(([k,label])=>{
+  // ---- insight: which lab saves the most money — the final quotes decide; projected savings only where none is entered yet ----
+  const lines=[], tot={}, proj={}, doneKinds=[]; let waiting=false;
+  const near=(a,b)=>Math.abs(a-b)<0.005, J=a=>a.map(esc).join(" / "), G=t=>`<b style="color:#7ee8b8">${t}</b>`;
+  KINDS.forEach(([k])=>{
     const rs=data[k].labs, name=PMM_KIND_LABEL[k];
     if(rs.length===1){ lines.push(`<b>${name}:</b> only ${esc(rs[0].lab)} has quotes, so there is nothing to compare.`); return; }
     if(rs.length<2) return;
-    const mc=Math.max(...rs.map(x=>x.r.costSaved)), ms=Math.max(...rs.map(x=>x.r.samplesSaved)), mp=Math.max(...rs.map(x=>x.r.pctSaved)), cps=rs.filter(x=>x.r.costPerSample>0).map(x=>x.r.costPerSample), ml=cps.length?Math.min(...cps):null;
-    const W=(f)=>rs.filter(x=>f(x.r)).map(x=>x.lab);
-    const wc=W(r=>near(r.costSaved,mc)), wsmp=W(r=>r.samplesSaved===ms), wp=W(r=>near(r.pctSaved,mp)), wl=ml==null?[]:W(r=>r.costPerSample>0&&near(r.costPerSample,ml));
-    metrics+=2; wc.forEach(l=>wins[l]=(wins[l]||0)+1); wsmp.forEach(l=>wins[l]=(wins[l]||0)+1);
-    const lead=wc[0], lr=rs.find(x=>x.lab===lead).r, J=a=>a.map(esc).join(" / ");
-    let t=`<b>${name}:</b> <b style="color:#7ee8b8">${J(wc)}</b> is better — saves the most, ${fU(lr.costSaved)} and ${fN(lr.samplesSaved)} samples (${lr.pctSaved}%)`;
-    const extra=[]; if(!wsmp.every(l=>wc.includes(l))) extra.push(`${J(wsmp)} saves the most samples (${fN(ms)})`); if(!wp.every(l=>wc.includes(l))) extra.push(`${J(wp)} has the highest reduction (${mp}%)`); if(wl.length&&!wl.every(l=>wc.includes(l))) extra.push(`${J(wl)} has the lowest cost per sample (${fU(Math.round(ml*100)/100)})`);
-    lines.push(t+(extra.length?"; "+extra.join("; "):"")+".");
+    rs.forEach(x=>{ proj[x.lab]=(proj[x.lab]||0)+x.r.costSaved; });
+    const withF=rs.filter(x=>x.f), noF=rs.filter(x=>!x.f);
+    if(!snap&&noF.length) waiting=true;
+    if(!withF.length){ const m=Math.max(...rs.map(x=>x.r.costSaved)), w=rs.filter(x=>near(x.r.costSaved,m)); lines.push(`<b>${name}:</b> no final quote yet — projected: ${G(J(w.map(x=>x.lab)))} saves the most, ${fU(m)} (${w[0].r.pctSaved}%).`); return; }
+    const ranked=withF.slice().sort((a,b)=>b.f.saved-a.f.saved), topv=ranked[0].f.saved, lead=ranked.filter(x=>near(x.f.saved,topv));
+    const wait=noF.length?` Waiting for the final quote from ${J(noF.map(x=>x.lab))} (projected ${noF.map(x=>sv(x.r.costSaved)).join(" / ")}).`:"";
+    if(withF.length===1){ const x=withF[0]; lines.push(`<b>${name}:</b> only ${esc(x.lab)} has a final quote so far — ${x.f.saved>0?`it saves ${sv(x.f.saved)} (${x.f.pct}%) off its original ${fU(x.r.totalCost)}`:`it is not below its original ${fU(x.r.totalCost)}`}.${wait}`); return; }
+    doneKinds.push(name); withF.forEach(x=>{ tot[x.lab]=(tot[x.lab]||0)+x.f.saved; });
+    const rest=ranked.filter(x=>!lead.includes(x)).map(x=>`${esc(x.lab)} ${sv(x.f.saved)} (${x.f.pct}%)`);
+    lines.push(topv>0?`<b>${name}:</b> on the final quotes, ${G(J(lead.map(x=>x.lab)))} saves the most — ${sv(topv)} (${lead[0].f.pct}%) off its original ${fU(lead[0].r.totalCost)}${rest.length?`; ${rest.join("; ")}`:""}.${wait}`:`<b>${name}:</b> on the final quotes no lab is below its original cost yet.${wait}`);
   });
-  const top=Math.max(0,...labs.map(l=>wins[l]||0)), leaders=labs.filter(l=>(wins[l]||0)===top&&top>0);
-  const overall=metrics&&top?`<b>Overall:</b> ${leaders.length===1?`<b style="color:#7ee8b8">${esc(leaders[0])}</b> is better — it leads ${top} of ${metrics} measures (samples saved and cost saved, per test type).`:`${leaders.map(esc).join(" and ")} lead equally (${top} of ${metrics}).`}`:"";
-  const insight=lines.length||overall?`<div id="pmm-lab-insight" style="margin-top:10px;background:rgba(255,255,255,.06);border-radius:7px;padding:9px 12px;font-size:10.5px;line-height:1.75;color:#e8ecf5"><span style="font-weight:800;color:#ffd27a;margin-right:6px">💡 Insight</span>${lines.map(l=>`<div style="margin-top:2px">${l}</div>`).join("")}${overall?`<div style="margin-top:2px;padding-top:3px;border-top:1px solid rgba(255,255,255,.1)">${overall}</div>`:""}</div>`:"";
+  let overall="";
+  const tl=Object.keys(tot);
+  if(tl.length>1){ const m=Math.max(...tl.map(l=>tot[l])), w=tl.filter(l=>near(tot[l],m)); if(m>0) overall=`<b>Overall (final quotes):</b> ${G(J(w))} saves the most — ${sv(m)} across ${doneKinds.join(" and ")}.`; }
+  else { const pl=Object.keys(proj); if(pl.length>1){ const m=Math.max(...pl.map(l=>proj[l])), w=pl.filter(l=>near(proj[l],m)); if(m>0) overall=`<b>Overall:</b> projected only — ${G(J(w))} saves the most, ${sv(m)} in total.`; } }
+  const hint=waiting?`<div style="margin-top:5px;color:#a8b8d8;font-size:9.5px">Final quotes are entered per lab: tick one lab, then ✏ Enter final quote. They appear here automatically.</div>`:"";
+  const insight=lines.length||overall?`<div id="pmm-lab-insight" style="margin-top:10px;background:rgba(255,255,255,.06);border-radius:7px;padding:9px 12px;font-size:10.5px;line-height:1.75;color:#e8ecf5"><span style="font-weight:800;color:#ffd27a;margin-right:6px">💡 Insight — cost savings</span>${lines.map(l=>`<div style="margin-top:2px">${l}</div>`).join("")}${overall?`<div style="margin-top:2px;padding-top:3px;border-top:1px solid rgba(255,255,255,.1)">${overall}</div>`:""}${hint}</div>`:"";
   const noData=!body;
   return `<div id="pmm-lab-compare-section" style="margin-top:${snap?"10px":"12px"};background:#0e1b3d;border-radius:8px;padding:12px 14px">
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px"><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">⚖️ Test Lab Comparison</div><div style="font-size:9.5px;color:#a8b8d8">Chemical and Corrosion · each lab's own consolidation result · ★ = best${snap?" · products as they are now":""}</div></div>
     ${noData?`<div style="font-size:11px;color:#a8b8d8">No Chemical or Corrosion quotes for these labs yet.</div>`:`<div style="overflow-x:auto"><table id="pmm-lab-compare-table" style="width:100%;border-collapse:collapse;font-size:9.5px;color:#e8ecf5"><thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">${th("Testing type / Test lab","left")}${th("Consolidated")}${th("Samples")}${th("Rep.")}${th("Rep. %")}${th("Samples saved","right","color:#7ee8b8")}${th("Cost")}${th("After")}${th("Cost saved","right","color:#7ee8b8")}${th("%")}${th("Final quote","right","color:#ffd27a;border-left:1px solid rgba(255,255,255,.16)")}${th("Actual saved","right","color:#ffd27a")}${th("Actual %","right","color:#ffd27a")}</tr></thead><tbody>${body}</tbody></table></div>${insight}`}
   </div>`;
 }
-// ---- Tensile (Physical): the old table format, now part of the Sample Optimization Summary ----
+// ---- Tensile (Physical): same navy look as the Sample Optimization Summary; KPI cards on the left, "By test lab" table on the right ----
 function pmmSpendSummaryHtml(entries, opts){
-  opts=opts||{}; const respect=opts.respectFilter!==false;
+  opts=opts||{}; const respect=opts.respectFilter!==false, sa=!!opts.standalone;
   const rows=[]; entries.forEach(e=>(respect?pmmLinesInView(e):pmmTestLines(e)).forEach(l=>{ if(l.kind==="phys") rows.push({lab:l.lab,id:e.id,cost:l.cost,samples:l.samples}); }));
   const total={cost:0,samples:0,ids:new Set(),tests:rows.length,unquoted:rows.filter(r=>!r.cost).length}, byLab={};
   rows.forEach(r=>{ total.cost+=r.cost; total.samples+=r.samples; total.ids.add(r.id); const lk=(r.lab||"").toLowerCase(), l=byLab[lk]||(byLab[lk]={label:r.lab||"No lab set",ids:new Set(),tests:0,samples:0,cost:0}); l.ids.add(r.id); l.tests++; l.samples+=r.samples; l.cost+=r.cost; });
-  const tHead=h=>`<th style="text-align:${h[1]};padding:5px 8px;font-size:9px;font-weight:700;color:#7a5500;text-transform:uppercase">${h[0]}</th>`;
-  const td=(v,al,b)=>`<td style="padding:6px 8px;text-align:${al||"right"};${b?"font-weight:700;":""}">${v}</td>`;
-  const box=inner=>`<div id="pmm-spend-summary" style="margin-top:16px;background:#fffaf0;border:1.5px solid #f3dfb3;border-radius:12px;padding:16px 18px;color:#222">${inner}</div>`;
-  const title=`<div style="font-size:10px;font-weight:700;color:#7a5500;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">🧾 Tensile (Physical) Testing — Test Lab Spend</div>
-    <div style="font-size:10.5px;color:#8a6d2f;margin-bottom:12px">What the test labs will charge for Tensile testing. It checks the whole assembled product, so it is not consolidated by material — this is spend, not savings.</div>`;
-  if(!rows.length) return box(`${title}<div style="font-size:11px;color:#8a6d2f">No Tensile (Physical) tests with a quotation yet — add a quotation under Physical Testing in a Test Lab section.</div>`);
+  const box=inner=>`<div id="pmm-spend-summary" style="${sa?"margin-top:10px;background:#0e1b3d;border-radius:8px;padding:12px 14px":"margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.15)"};color:#e8ecf5">${inner}</div>`;
+  const title=`<div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">🧾 Tensile (Physical) Testing — Test Lab Spend</div>
+    <div style="font-size:10px;color:#a8b8d8;margin-bottom:10px">What the test labs will charge for Tensile testing. It checks the whole assembled product, so it is not consolidated by material — this is spend, not savings.</div>`;
+  if(!rows.length) return box(`${title}<div style="font-size:11px;color:#a8b8d8">No Tensile (Physical) tests with a quotation yet — add a quotation under Physical Testing in a Test Lab section.</div>`);
   const usd=pmmFqUsd, avg=(c,s)=>s>0?usd(Math.round((c/s)*100)/100):"—";
   const labRows=Object.values(byLab).sort((a,b)=>b.cost-a.cost);
-  const kpi=(v,l)=>`<div style="background:#fff;border:1px solid #f3dfb3;border-radius:9px;padding:9px 14px;min-width:120px"><div style="font-size:20px;font-weight:800;color:#5c4200">${v}</div><div style="font-size:9.5px;font-weight:700;color:#8a6d2f;text-transform:uppercase;letter-spacing:.3px">${l}</div></div>`;
+  const kpi=(v,l)=>`<div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px 12px"><div data-kpi style="font-size:17px;font-weight:700;color:#fff">${v}</div><div style="font-size:9px;font-weight:700;color:#a8b8d8;text-transform:uppercase;letter-spacing:.3px">${l}</div></div>`;
+  const th=(t,al)=>`<th style="text-align:${al};padding:4px 8px;font-size:9px;font-weight:700;color:#8ab4f8;text-transform:uppercase;white-space:nowrap">${t}</th>`;
+  const td=(v,al,st)=>`<td style="padding:5px 8px;text-align:${al||"right"};${st||""}">${v}</td>`;
   return box(`${title}
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">${kpi(usd(total.cost),"Total lab spend")}${kpi(total.tests,"Tensile tests quoted")}${kpi(total.ids.size,"Products")}${kpi(Number(total.samples.toLocaleString("en-US",{maximumFractionDigits:1})),"Samples")}${kpi(avg(total.cost,total.samples),"Per sample")}</div>
-    <div style="font-size:10.5px;font-weight:700;color:#5c4200;margin-bottom:6px">By test lab</div>
-    <table style="width:100%;max-width:780px;border-collapse:collapse;font-size:11px;background:#fff;border:1px solid #f3dfb3;border-radius:8px"><thead><tr style="border-bottom:1px solid #f3dfb3">${tHead(["Test lab","left"])}${tHead(["Tests","right"])}${tHead(["Products","right"])}${tHead(["Samples","right"])}${tHead(["Lab spend","right"])}${tHead(["Share","right"])}</tr></thead>
-    <tbody>${labRows.map(l=>`<tr style="border-bottom:1px solid #f7ecd0">${td(esc(l.label),"left",1)}${td(l.tests)}${td(l.ids.size)}${td(l.samples)}${td(usd(l.cost),"right",1)}${td(total.cost>0?Math.round(l.cost/total.cost*1000)/10+"%":"—")}</tr>`).join("")}</tbody></table>
-    ${total.unquoted?`<div style="font-size:10px;color:#b07000;margin-top:10px">⚠ ${total.unquoted} Tensile test${total.unquoted!==1?"s":""} ha${total.unquoted!==1?"ve":"s"} no quotation yet, so ${total.unquoted!==1?"they are":"it is"} not in the spend.</div>`:""}`);
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1 1 340px;display:grid;grid-template-columns:repeat(3,minmax(96px,1fr));gap:8px">${kpi(usd(total.cost),"Total lab spend")}${kpi(total.tests,"Tensile tests quoted")}${kpi(total.ids.size,"Products")}${kpi(Number(total.samples.toLocaleString("en-US",{maximumFractionDigits:1})),"Samples")}${kpi(avg(total.cost,total.samples),"Per sample")}</div>
+      <div style="flex:1 1 380px;min-width:0">
+        <div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">By test lab</div>
+        <table style="width:100%;border-collapse:collapse;font-size:10.5px;color:#e8ecf5"><thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">${th("Test lab","left")}${th("Tests","right")}${th("Products","right")}${th("Samples","right")}${th("Lab spend","right")}${th("Share","right")}</tr></thead>
+        <tbody>${labRows.map(l=>`<tr style="border-bottom:1px solid rgba(255,255,255,.08)">${td(esc(l.label),"left","font-weight:700;color:#fff")}${td(l.tests)}${td(l.ids.size)}${td(l.samples)}${td(usd(l.cost),"right","font-weight:700;color:#fff")}${td(total.cost>0?Math.round(l.cost/total.cost*1000)/10+"%":"—","right","color:#a8b8d8")}</tr>`).join("")}</tbody></table>
+      </div>
+    </div>
+    ${total.unquoted?`<div style="font-size:10px;color:#fdab3d;margin-top:8px">⚠ ${total.unquoted} Tensile test${total.unquoted!==1?"s":""} ha${total.unquoted!==1?"ve":"s"} no quotation yet, so ${total.unquoted!==1?"they are":"it is"} not in the spend.</div>`:""}`);
 }
 function pmmInsightsHtml(){
   const entries=pmmInsightEntries();
@@ -8634,6 +8644,22 @@ function pmmPhotoDisplayUrl(url){
   return url;
 }
 
+// Test labs of one item as a single compact table: one column per lab, one row per test type (fills the card width)
+function pmmLabTableHtml(e){
+  const has=o=>PMM_LAB_KINDS.some(k=>String(o.t[k]||"").trim()||String(o.c[k]||"").trim());
+  const cols=[]; const base={lab:String(e.testLab||"").trim(),date:String(e.quotationDate||"").trim(),t:{},c:{}};
+  PMM_LAB_KINDS.forEach(k=>{ base.t[k]=e[k+"Test"]; base.c[k]=e[k+"TestCost"]; });
+  if(base.lab||base.date||has(base)) cols.push(base);
+  pmmCleanLabs(e.extraLabs).forEach(S=>{ const o={lab:String(S.lab||"").trim(),date:String(S.date||"").trim(),t:{},c:{}}; PMM_LAB_KINDS.forEach(k=>{ o.t[k]=S[k+"Test"]; o.c[k]=S[k+"Cost"]; }); cols.push(o); });
+  const rows=PMM_LAB_KINDS.filter(k=>cols.some(c=>String(c.t[k]||"").trim()||String(c.c[k]||"").trim()));
+  const add=`<button onclick="event.stopPropagation();pmmRequestAddLab('${e.id}')" title="Add another test lab for this item (asks for the Edit password)" style="font-size:9.5px;font-weight:700;color:#0055bb;background:#fff;border:1px dashed #9cc0f0;border-radius:5px;padding:2px 9px;cursor:pointer">+ Add test lab</button>`;
+  const head=`<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:${cols.length?6:0}px"><div style="font-size:9px;font-weight:700;color:#0055bb;text-transform:uppercase;letter-spacing:.4px">Test labs${cols.length>1?` · ${cols.length}`:""}</div>${add}</div>`;
+  const bl="border-bottom:1px solid #dbe8fb";
+  const body=!cols.length?`<div style="font-size:10px;color:#aaa;margin-top:4px">No testing info yet</div>`:
+    `<div style="overflow-x:auto"><table class="pmm-lab-table" style="width:100%;border-collapse:collapse;font-size:10px;color:#333"><thead><tr><th style="width:58px;border-bottom:1.5px solid #c0d8f8"></th>${cols.map((c,i)=>`<th style="text-align:left;padding:3px 8px;border-bottom:1.5px solid #c0d8f8;vertical-align:bottom;${i?"border-left:1px solid #dbe8fb;":""}"><div style="font-weight:700;color:#0055bb;font-size:10.5px">${esc(c.lab||"No lab set")}</div>${c.date?`<div style="font-weight:400;color:#6b7a99;font-size:9px">${esc(c.date)}</div>`:""}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map(k=>`<tr data-kind="${k}"><td style="padding:4px 8px 4px 0;font-weight:700;color:#0055bb;font-size:9px;text-transform:uppercase;white-space:nowrap;${bl}">${PMM_KIND_LABEL[k]}</td>${cols.map((c,i)=>{ const t=String(c.t[k]||"").trim(), cc=String(c.c[k]||"").trim(); return `<td style="padding:4px 8px;${bl};${i?"border-left:1px solid #dbe8fb;":""}">${t||cc?`${esc(t)}${cc?` <span style="color:#555;font-weight:600">(${esc(cc)})</span>`:""}`:`<span style="color:#bbb">—</span>`}</td>`; }).join("")}</tr>`).join("")}</tbody></table></div>`;
+  return `<div class="pmm-labs-box" style="flex:${cols.length>1?"1 1 100%":"1 1 175px"};min-width:0;background:#f0f6ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:8px 11px">${head}${body}</div>`;
+}
 function pmmEntryCardHtml(e){
   const rows=e.components.map(c=>{
     const col=pmmMaterialColor(c.material);
@@ -8644,6 +8670,7 @@ function pmmEntryCardHtml(e){
     </tr>`;
   }).join("");
   const normName=pmmNormalizeProductName(e.description);
+  const sumHtml=pmmSkuTotalSummaryHtml(e), hasInfo=!!(e.parentSku||e.supplier);
   return `<div class="pmm-entry-card">
     <div class="pmm-card-hdr">
       <div style="min-width:0">
@@ -8657,30 +8684,25 @@ function pmmEntryCardHtml(e){
       </div>
     </div>
     ${e.photoUrl?`<div class="pmm-entry-photo-section"><img src="${pmmPhotoDisplayUrl(e.photoUrl)}" onclick="pmmOpenViewLarge('${e.id}')" title="Click to view larger"/></div>`:""}
-    <div style="padding:12px 14px">
-      <div style="background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:9px 11px;font-size:10px;line-height:1.7;color:#333">
+    <div style="padding:12px 14px 0;display:flex;gap:10px;flex-wrap:wrap;align-items:stretch">
+      <div style="flex:1 1 200px;min-width:0;background:#fff8e0;border:1.5px solid #fde8c0;border-radius:8px;padding:9px 11px;font-size:10px;line-height:1.7;color:#333">
         <div><strong>SKU:</strong> ${esc(e.sku)}</div>
         <div>${pmmFamilyLineHtml("A SKU Family", e.skuFamily, e.id, "skuFamily")}</div>
         <div>${pmmFamilyLineHtml("B SKU Family", e.skuFamilyB, e.id, "skuFamilyB")}</div>
         <div>${pmmFamilyLineHtml("C SKU Family", e.skuFamilyC, e.id, "skuFamilyC")}</div>
         <div>${pmmFamilyLineHtml("Retail SKU", e.retailSku, e.id, "retailSku")}</div>
       </div>
-      ${pmmSkuTotalSummaryHtml(e)}
+      ${(hasInfo||sumHtml)?`<div class="pmm-side-col" style="flex:1 1 150px;min-width:0;display:flex;flex-direction:column;align-self:${sumHtml?"stretch":"flex-start"}">
+        ${hasInfo?`<div class="pmm-supplier-box" style="background:#f0f6ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:9px 11px;font-size:10px;line-height:1.7;color:#333">
+          ${e.parentSku?`<div><strong style="color:#0055bb">Parent SKU:</strong> ${esc(e.parentSku)}</div>`:""}
+          ${e.supplier?`<div><strong style="color:#0055bb">Supplier:</strong> ${esc(e.supplier)}</div>`:""}
+        </div>`:""}
+        ${sumHtml?`<div style="margin-top:${hasInfo?0:-6}px">${sumHtml}</div>`:""}
+      </div>`:""}
     </div>
-    <div style="padding:0 14px 12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:stretch">
-      <div style="width:190px;flex-shrink:0;background:#f0f6ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:9px 11px;font-size:9.5px;color:#333;line-height:1.7">
-        ${e.parentSku?`<div><strong style="color:#0055bb">Parent SKU:</strong> ${esc(e.parentSku)}</div>`:""}
-        ${e.supplier?`<div><strong style="color:#0055bb">Supplier:</strong> ${esc(e.supplier)}</div>`:""}
-        ${e.chemTest?`<div><strong style="color:#0055bb">Chemical Test:</strong> ${esc(e.chemTest)}${e.chemTestCost?` (${esc(e.chemTestCost)})`:""}</div>`:""}
-        ${e.physTest?`<div><strong style="color:#0055bb">Physical Test:</strong> ${esc(e.physTest)}${e.physTestCost?` (${esc(e.physTestCost)})`:""}</div>`:""}
-        ${e.corrTest?`<div><strong style="color:#0055bb">Corrosion Test:</strong> ${esc(e.corrTest)}${e.corrTestCost?` (${esc(e.corrTestCost)})`:""}</div>`:""}
-        ${e.testLab?`<div><strong style="color:#0055bb">Test Lab:</strong> ${esc(e.testLab)}</div>`:""}
-        ${e.quotationDate?`<div><strong style="color:#0055bb">Quotation Date:</strong> ${esc(e.quotationDate)}</div>`:""}
-        ${pmmLabSectionsHtml(e)}
-        ${!e.parentSku&&!e.supplier&&!e.chemTest&&!e.physTest&&!e.corrTest&&!e.testLab&&!e.quotationDate&&!pmmCleanLabs(e.extraLabs).length?`<div style="color:#aaa">No testing info yet</div>`:""}
-        <button onclick="event.stopPropagation();pmmRequestAddLab('${e.id}')" title="Add another test lab for this item (asks for the Edit password)" style="margin-top:6px;font-size:9.5px;font-weight:700;color:#0055bb;background:#fff;border:1px dashed #9cc0f0;border-radius:5px;padding:2px 9px;cursor:pointer">+ Add test lab</button>
-      </div>
-      <div style="flex:1;min-width:260px">
+    <div style="padding:10px 14px 12px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:stretch">
+      ${pmmLabTableHtml(e)}
+      <div style="flex:2 1 225px;min-width:0">
         <div id="pmm-table-wrap-${e.id}" onclick="pmmOpenViewLarge('${e.id}')" title="Click to view larger" style="max-height:${pmmExpandedCards.has(e.id)?"none":"175px"};overflow:hidden;position:relative;cursor:zoom-in">
           <table style="width:100%;border-collapse:collapse">
             <thead><tr>
