@@ -219,6 +219,11 @@ textarea.pmm-input.cd-ta{display:block;resize:none;overflow:hidden;min-height:38
 .pmm-label{font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;display:block}
 .pmm-input{width:100%;padding:9px 12px;border:1.5px solid #c8cdd7;border-radius:7px;font-size:12.5px;color:#333;outline:none}
 .pmm-input:focus{border-color:#0073ea;box-shadow:0 0 0 3px rgba(0,115,234,.1)}
+.pmm-segbar{display:flex;gap:2px;margin:0 0 8px;border-bottom:1px solid #e3e6ec;overflow-x:auto}
+.pmm-seg{display:inline-flex;align-items:center;gap:7px;padding:7px 15px;font-size:12px;font-weight:600;color:#6b7a99;background:none;border:none;border-bottom:3px solid transparent;margin-bottom:-1px;cursor:pointer;white-space:nowrap}
+.pmm-seg:hover{color:#0055bb}
+.pmm-seg.active{color:#0055bb;border-bottom-color:#0073ea}
+.pmm-seg-n{background:#0073ea;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700}
 textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
 .pmm-field{margin-bottom:16px}
 .pmm-grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -452,7 +457,7 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
       </div>
     </div>
 
-    <div id="pmm-search-wrap" style="display:none;padding:14px 18px 0"></div>
+    <div id="pmm-search-wrap" style="display:none;position:sticky;top:0;z-index:45;background:#fff;padding:8px 14px 9px;border-bottom:1px solid #e3e6ec;box-shadow:0 3px 8px rgba(15,27,61,.07)"></div>
     <div id="pmm-body" style="background:#fff;border-left:0.5px solid #dde0e7;border-right:0.5px solid #dde0e7;border-bottom:1px solid #e8eaed;padding:22px 4px"></div>
   </div>
 </div><!-- /panel-pmm -->
@@ -833,6 +838,7 @@ async function fetchSheetData(){
     pmmCostSavingsSnapshots=pmmBuildCostSnapshotsFromRows(pmmRowsToObjectsWithIndex(costRange));
     pmmHasExtrasColumn=(pmmRange[0]||[]).some(h=>["Additional Test Labs","Additional Tests"].includes(String(h||"").trim()));
     pmmLoadFinalQuotes(); // fire-and-forget -- a missing "Final Quotes" tab just means nothing has been entered yet
+    pmmLoadTensileDisp(); // fire-and-forget -- a missing "Tensile Dispositions" tab just means nothing has been entered yet
     pmmLoadLookupCatalogue(); // fire-and-forget — doesn't block the main sync if it fails
 
     localStorage.setItem(LS_CACHE,JSON.stringify(GROUPS));
@@ -2926,6 +2932,26 @@ function renderModals(){
         <div style="padding:12px 20px;border-top:1px solid #eee;display:flex;gap:10px;justify-content:flex-end;flex-shrink:0">
           <button onclick="closeModal()" style="padding:9px 16px;font-size:12px;font-weight:600;color:#555;background:#f0f2f5;border:none;border-radius:7px;cursor:pointer">Cancel</button>
           <button id="pmm-fq-save" onclick="pmmSubmitFinalQuote()" style="padding:9px 20px;font-size:12px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:7px;cursor:pointer">💾 Save final quote</button>
+        </div>
+      </div></div>`;
+  } else if(modal.type==="pmmTensileSave"){
+    const ch=Object.values(pmmTensileDraft);
+    const line=v=>`<div style="padding:5px 0;border-bottom:1px solid #f0f1f4;font-size:11px"><b>${esc(v.sku)}</b> <span style="color:#888">· ${esc(v.lab||"no lab")}</span> — ${pmmTdIsSkip(v.disp)?'<b style="color:#b07000">Skip</b>':"Test"}${v.remarks?` · <span style="color:#555">${esc(v.remarks)}</span>`:""}</div>`;
+    root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
+      <div class="modal-box" style="max-width:520px;width:calc(100vw - 32px);max-height:90vh;display:flex;flex-direction:column">
+        <div style="background:#0e1b3d;padding:14px 20px;border-radius:12px 12px 0 0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0">
+          <div><div style="color:#fff;font-weight:800;font-size:15px">Save remarks &amp; disposition</div><div style="color:#a8b8d8;font-size:10.5px;margin-top:2px">Tensile (Physical) testing · ${ch.length} change${ch.length!==1?"s":""}</div></div>
+          <button onclick="closeModal()" style="background:rgba(255,255,255,.15);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px;flex-shrink:0">✕</button>
+        </div>
+        <div style="padding:16px 20px;overflow-y:auto">
+          <div style="font-size:11px;color:#555;line-height:1.6;margin-bottom:8px">These are saved to the <b>${PMM_TENSILE_SHEET}</b> tab of the Google Sheet:</div>
+          <div style="max-height:220px;overflow-y:auto;border:1px solid #eee;border-radius:8px;padding:2px 10px">${ch.map(line).join("")}</div>
+          <div class="pmm-field" style="max-width:260px;margin-top:14px"><label class="pmm-label">Save password</label><input id="pmm-td-pw" type="password" autocomplete="off" data-1p-ignore="true" data-lpignore="true" data-form-type="other" class="pmm-input" placeholder="Password" onkeydown="if(event.key==='Enter')pmmSubmitTensileSave()"/></div>
+          <div id="pmm-td-err" style="color:#c0392b;font-size:11px;min-height:15px;margin-top:4px"></div>
+        </div>
+        <div style="padding:12px 20px;border-top:1px solid #eee;display:flex;gap:10px;justify-content:flex-end;flex-shrink:0">
+          <button onclick="closeModal()" style="padding:9px 16px;font-size:12px;font-weight:600;color:#555;background:#f0f2f5;border:none;border-radius:7px;cursor:pointer">Cancel</button>
+          <button id="pmm-td-save" onclick="pmmSubmitTensileSave()" style="padding:9px 20px;font-size:12px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:7px;cursor:pointer">💾 Save</button>
         </div>
       </div></div>`;
   } else if(modal.type==="pmmSkuFamilyList"){
@@ -7491,10 +7517,16 @@ function pmmInitSearchBar(){
   if(pmmSearchBarInitialized) return;
   pmmSearchBarInitialized=true;
   const wrap=document.getElementById("pmm-search-wrap"); if(!wrap) return;
-  wrap.innerHTML=`<div style="position:relative;max-width:320px">
-    <input id="pmm-search-input" value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this)" onfocus="pmmOnSearchFocus()" onblur="pmmCloseSearchSuggest()" placeholder="Search any word — SKU, material, lab…" class="pmm-input"/>
-    <button type="button" class="sc-clear" title="Clear search" aria-label="Clear search" onmousedown="event.preventDefault()" onclick="scClear('pmm-search-input')">✕</button>
-    <div id="pmm-search-suggest" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto"></div>`;
+  // two static rows, never rewritten: the tabs slot and ONE line holding the search box + the filters (same look as Annual Test)
+  wrap.innerHTML=`<div id="pmm-sub-slot"></div>
+    <div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;padding:6px 10px;display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap">
+      <div style="position:relative;flex:0 1 240px;min-width:170px">
+        <input id="pmm-search-input" value="${esc(pmmSearchSku)}" oninput="pmmOnSearchInput(this)" onfocus="pmmOnSearchFocus()" onblur="pmmCloseSearchSuggest()" placeholder="Search any word — SKU, material, lab…" class="pmm-input" style="padding:6px 28px 6px 10px;font-size:11.5px"/>
+        <button type="button" class="sc-clear" title="Clear search" aria-label="Clear search" onmousedown="event.preventDefault()" onclick="scClear('pmm-search-input')">✕</button>
+        <div id="pmm-search-suggest" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);z-index:50;max-height:280px;overflow-y:auto"></div>
+      </div>
+      <div id="pmm-filter-slot" style="display:contents"></div>
+    </div>`;
 }
 function pmmUpdateSuggestDisplay(){
   const el=document.getElementById("pmm-search-suggest"); if(!el) return;
@@ -7706,7 +7738,7 @@ function pmmTestLabFilterHtml(rerender,tag){
   tag=tag||"top"; const sfx=tag==="sum"?"2":"";
   const t=pmmTestOptions(), l=pmmLabOptions();
   return `<div class="pmm-lab-filter" id="pmm-lab-filter${sfx}" style="position:relative">
-      <button type="button" id="pmm-lab-btn${sfx}" onclick="pmmToggleLabMenu('${tag}')" title="Show only the products tested by the ticked labs — tick one or several" style="min-width:190px;max-width:270px;display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;cursor:pointer;padding:9px 12px;border:1.5px solid ${pmmFilterLabs.length?"#0073ea":"#c8cdd7"};border-radius:7px;font-size:12.5px;color:${pmmFilterLabs.length?"#0055bb":"#333"};background:${pmmFilterLabs.length?"#eaf3ff":"#efefef"};font-weight:${pmmFilterLabs.length?700:400}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(!pmmFilterLabs.length?"All Test Labs":pmmFilterLabs.length<=2?pmmFilterLabs.join(", "):pmmFilterLabs.length+" labs selected")}</span><span style="font-size:10px">▾</span></button>
+      <button type="button" id="pmm-lab-btn${sfx}" onclick="pmmToggleLabMenu('${tag}')" title="Show only the products tested by the ticked labs — tick one or several" style="min-width:150px;max-width:240px;display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;cursor:pointer;padding:6px 10px;border:1.5px solid ${pmmFilterLabs.length?"#0073ea":"#c8cdd7"};border-radius:7px;font-size:11.5px;color:${pmmFilterLabs.length?"#0055bb":"#333"};background:${pmmFilterLabs.length?"#eaf3ff":"#efefef"};font-weight:${pmmFilterLabs.length?700:400}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(!pmmFilterLabs.length?"All Test Labs":pmmFilterLabs.length<=2?pmmFilterLabs.join(", "):pmmFilterLabs.length+" labs selected")}</span><span style="font-size:10px">▾</span></button>
       <div id="pmm-lab-panel${sfx}" style="display:${pmmLabMenuOpen===tag?"block":"none"};position:absolute;top:calc(100% + 4px);left:0;z-index:70;min-width:230px;background:#fff;border:1.5px solid #dde0e7;border-radius:8px;box-shadow:0 10px 28px rgba(0,0,0,.14);padding:6px">
         ${l.map((o,i)=>`<label style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:6px;cursor:pointer;font-size:12.5px;color:#222"><input type="checkbox" ${pmmLabSet().has(o.label.toLowerCase())?"checked":""} onchange="pmmToggleLab(${i},this.checked,'${tag}');${rerender}()"/><span style="flex:1">${esc(o.label)}</span><span style="color:#999;font-size:11px">${o.count}</span></label>`).join("")}
         ${pmmFilterLabs.length?`<div style="border-top:1px solid #eee;margin-top:4px;padding-top:4px"><button type="button" onclick="pmmFilterLabs=[];pmmLabMenuOpen='${tag}';${rerender}()" style="font-size:11px;font-weight:700;color:#e2445c;background:none;border:none;cursor:pointer;padding:6px 9px">✕ Clear selection</button></div>`:""}
@@ -8226,7 +8258,7 @@ function pmmScopeWithLabs(labs){ const keep=pmmFilterLabs; pmmFilterLabs=labs; t
 function pmmLabFilterBarHtml(){
   const n=pmmFilterLabs.length;
   const mode=n===0?"All labs — showing the Sample Optimization Summary":n===1?`Showing the Sample Optimization Summary for <b style="color:#0055bb">${esc(pmmFilterLabs[0])}</b>`:`Comparing <b style="color:#0055bb">${n} labs</b> — showing the Test Lab Comparison`;
-  return `<div id="pmm-lab-bar" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 12px;padding:9px 12px;background:#fff;border:1.5px solid #c0d8f8;border-radius:9px"><span style="font-size:10px;font-weight:800;color:#0055bb;text-transform:uppercase;letter-spacing:.5px">Test lab</span>${pmmTestLabFilterHtml("pmmRenderCompiled","sum")}<span style="font-size:11px;color:#6b7a99">${mode}</span><span style="margin-left:auto;font-size:10px;color:#9aa3b5">Tick 2 or more labs to compare them · one lab shows its own summary</span></div>`;
+  return `<div id="pmm-lab-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 12px;padding:7px 12px;background:#f4f8ff;border:1px solid #d6e4fb;border-radius:8px;font-size:11px;color:#556"><span style="font-weight:800;color:#0055bb;text-transform:uppercase;font-size:10px;letter-spacing:.5px">Test lab</span><span>${mode}</span><span style="margin-left:auto;font-size:10px;color:#9aa3b5">Use the Test lab filter above · tick 2 or more labs to compare them · one lab shows its own summary</span></div>`;
 }
 // ---- the Test Lab Comparison: the same table as the Sample Optimization Summary, one indented row per lab ----
 function pmmLabCompareSectionHtml(entries,opts){
@@ -8252,29 +8284,28 @@ function pmmLabCompareSectionHtml(entries,opts){
       return `<tr data-lab="${esc(lab)}" data-kind="${k}" style="border-bottom:1px solid rgba(255,255,255,.06)"><td style="padding:3px 6px 3px 20px;border-left:3px solid ${pmmLabColor(lab)};white-space:nowrap">${pmmLabChip(lab)} <span style="color:#a8b8d8;font-size:8.5px">${r.products} product${r.products!==1?"s":""}</span></td>${rowCells(r,isBest,f)}</tr>`; }).join("");
     return head+lr;
   }).join("");
-  // ---- insight: where is the final quote the cheapest? (the projected "After" cost is only a stand-in until final quotes are entered) ----
-  const lines=[], comparable=[]; let waiting=false;
-  const near=(a,b)=>Math.abs(a-b)<0.005, J=a=>a.map(esc).join(" / "), G=t=>`<b style="color:#ffd27a">${t}</b>`, r2=n=>Math.round(n*100)/100;
+  // ---- insight: ONE line — which test lab is the most cost-effective, judged on the final quotes (projected cost only as a stand-in) ----
+  const finals=[], projs=[], pend=[]; let waiting=false;
+  const near=(a,b)=>Math.abs(a-b)<0.005, J=a=>a.map(esc).join(" / "), G=t=>`<b style="color:#ffd27a">${t}</b>`;
+  const phrase=items=>items.every(i=>J(i.labs)===J(items[0].labs))?`for ${items.map(i=>i.name).join(" and ")} testing is ${G(J(items[0].labs))}`:`for ${items.map(i=>`${i.name} testing is ${G(J(i.labs))}`).join(" and for ")}`;
   KINDS.forEach(([k])=>{
     const rs=data[k].labs, name=PMM_KIND_LABEL[k];
-    if(rs.length===1){ lines.push(`<b>${name}:</b> only ${esc(rs[0].lab)} has quotes, so there is nothing to compare.`); return; }
+    if(rs.length===1){ pend.push(`<b>${name}:</b> only ${esc(rs[0].lab)} is quoted, so there is nothing to compare.`); return; }
     if(rs.length<2) return;
     const withF=rs.filter(x=>x.f), noF=rs.filter(x=>!x.f);
     if(!snap&&noF.length) waiting=true;
-    if(!withF.length){ const m=Math.min(...rs.map(x=>x.r.repCost)), w=rs.filter(x=>near(x.r.repCost,m)); lines.push(`<b>${name}:</b> no final quote yet — projected cheapest after consolidation: ${G(J(w.map(x=>x.lab)))} at ${fU(m)}.`); return; }
-    if(withF.length===1){ lines.push(`<b>${name}:</b> only ${esc(withF[0].lab)} has a final quote so far (${fU(withF[0].f.final)}). Waiting for ${J(noF.map(x=>x.lab))} before the labs can be compared.`); return; }
-    const m=Math.min(...withF.map(x=>x.f.final)), lead=withF.filter(x=>near(x.f.final,m)), rest=withF.filter(x=>!lead.includes(x)).sort((a,b)=>a.f.final-b.f.final);
-    comparable.push({name,withF});
-    lines.push(`<b>${name}:</b> ${G(J(lead.map(x=>x.lab)))} has the cheapest final quote — ${fU(m)}${rest.length?`; ${rest.map(x=>`${esc(x.lab)} ${fU(x.f.final)} (+${fU(r2(x.f.final-m))})`).join("; ")}`:""}.${noF.length?` Waiting for the final quote from ${J(noF.map(x=>x.lab))}.`:""}`);
+    if(withF.length>=2){ const m=Math.min(...withF.map(x=>x.f.final)); finals.push({name,labs:withF.filter(x=>near(x.f.final,m)).map(x=>x.lab)}); if(noF.length) pend.push(`<b>${name}:</b> still waiting for the final quote from ${J(noF.map(x=>x.lab))}.`); return; }
+    const m=Math.min(...rs.map(x=>x.r.repCost)); projs.push({name,labs:rs.filter(x=>near(x.r.repCost,m)).map(x=>x.lab),partial:withF.length===1?withF[0].lab:null});
   });
-  let overall="";
-  if(comparable.length>1){ const cand=labs.filter(l=>comparable.every(c=>c.withF.some(x=>x.lab===l))); if(cand.length>1){ const tot=Object.fromEntries(cand.map(l=>[l,comparable.reduce((a,c)=>a+c.withF.find(x=>x.lab===l).f.final,0)])); const m=Math.min(...cand.map(l=>tot[l])), w=cand.filter(l=>near(tot[l],m)), o=cand.filter(l=>!w.includes(l)); overall=`<b>Overall (${comparable.map(c=>c.name).join(" + ")}):</b> ${G(J(w))} has the cheapest final quotes — ${fU(r2(m))} in total${o.length?`; ${o.map(l=>`${esc(l)} ${fU(r2(tot[l]))}`).join("; ")}`:""}.`; } }
-  const note=comparable.length?`<div style="margin-top:5px;color:#a8b8d8;font-size:9.5px">Each lab's final quote covers the products that lab tests.</div>`:"";
-  const hint=waiting?`<div style="margin-top:5px;color:#a8b8d8;font-size:9.5px">Final quotes are entered per lab: tick one lab, then ✏ Enter final quote. They appear here automatically.</div>`:"";
-  const insight=lines.length||overall?`<div id="pmm-lab-insight" style="margin-top:10px;background:rgba(255,255,255,.06);border-radius:7px;padding:9px 12px;font-size:10.5px;line-height:1.75;color:#e8ecf5"><span style="font-weight:800;color:#ffd27a;margin-right:6px">💡 Insight — cheapest final quote</span>${lines.map(l=>`<div style="margin-top:2px">${l}</div>`).join("")}${overall?`<div style="margin-top:2px;padding-top:3px;border-top:1px solid rgba(255,255,255,.1)">${overall}</div>`:""}${note}${hint}</div>`:"";
+  let main="";
+  if(finals.length){ main=`Based on the final quotes, with similar materials consolidated, the most cost-effective test lab ${phrase(finals)}.`; projs.forEach(p=>pend.push(`<b>${p.name}:</b> ${p.partial?`only ${esc(p.partial)} has a final quote so far`:"no final quotes yet"} (projected most cost-effective: ${G(J(p.labs))}).`)); }
+  else if(projs.length){ main=`${projs.some(p=>p.partial)?"Final quotes are still incomplete.":"No final quotes entered yet."} Based on the projected cost with similar materials consolidated, the most cost-effective test lab ${phrase(projs)} (to be confirmed once the final quotes are in).`; }
+  const note=finals.length?`<div style="margin-top:5px;color:#a8b8d8;font-size:9.5px">Each lab's final quote covers the products that lab tests.</div>`:"";
+  const hint=waiting?`<div style="margin-top:3px;color:#a8b8d8;font-size:9.5px">Final quotes are entered per lab: tick one lab, then ✏ Enter final quote. They appear here automatically.</div>`:"";
+  const insight=main||pend.length?`<div id="pmm-lab-insight" style="margin-top:10px;background:rgba(255,255,255,.06);border-radius:7px;padding:9px 12px;font-size:11px;line-height:1.7;color:#e8ecf5"><span style="font-weight:800;color:#ffd27a;margin-right:3px">💡 Insight</span> ${main}${pend.map(l=>`<div style="margin-top:3px;color:#a8b8d8;font-size:10px">${l}</div>`).join("")}${note}${hint}</div>`:"";
   const noData=!body;
   return `<div id="pmm-lab-compare-section" style="margin-top:${snap?"10px":"12px"};background:#0e1b3d;border-radius:8px;padding:12px 14px">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px"><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">⚖️ Test Lab Comparison</div><div style="font-size:9.5px;color:#a8b8d8">Chemical and Corrosion · each lab's own consolidation result · ★ = cheapest final quote${snap?" · products as they are now":""}</div></div>
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px"><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">⚖️ Test Lab Comparison</div><div style="font-size:9.5px;color:#a8b8d8">Chemical and Corrosion · each lab's own consolidation result · ★ = lowest final quote${snap?" · products as they are now":""}</div></div>
     ${noData?`<div style="font-size:11px;color:#a8b8d8">No Chemical or Corrosion quotes for these labs yet.</div>`:`<div style="overflow-x:auto"><table id="pmm-lab-compare-table" style="width:100%;border-collapse:collapse;font-size:9.5px;color:#e8ecf5"><thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">${th("Testing type / Test lab","left")}${th("Consolidated")}${th("Samples")}${th("Rep.")}${th("Rep. %")}${th("Samples saved")}${th("Cost")}${th("After")}${th("Cost saved")}${th("%")}${th("Final quote","right","color:#ffd27a;border-left:1px solid rgba(255,255,255,.16);background:rgba(255,210,122,.09)")}${th("Actual saved","right","color:#ffd27a")}${th("Actual %","right","color:#ffd27a")}</tr></thead><tbody>${body}</tbody></table></div>${insight}`}
   </div>`;
 }
@@ -8470,7 +8501,6 @@ function pmmInsightsHtml(){
         </table>
         ${staleNote}
         ${(chem.totalSamples===0&&corr.totalSamples===0)?`<div style="font-size:10px;color:#fdab3d;margin-top:8px">⚠ No Chemical or Corrosion quotation/sample data is filled in yet -- fill in Testing Information per entry for real numbers here.</div>`:""}
-        ${pmmSpendSummaryHtml(entries)}
       </div>
     </div>`;
 
@@ -9383,28 +9413,193 @@ function pmmRenderDatabase(){
   body.innerHTML=html;
 }
 
-function pmmRenderCompiled(){
-  const body=document.getElementById("pmm-body"); if(!body) return;
-  const entries=pmmGetFilteredEntries();
-  pmmEntries.forEach(e=>e.components.forEach(c=>pmmMaterialColor(c.material))); // stable first-seen color order
+// ══ Compiled View: two tabs · frozen one-line search & filters · Tensile section (all quotes | actual testing after Skip) ══
+let pmmCompiledSub="compilation";               // "compilation" | "insights"
+const PMM_TENSILE_SHEET="Tensile Dispositions";
+let pmmTensileDisp={}, pmmTensileDraft={};       // saved (from the sheet) / unsaved edits, both keyed by sku||lab
 
-  let html=`<div style="max-width:100%;margin:0 auto">`;
-  html+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;align-items:flex-start">
-    <select onchange="pmmFilterCategory=this.value;pmmRenderCompiled()" class="pmm-input" style="max-width:200px">
+// ---- the two tabs ----
+function pmmSubTabsHtml(entries){
+  const b=(id,label,extra)=>`<button class="pmm-seg${pmmCompiledSub===id?" active":""}" id="pmm-seg-${id}" onclick="pmmSetCompiledSub('${id}')">${label}${extra||""}</button>`;
+  return `<div class="pmm-segbar">${b("compilation","🧾 Actual Compilation",`<span class="pmm-seg-n">${entries.length}</span>`)}${b("insights","📊 Material consolidation &amp; sample reduction")}</div>`;
+}
+function pmmSetCompiledSub(id){
+  pmmCompiledSub=id; pmmLabMenuOpen="";
+  pmmRenderCompiled();
+  const bd=document.getElementById("pmm-body"), w=document.getElementById("pmm-search-wrap");   // land just under the frozen bar
+  if(bd&&w){ const top=bd.getBoundingClientRect().top+window.scrollY-w.offsetHeight; if(window.scrollY>top) window.scrollTo(0,Math.max(0,top)); }
+}
+// ---- the one-line search + filters (same look as Annual Test) ----
+function pmmFilterSlotHtml(entries){
+  const sel='class="pmm-input" style="width:auto;min-width:120px;max-width:190px;padding:6px 9px;font-size:11.5px"';
+  const active=!!(pmmSearchSku||pmmFilterCategory!=="ALL"||pmmFilterSupplier!=="ALL"||pmmFilterLabs.length);
+  return `<select ${sel} onchange="pmmFilterCategory=this.value;pmmRenderCompiled()">
       <option value="ALL" ${pmmFilterCategory==="ALL"?"selected":""}>All Categories</option>
       ${PMM_CATEGORIES.map(c=>`<option value="${c}" ${pmmFilterCategory===c?"selected":""}>${c}</option>`).join("")}
     </select>
-    <select onchange="pmmFilterSupplier=this.value;pmmRenderCompiled()" class="pmm-input" style="max-width:220px">
+    <select ${sel} onchange="pmmFilterSupplier=this.value;pmmRenderCompiled()">
       <option value="ALL" ${pmmFilterSupplier==="ALL"?"selected":""}>All Suppliers</option>
       ${pmmGetSupplierList().map(s=>`<option value="${esc(s)}" ${pmmFilterSupplier===s?"selected":""}>${esc(s)}</option>`).join("")}
     </select>
     ${pmmTestLabFilterHtml("pmmRenderCompiled")}
-  </div>`;
+    ${active?`<button onclick="pmmClearAllFilters()" style="font-size:10.5px;color:#e2445c;background:none;border:none;cursor:pointer;font-weight:600;white-space:nowrap">✕ Clear all</button>`:""}
+    <span style="flex:1"></span>
+    <span id="pmm-filter-count" style="font-size:10.5px;color:#888;white-space:nowrap">${entries.length} of ${pmmEntries.length} products</span>`;
+}
+function pmmClearAllFilters(){
+  pmmSearchSku=""; const i=document.getElementById("pmm-search-input"); if(i) i.value="";
+  pmmFilterCategory="ALL"; pmmFilterSupplier="ALL"; pmmFilterLabs=[]; pmmLabMenuOpen="";
+  pmmRenderCompiled();
+}
 
+// ---- Tensile: the data ----
+function pmmTdKey(sku,lab){ return String(sku||"").trim().toLowerCase()+"||"+String(lab||"").trim().toLowerCase(); }
+function pmmTdGet(key){ const d=pmmTensileDraft[key], s=pmmTensileDisp[key]; const o=d||s||{}; return {remarks:String(o.remarks||""),disp:String(o.disp||"")}; }
+function pmmTdIsSkip(v){ return /^\s*skip/i.test(String(v||"")); }
+function pmmTdDirty(){ return Object.keys(pmmTensileDraft).length>0; }
+function pmmTensileRows(entries){
+  const rows=[];
+  entries.forEach(e=>pmmLinesInView(e).forEach(l=>{ if(l.kind!=="phys") return; const key=pmmTdKey(e.sku,l.lab), d=pmmTdGet(key);
+    rows.push({n:rows.length+1,key,sku:e.sku,desc:pmmNormalizeProductName(e.description)||e.sku,lab:l.lab||"",cost:l.cost||0,remarks:d.remarks,disp:d.disp}); }));
+  // the SKU is shown next to the name only where two different SKUs share the same description (it is always in the hover text)
+  const skus={}; rows.forEach(r=>{ (skus[r.desc.toLowerCase()]=skus[r.desc.toLowerCase()]||new Set()).add(r.sku); });
+  rows.forEach(r=>{ r.showSku=skus[r.desc.toLowerCase()].size>1; });
+  return rows;
+}
+function pmmTensileTotals(rows){
+  const all=rows.reduce((a,r)=>a+r.cost,0), keep=rows.filter(r=>!pmmTdIsSkip(r.disp)), after=keep.reduce((a,r)=>a+r.cost,0), r2=n=>Math.round(n*100)/100;
+  return {all:r2(all),after:r2(after),saved:r2(all-after),pct:all>0?Math.round((all-after)/all*1000)/10:0,skipped:rows.length-keep.length,total:rows.length,keep};
+}
+// ---- Tensile: the two tables + the one line ----
+function pmmTnRightHtml(rows,T){
+  const usd=pmmFqUsd, td=(v,al,st)=>`<td style="padding:5px 8px;border-bottom:1px solid #eef0f4;text-align:${al||"left"};${st||""}">${v}</td>`;
+  if(!T.keep.length) return `<div style="padding:18px 10px;text-align:center;font-size:11px;color:#8a6d2f;background:#fff8e8;border:1px solid #f3dfb3;border-radius:8px">Every tensile test is marked Skip — nothing is left to test.</div>`;
+  return `<table id="pmm-tn-right-table" style="width:100%;border-collapse:collapse;font-size:10.5px;color:#222"><thead><tr>${["Item","Product","Test lab","Tensile test cost"].map((h,i)=>`<th style="text-align:${i===3?"right":i===0?"center":"left"};padding:6px 8px;font-size:9px;font-weight:700;color:#556;text-transform:uppercase;letter-spacing:.3px;background:#f3f5f9;border-bottom:1.5px solid #dfe3ec;white-space:nowrap">${h}</th>`).join("")}</tr></thead>
+    <tbody>${T.keep.map(r=>`<tr>${td(r.n,"center","color:#888")}${td(`<span title="${esc(r.sku)}">${esc(r.desc)}</span>${r.showSku?` <span style="color:#9aa3b5">· ${esc(r.sku)}</span>`:""}`)}${td(esc(r.lab)||"—")}${td(r.cost?usd(r.cost):"—","right","font-weight:600")}</tr>`).join("")}</tbody>
+    <tfoot><tr style="background:#eaf6ee"><td colspan="3" style="padding:7px 8px;font-weight:800;color:#14532d">Total spend after Skip · ${T.keep.length} test${T.keep.length!==1?"s":""}</td><td style="padding:7px 8px;text-align:right;font-weight:800;color:#14532d">${usd(T.after)}</td></tr></tfoot></table>`;
+}
+function pmmTnLineHtml(T){
+  const usd=pmmFqUsd, dirty=pmmTdDirty()?` <span style="color:#b07000;font-weight:600">· includes unsaved changes</span>`:"";
+  if(!T.skipped) return `💡 <b>No tensile test is marked Skip yet</b> — before and after are the same: <b>${usd(T.all)}</b> for ${T.total} test${T.total!==1?"s":""}.${dirty}`;
+  return `💡 <b>Actual savings from the Skip disposition:</b> skipping <b>${T.skipped} of ${T.total}</b> tensile tests brings the spend from <b>${usd(T.all)}</b> before to <b>${usd(T.after)}</b> after — <b style="color:#0a7a46">${usd(T.saved)} saved (${T.pct}%)</b>.${dirty}`;
+}
+function pmmTensileSectionHtml(entries){
+  const rows=pmmTensileRows(entries), T=pmmTensileTotals(rows), usd=pmmFqUsd, dirty=pmmTdDirty();
+  const labs=[...new Set(rows.map(r=>r.lab).filter(Boolean))];
+  const head=`<div style="background:#0e1b3d;border-radius:9px 9px 0 0;padding:11px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">🧾 Tensile (Physical) Testing</div>
+    <div style="font-size:10.5px;color:#a8b8d8;margin-top:2px">${labs.length?`Test lab: <b style="color:#fff">${labs.map(esc).join(", ")}</b> · `:""}Mark a test <b style="color:#fff">Skip</b> when it is already covered — the right table then shows the testing we actually need.</div></div>
+    <div style="display:flex;align-items:center;gap:10px"><span id="pmm-tn-dirty" style="display:${dirty?"inline":"none"};font-size:10.5px;color:#ffd27a;font-weight:700">● unsaved changes</span><button id="pmm-tn-save" onclick="pmmOpenTensileSave()" title="Saved to the &quot;${PMM_TENSILE_SHEET}&quot; tab (asks for the Save password)" style="padding:6px 13px;font-size:11px;font-weight:700;color:${dirty?"#fff":"#8a96b2"};background:${dirty?"#0073ea":"rgba(255,255,255,.1)"};border:none;border-radius:7px;cursor:${dirty?"pointer":"default"}">💾 Save remarks &amp; disposition</button></div></div>`;
+  if(!rows.length) return `<div id="pmm-tensile-section" style="margin-top:22px;border:1.5px solid #dfe3ec;border-radius:10px;background:#fff">${head}<div style="padding:22px;text-align:center;font-size:11.5px;color:#999">No Tensile (Physical) quotes in this view yet — add a quotation under Physical Testing in a Test Lab section.</div></div>`;
+  const th=(t,al)=>`<th style="text-align:${al||"left"};padding:6px 8px;font-size:9px;font-weight:700;color:#556;text-transform:uppercase;letter-spacing:.3px;background:#f3f5f9;border-bottom:1.5px solid #dfe3ec;white-space:nowrap">${t}</th>`;
+  const td=(v,al,st)=>`<td style="padding:4px 8px;border-bottom:1px solid #eef0f4;text-align:${al||"left"};vertical-align:middle;${st||""}">${v}</td>`;
+  const left=rows.map(r=>`<tr data-key="${esc(r.key)}" style="${pmmTdIsSkip(r.disp)?"background:#fff6e0":""}">${td(r.n,"center","color:#888")}${td(`<span title="${esc(r.sku)}">${esc(r.desc)}</span>${r.showSku?` <span style="color:#9aa3b5">· ${esc(r.sku)}</span>`:""}`)}${td(esc(r.lab)||"—")}${td(r.cost?usd(r.cost):"—","right","font-weight:600")}${td(`<input class="pmm-tn-remarks" value="${esc(r.remarks)}" title="${esc(r.remarks)}" placeholder="Add remarks…" oninput="pmmTdSet(this.closest('tr').dataset.key,'remarks',this.value)" style="width:100%;min-width:190px;padding:4px 7px;font-size:10.5px;border:1px solid #dfe3ec;border-radius:5px;color:#333;background:#fff"/>`)}${td(`<select class="pmm-tn-disp" onchange="pmmTdSet(this.closest('tr').dataset.key,'disp',this.value)" style="padding:4px 6px;font-size:10.5px;border:1px solid #dfe3ec;border-radius:5px;color:#333;background:#fff;font-weight:${pmmTdIsSkip(r.disp)?700:400}"><option value="" ${pmmTdIsSkip(r.disp)?"":"selected"}>Test</option><option value="Skip" ${pmmTdIsSkip(r.disp)?"selected":""}>Skip</option></select>`)}</tr>`).join("");
+  return `<div id="pmm-tensile-section" style="margin-top:22px;border:1.5px solid #dfe3ec;border-radius:10px;background:#fff">${head}
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;padding:14px 16px 0">
+      <div style="flex:2.4 1 600px;min-width:0"><div style="font-size:11px;font-weight:800;color:#222;margin-bottom:6px">All tensile quotes <span style="font-weight:400;color:#888">· ${rows.length} test${rows.length!==1?"s":""}</span></div>
+        <div style="overflow-x:auto"><table id="pmm-tn-left" style="width:100%;border-collapse:collapse;font-size:10.5px;color:#222"><thead><tr>${th("Item","center")}${th("Product")}${th("Test lab")}${th("Tensile test cost","right")}${th("Remarks")}${th("Disposition")}</tr></thead><tbody>${left}</tbody>
+        <tfoot><tr style="background:#eef3fb"><td colspan="3" style="padding:7px 8px;font-weight:800;color:#0e1b3d">Total spend · ${rows.length} test${rows.length!==1?"s":""}</td><td id="pmm-tn-left-total" style="padding:7px 8px;text-align:right;font-weight:800;color:#0e1b3d">${usd(T.all)}</td><td colspan="2"></td></tr></tfoot></table></div></div>
+      <div style="flex:1 1 290px;min-width:0"><div style="font-size:11px;font-weight:800;color:#14532d;margin-bottom:6px">Actual testing needed <span style="font-weight:400;color:#888">· after Skip</span></div><div id="pmm-tn-right">${pmmTnRightHtml(rows,T)}</div></div>
+    </div>
+    <div id="pmm-tn-line" style="margin:14px 16px 16px;padding:9px 14px;border-radius:8px;background:#effaf4;border:1px solid #bfe8d1;font-size:11.5px;color:#14532d">${pmmTnLineHtml(T)}</div>
+  </div>`;
+}
+// editing a remark / disposition updates the right table, the totals and the one line in place (the typing never loses focus)
+function pmmTdSet(key,field,value){
+  const meta=pmmTensileRows(pmmInsightEntries()).find(r=>r.key===key); if(!meta) return;
+  const cur=pmmTdGet(key), next={remarks:cur.remarks,disp:cur.disp}; next[field]=value;
+  const saved=pmmTensileDisp[key]||{remarks:"",disp:""};
+  if(next.remarks===String(saved.remarks||"")&&next.disp===String(saved.disp||"")) delete pmmTensileDraft[key];
+  else pmmTensileDraft[key]={remarks:next.remarks,disp:next.disp,sku:meta.sku,lab:meta.lab,product:meta.desc};
+  pmmTensileRefresh();
+}
+function pmmTensileRefresh(){
+  const sec=document.getElementById("pmm-tensile-section"); if(!sec) return;
+  const rows=pmmTensileRows(pmmInsightEntries()), T=pmmTensileTotals(rows);
+  sec.querySelectorAll("#pmm-tn-left tbody tr[data-key]").forEach(tr=>{ const r=rows.find(x=>x.key===tr.dataset.key), skip=!!r&&pmmTdIsSkip(r.disp); tr.style.background=skip?"#fff6e0":""; const s=tr.querySelector(".pmm-tn-disp"); if(s) s.style.fontWeight=skip?700:400; });
+  const R=document.getElementById("pmm-tn-right"); if(R) R.innerHTML=pmmTnRightHtml(rows,T);
+  const L=document.getElementById("pmm-tn-line"); if(L) L.innerHTML=pmmTnLineHtml(T);
+  const dirty=pmmTdDirty(), d=document.getElementById("pmm-tn-dirty"), b=document.getElementById("pmm-tn-save");
+  if(d) d.style.display=dirty?"inline":"none";
+  if(b){ b.style.color=dirty?"#fff":"#8a96b2"; b.style.background=dirty?"#0073ea":"rgba(255,255,255,.1)"; b.style.cursor=dirty?"pointer":"default"; }
+}
+// ---- Tensile: save to the "Tensile Dispositions" tab (same pattern as the Final Quotes tab) ----
+async function pmmLoadTensileDisp(){
+  if(!accessToken) return;
+  try{
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent("'"+PMM_TENSILE_SHEET+"'!A1:F")}`,{headers:{Authorization:"Bearer "+accessToken}});
+    if(!res.ok){ pmmTensileDisp={}; return; }                 // the tab does not exist yet: nothing has been entered
+    const data=await res.json(), out={};
+    (data.values||[]).slice(1).forEach((r,i)=>{ const sku=String(r[0]||"").trim(); if(!sku) return; const lab=String(r[1]||"").trim(), remarks=String(r[2]||""), disp=String(r[3]||""); if(!remarks&&!disp) return;
+      out[pmmTdKey(sku,lab)]={row:i+2,sku,lab,remarks,disp,product:String(r[4]||""),savedAt:String(r[5]||"")}; });
+    pmmTensileDisp=out;
+    if(!pmmTdDirty()&&typeof pmmRerenderActiveTab==="function"&&!document.activeElement?.classList?.contains("pmm-tn-remarks")) pmmRerenderActiveTab();
+  }catch(e){ console.warn("Tensile dispositions not loaded:",e); }
+}
+async function pmmEnsureTensileTab(){
+  const auth={Authorization:"Bearer "+accessToken}, base=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}`;
+  const res=await fetch(base+"?fields=sheets.properties",{headers:auth}); if(!res.ok) throw new Error(`Could not read the spreadsheet (${res.status}).`);
+  const data=await res.json();
+  if(!(data.sheets||[]).some(x=>x.properties.title===PMM_TENSILE_SHEET)){
+    const r2=await fetch(base+":batchUpdate",{method:"POST",headers:{...auth,"Content-Type":"application/json"},body:JSON.stringify({requests:[{addSheet:{properties:{title:PMM_TENSILE_SHEET}}}]})});
+    if(!r2.ok){ const t=await r2.text(); throw new Error(`Could not create the "${PMM_TENSILE_SHEET}" tab (${r2.status}): ${t.slice(0,150)}`); }
+  }
+  const h=await fetch(`${base}/values/${encodeURIComponent("'"+PMM_TENSILE_SHEET+"'!A1:F1")}`,{headers:auth}), hv=h.ok?((await h.json()).values||[]):[];
+  if(!hv.length||!hv[0].length){
+    const hp=await fetch(`${base}/values/${encodeURIComponent("'"+PMM_TENSILE_SHEET+"'!A1:F1")}?valueInputOption=USER_ENTERED`,{method:"PUT",headers:{...auth,"Content-Type":"application/json"},body:JSON.stringify({values:[["SKU","Test Lab","Remarks","Disposition","Product","Saved At"]]})});
+    if(!hp.ok){ const t=await hp.text(); throw new Error(`Could not write the headers (${hp.status}): ${t.slice(0,150)}`); }
+  }
+}
+function pmmOpenTensileSave(){
+  if(!pmmTdDirty()) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  openModal({type:"pmmTensileSave"});
+  setTimeout(()=>document.getElementById("pmm-td-pw")?.focus(),60);
+}
+async function pmmSubmitTensileSave(){
+  const errEl=document.getElementById("pmm-td-err"), setErr=m=>{ if(errEl) errEl.textContent=m; };
+  const pwd=document.getElementById("pmm-td-pw")?.value||"";
+  if(!pwd){ setErr("Enter the Save password to save."); return; }
+  if((await pmmHashText(pwd))!==PMM_SAVE_PASSWORD_HASH){ setErr("Incorrect password."); const pw=document.getElementById("pmm-td-pw"); if(pw){ pw.value=""; pw.focus(); } return; }
+  setErr(""); await pmmSaveTensile();
+}
+async function pmmSaveTensile(){
+  const btn=document.getElementById("pmm-td-save"); if(btn){ btn.disabled=true; btn.textContent="Saving…"; }
+  const auth={Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, base=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/`;
+  try{
+    await pmmEnsureTensileTab();
+    const cur=await fetch(base+encodeURIComponent("'"+PMM_TENSILE_SHEET+"'!A1:F"),{headers:auth}), oldRows=cur.ok?(((await cur.json()).values||[]).length-1):0;
+    const now=new Date().toISOString(), merged={...pmmTensileDisp};
+    Object.entries(pmmTensileDraft).forEach(([k,v])=>{ merged[k]={...(merged[k]||{}),...v,savedAt:now}; });
+    const vals=Object.values(merged).filter(v=>String(v.remarks||"").trim()||String(v.disp||"").trim()).map(v=>[v.sku,v.lab,v.remarks||"",v.disp||"",v.product||"",v.savedAt||now]);
+    if(vals.length){ const r=await fetch(base+encodeURIComponent(`'${PMM_TENSILE_SHEET}'!A2:F${vals.length+1}`)+"?valueInputOption=USER_ENTERED",{method:"PUT",headers:auth,body:JSON.stringify({values:vals})}); if(!r.ok){ const t=await r.text(); throw new Error(`Sheets write failed (${r.status}): ${t.slice(0,150)}`); } }
+    if(oldRows>vals.length){ const r=await fetch(base+encodeURIComponent(`'${PMM_TENSILE_SHEET}'!A${vals.length+2}:F${oldRows+1}`)+":clear",{method:"POST",headers:auth,body:"{}"}); if(!r.ok){ const t=await r.text(); throw new Error(`Sheets write failed (${r.status}): ${t.slice(0,150)}`); } }
+    pmmTensileDraft={};
+    await pmmLoadTensileDisp();
+    closeModal(); pmmRender();
+  }catch(e){
+    const errEl=document.getElementById("pmm-td-err"); if(errEl) errEl.textContent="Could not save: "+e.message;
+    if(btn){ btn.disabled=false; btn.textContent="💾 Save"; }
+  }
+}
+
+function pmmRenderCompiled(){
+  const body=document.getElementById("pmm-body"); if(!body) return;
+  pmmInitSearchBar();
+  const entries=pmmGetFilteredEntries();
+  pmmEntries.forEach(e=>e.components.forEach(c=>pmmMaterialColor(c.material))); // stable first-seen color order
+  const sub=document.getElementById("pmm-sub-slot"); if(sub) sub.innerHTML=pmmSubTabsHtml(entries);
+  const slot=document.getElementById("pmm-filter-slot"); if(slot) slot.innerHTML=pmmFilterSlotHtml(entries);
+
+  let html=`<div style="max-width:100%;margin:0 auto">`;
   if(!pmmEntries.length){
-    html+=pmmSectionTitleHtml([])+`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">🧩</div><div style="font-size:12px">No entries yet — submit one from the "New Entry" tab, or open the table view above and type them in.</div></div>`;
-  } else {
+    html+=pmmSectionTitleHtml([])+`<div style="text-align:center;padding:60px;color:#aaa"><div style="font-size:32px;margin-bottom:8px">🧩</div><div style="font-size:12px">No entries yet — submit one from the "New Entry" tab, or open the table view above and type or paste them in.</div></div>`;
+  } else if(pmmCompiledSub==="insights"){
+    // tab 2: Material consolidation & sample reduction → Sample Optimization Summary / Test Lab Comparison → Tensile
     html+=pmmInsightsHtml();
+    const ie=pmmInsightEntries(); if(ie.length) html+=pmmTensileSectionHtml(ie);
+  } else {
+    // tab 1: the Actual Compilation
     if(!entries.length){
       html+=pmmSectionTitleHtml(entries)+`<div style="text-align:center;padding:40px;color:#aaa"><div style="font-size:12px">No entries match the current filter/search.</div></div>`;
     } else {
