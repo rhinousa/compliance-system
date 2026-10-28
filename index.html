@@ -8236,50 +8236,46 @@ function pmmLabCompareSectionHtml(entries,opts){
   const labsLower=labs.map(l=>l.toLowerCase()), fU=pmmFqUsd, fN=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:1}), sv=n=>(n<0?"-":"")+"$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:2});
   const KINDS=[["chem","Chemical"],["corr","Corrosion <span style=\"color:#a8b8d8;font-weight:400\">(metal)</span>"]];
   const data={}; KINDS.forEach(([k])=>{ data[k]={all:pmmSavingsFor(entries,k,snap?null:labsLower), labs:labs.map(l=>({lab:l,r:pmmSavingsFor(entries,k,[l.toLowerCase()])})).filter(x=>x.r.has)}; });
-  const best={}; KINDS.forEach(([k])=>{ const rs=data[k].labs; best[k]={cost:rs.length>1?Math.max(...rs.map(x=>x.r.costSaved)):null, samp:rs.length>1?Math.max(...rs.map(x=>x.r.samplesSaved)):null, act:null}; });
+  const best={}; KINDS.forEach(([k])=>{ best[k]={fin:null}; });
   const fq=(kind,scope,r)=>{ if(!scope) return null; const q=pmmFinalQuotes[pmmFqKey(scope,kind)]; if(!q) return null; const s=Math.round((r.totalCost-q.final)*100)/100; return {final:q.final,saved:s,pct:r.totalCost>0?Math.round(s/r.totalCost*1000)/10:0,stale:Math.abs((q.original||0)-r.totalCost)>0.5}; };
-  KINDS.forEach(([k])=>{ data[k].labs.forEach(x=>{ x.f=snap?null:fq(k,pmmScopeWithLabs([x.lab]),x.r); }); const fs=data[k].labs.filter(x=>x.f); best[k].act=fs.length>1?Math.max(...fs.map(x=>x.f.saved)):null; });
+  KINDS.forEach(([k])=>{ data[k].labs.forEach(x=>{ x.f=snap?null:fq(k,pmmScopeWithLabs([x.lab]),x.r); }); const fs=data[k].labs.filter(x=>x.f); best[k].fin=fs.length>1?Math.min(...fs.map(x=>x.f.final)):null; });
   const td=(v,st)=>`<td style="padding:3px 6px;text-align:right;white-space:nowrap;${st||""}">${v}</td>`;
-  const fqCells=(f,star)=>f?`${td(fU(f.final)+(f.stale?' <span title="The quotes changed after this final quote was entered" style="color:#fdab3d;cursor:help">⚠</span>':""),"color:#ffd27a;font-weight:700;border-left:1px solid rgba(255,255,255,.16)")}${td((star?"★ ":"")+sv(f.saved),`font-weight:700;color:${f.saved>0?"#7ee8b8":f.saved<0?"#ff9b9b":"#e8ecf5"}${star?";background:rgba(255,210,122,.2)":""}`)}${td((f.saved>0?"✓ ":f.saved<0?"✗ ":"")+f.pct+"%",`font-weight:700;color:${f.saved>0?"#7ee8b8":f.saved<0?"#ff9b9b":"#e8ecf5"}`)}`:`${td("—","color:#6f7d99;border-left:1px solid rgba(255,255,255,.16)")}${td("—","color:#6f7d99")}${td("—","color:#6f7d99")}`;
-  const HL="background:rgba(126,232,184,.10);font-weight:800;color:#7ee8b8;", HLB="background:rgba(126,232,184,.26);font-weight:800;color:#b6f5d8;";
-  const rowCells=(r,isBest,f)=>`${td(fN(r.consolidated))}${td(fN(r.totalSamples))}${td(fN(r.repSamples))}${td(r.repPct+"%","color:#8ab4f8")}${td((isBest&&isBest.samp?"★ ":"")+fN(r.samplesSaved),isBest&&isBest.samp?HLB:HL)}${td(fU(r.totalCost))}${td(fU(r.repCost))}${td((isBest&&isBest.cost?"★ ":"")+fU(r.costSaved),isBest&&isBest.cost?HLB:HL)}${td(r.pctSaved+"%","color:#7ee8b8;font-weight:600")}${fqCells(f,isBest&&isBest.act)}`;
+  const TINT="background:rgba(255,210,122,.09)", SGN=f=>f.saved>0?"#7ee8b8":f.saved<0?"#ff9b9b":"#e8ecf5";
+  const fqCells=(f,star)=>f?`${td((star?"★ ":"")+fU(f.final)+(f.stale?' <span title="The quotes changed after this final quote was entered" style="color:#fdab3d;cursor:help">⚠</span>':""),"font-weight:700;border-left:1px solid rgba(255,255,255,.16);"+(star?"background:rgba(255,210,122,.34);color:#fff3cf":"color:#ffd27a;"+TINT))}${td(sv(f.saved),`font-weight:600;color:${SGN(f)}`)}${td((f.saved>0?"✓ ":f.saved<0?"✗ ":"")+f.pct+"%",`font-weight:600;color:${SGN(f)}`)}`:`${td("—","color:#6f7d99;border-left:1px solid rgba(255,255,255,.16);"+TINT)}${td("—","color:#6f7d99")}${td("—","color:#6f7d99")}`;
+  const rowCells=(r,isBest,f)=>`${td(fN(r.consolidated))}${td(fN(r.totalSamples))}${td(fN(r.repSamples))}${td(r.repPct+"%","color:#8ab4f8")}${td(fN(r.samplesSaved))}${td(fU(r.totalCost))}${td(fU(r.repCost))}${td(fU(r.costSaved))}${td(r.pctSaved+"%")}${fqCells(f,isBest&&isBest.fin)}`;
   const th=(t,al,st)=>`<th style="text-align:${al||"right"};padding:4px 6px;font-size:8.5px;font-weight:700;text-transform:uppercase;white-space:nowrap;${st||"color:#8ab4f8"}">${t}</th>`;
   const body=KINDS.map(([k,label])=>{
     const D=data[k]; if(!D.all.has) return "";
     const scopeAll=snap?(opts.scopeBase||null):pmmScopeWithLabs(labs);
     const head=`<tr style="border-top:1px solid rgba(255,255,255,.18);border-bottom:1px solid rgba(255,255,255,.08)"><td style="padding:4px 6px;font-weight:800;color:#fff;white-space:nowrap">${label} <span style="color:#a8b8d8;font-weight:400;font-size:8.5px">${snap?"all labs":"all selected labs"}</span></td>${rowCells(D.all,null,fq(k,scopeAll,D.all))}</tr>`;
-    const lr=D.labs.map(({lab,r,f})=>{ const isBest={cost:best[k].cost!=null&&Math.abs(r.costSaved-best[k].cost)<0.005, samp:best[k].samp!=null&&r.samplesSaved===best[k].samp, act:best[k].act!=null&&!!f&&Math.abs(f.saved-best[k].act)<0.005};
+    const lr=D.labs.map(({lab,r,f})=>{ const isBest={fin:best[k].fin!=null&&!!f&&Math.abs(f.final-best[k].fin)<0.005};
       return `<tr data-lab="${esc(lab)}" data-kind="${k}" style="border-bottom:1px solid rgba(255,255,255,.06)"><td style="padding:3px 6px 3px 20px;border-left:3px solid ${pmmLabColor(lab)};white-space:nowrap">${pmmLabChip(lab)} <span style="color:#a8b8d8;font-size:8.5px">${r.products} product${r.products!==1?"s":""}</span></td>${rowCells(r,isBest,f)}</tr>`; }).join("");
     return head+lr;
   }).join("");
-  // ---- insight: which lab saves the most money — the final quotes decide; projected savings only where none is entered yet ----
-  const lines=[], tot={}, proj={}, doneKinds=[]; let waiting=false;
-  const near=(a,b)=>Math.abs(a-b)<0.005, J=a=>a.map(esc).join(" / "), G=t=>`<b style="color:#7ee8b8">${t}</b>`;
+  // ---- insight: where is the final quote the cheapest? (the projected "After" cost is only a stand-in until final quotes are entered) ----
+  const lines=[], comparable=[]; let waiting=false;
+  const near=(a,b)=>Math.abs(a-b)<0.005, J=a=>a.map(esc).join(" / "), G=t=>`<b style="color:#ffd27a">${t}</b>`, r2=n=>Math.round(n*100)/100;
   KINDS.forEach(([k])=>{
     const rs=data[k].labs, name=PMM_KIND_LABEL[k];
     if(rs.length===1){ lines.push(`<b>${name}:</b> only ${esc(rs[0].lab)} has quotes, so there is nothing to compare.`); return; }
     if(rs.length<2) return;
-    rs.forEach(x=>{ proj[x.lab]=(proj[x.lab]||0)+x.r.costSaved; });
     const withF=rs.filter(x=>x.f), noF=rs.filter(x=>!x.f);
     if(!snap&&noF.length) waiting=true;
-    if(!withF.length){ const m=Math.max(...rs.map(x=>x.r.costSaved)), w=rs.filter(x=>near(x.r.costSaved,m)); lines.push(`<b>${name}:</b> no final quote yet — projected: ${G(J(w.map(x=>x.lab)))} saves the most, ${fU(m)} (${w[0].r.pctSaved}%).`); return; }
-    const ranked=withF.slice().sort((a,b)=>b.f.saved-a.f.saved), topv=ranked[0].f.saved, lead=ranked.filter(x=>near(x.f.saved,topv));
-    const wait=noF.length?` Waiting for the final quote from ${J(noF.map(x=>x.lab))} (projected ${noF.map(x=>sv(x.r.costSaved)).join(" / ")}).`:"";
-    if(withF.length===1){ const x=withF[0]; lines.push(`<b>${name}:</b> only ${esc(x.lab)} has a final quote so far — ${x.f.saved>0?`it saves ${sv(x.f.saved)} (${x.f.pct}%) off its original ${fU(x.r.totalCost)}`:`it is not below its original ${fU(x.r.totalCost)}`}.${wait}`); return; }
-    doneKinds.push(name); withF.forEach(x=>{ tot[x.lab]=(tot[x.lab]||0)+x.f.saved; });
-    const rest=ranked.filter(x=>!lead.includes(x)).map(x=>`${esc(x.lab)} ${sv(x.f.saved)} (${x.f.pct}%)`);
-    lines.push(topv>0?`<b>${name}:</b> on the final quotes, ${G(J(lead.map(x=>x.lab)))} saves the most — ${sv(topv)} (${lead[0].f.pct}%) off its original ${fU(lead[0].r.totalCost)}${rest.length?`; ${rest.join("; ")}`:""}.${wait}`:`<b>${name}:</b> on the final quotes no lab is below its original cost yet.${wait}`);
+    if(!withF.length){ const m=Math.min(...rs.map(x=>x.r.repCost)), w=rs.filter(x=>near(x.r.repCost,m)); lines.push(`<b>${name}:</b> no final quote yet — projected cheapest after consolidation: ${G(J(w.map(x=>x.lab)))} at ${fU(m)}.`); return; }
+    if(withF.length===1){ lines.push(`<b>${name}:</b> only ${esc(withF[0].lab)} has a final quote so far (${fU(withF[0].f.final)}). Waiting for ${J(noF.map(x=>x.lab))} before the labs can be compared.`); return; }
+    const m=Math.min(...withF.map(x=>x.f.final)), lead=withF.filter(x=>near(x.f.final,m)), rest=withF.filter(x=>!lead.includes(x)).sort((a,b)=>a.f.final-b.f.final);
+    comparable.push({name,withF});
+    lines.push(`<b>${name}:</b> ${G(J(lead.map(x=>x.lab)))} has the cheapest final quote — ${fU(m)}${rest.length?`; ${rest.map(x=>`${esc(x.lab)} ${fU(x.f.final)} (+${fU(r2(x.f.final-m))})`).join("; ")}`:""}.${noF.length?` Waiting for the final quote from ${J(noF.map(x=>x.lab))}.`:""}`);
   });
   let overall="";
-  const tl=Object.keys(tot);
-  if(tl.length>1){ const m=Math.max(...tl.map(l=>tot[l])), w=tl.filter(l=>near(tot[l],m)); if(m>0) overall=`<b>Overall (final quotes):</b> ${G(J(w))} saves the most — ${sv(m)} across ${doneKinds.join(" and ")}.`; }
-  else { const pl=Object.keys(proj); if(pl.length>1){ const m=Math.max(...pl.map(l=>proj[l])), w=pl.filter(l=>near(proj[l],m)); if(m>0) overall=`<b>Overall:</b> projected only — ${G(J(w))} saves the most, ${sv(m)} in total.`; } }
+  if(comparable.length>1){ const cand=labs.filter(l=>comparable.every(c=>c.withF.some(x=>x.lab===l))); if(cand.length>1){ const tot=Object.fromEntries(cand.map(l=>[l,comparable.reduce((a,c)=>a+c.withF.find(x=>x.lab===l).f.final,0)])); const m=Math.min(...cand.map(l=>tot[l])), w=cand.filter(l=>near(tot[l],m)), o=cand.filter(l=>!w.includes(l)); overall=`<b>Overall (${comparable.map(c=>c.name).join(" + ")}):</b> ${G(J(w))} has the cheapest final quotes — ${fU(r2(m))} in total${o.length?`; ${o.map(l=>`${esc(l)} ${fU(r2(tot[l]))}`).join("; ")}`:""}.`; } }
+  const note=comparable.length?`<div style="margin-top:5px;color:#a8b8d8;font-size:9.5px">Each lab's final quote covers the products that lab tests.</div>`:"";
   const hint=waiting?`<div style="margin-top:5px;color:#a8b8d8;font-size:9.5px">Final quotes are entered per lab: tick one lab, then ✏ Enter final quote. They appear here automatically.</div>`:"";
-  const insight=lines.length||overall?`<div id="pmm-lab-insight" style="margin-top:10px;background:rgba(255,255,255,.06);border-radius:7px;padding:9px 12px;font-size:10.5px;line-height:1.75;color:#e8ecf5"><span style="font-weight:800;color:#ffd27a;margin-right:6px">💡 Insight — cost savings</span>${lines.map(l=>`<div style="margin-top:2px">${l}</div>`).join("")}${overall?`<div style="margin-top:2px;padding-top:3px;border-top:1px solid rgba(255,255,255,.1)">${overall}</div>`:""}${hint}</div>`:"";
+  const insight=lines.length||overall?`<div id="pmm-lab-insight" style="margin-top:10px;background:rgba(255,255,255,.06);border-radius:7px;padding:9px 12px;font-size:10.5px;line-height:1.75;color:#e8ecf5"><span style="font-weight:800;color:#ffd27a;margin-right:6px">💡 Insight — cheapest final quote</span>${lines.map(l=>`<div style="margin-top:2px">${l}</div>`).join("")}${overall?`<div style="margin-top:2px;padding-top:3px;border-top:1px solid rgba(255,255,255,.1)">${overall}</div>`:""}${note}${hint}</div>`:"";
   const noData=!body;
   return `<div id="pmm-lab-compare-section" style="margin-top:${snap?"10px":"12px"};background:#0e1b3d;border-radius:8px;padding:12px 14px">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px"><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">⚖️ Test Lab Comparison</div><div style="font-size:9.5px;color:#a8b8d8">Chemical and Corrosion · each lab's own consolidation result · ★ = best${snap?" · products as they are now":""}</div></div>
-    ${noData?`<div style="font-size:11px;color:#a8b8d8">No Chemical or Corrosion quotes for these labs yet.</div>`:`<div style="overflow-x:auto"><table id="pmm-lab-compare-table" style="width:100%;border-collapse:collapse;font-size:9.5px;color:#e8ecf5"><thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">${th("Testing type / Test lab","left")}${th("Consolidated")}${th("Samples")}${th("Rep.")}${th("Rep. %")}${th("Samples saved","right","color:#7ee8b8")}${th("Cost")}${th("After")}${th("Cost saved","right","color:#7ee8b8")}${th("%")}${th("Final quote","right","color:#ffd27a;border-left:1px solid rgba(255,255,255,.16)")}${th("Actual saved","right","color:#ffd27a")}${th("Actual %","right","color:#ffd27a")}</tr></thead><tbody>${body}</tbody></table></div>${insight}`}
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px"><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">⚖️ Test Lab Comparison</div><div style="font-size:9.5px;color:#a8b8d8">Chemical and Corrosion · each lab's own consolidation result · ★ = cheapest final quote${snap?" · products as they are now":""}</div></div>
+    ${noData?`<div style="font-size:11px;color:#a8b8d8">No Chemical or Corrosion quotes for these labs yet.</div>`:`<div style="overflow-x:auto"><table id="pmm-lab-compare-table" style="width:100%;border-collapse:collapse;font-size:9.5px;color:#e8ecf5"><thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">${th("Testing type / Test lab","left")}${th("Consolidated")}${th("Samples")}${th("Rep.")}${th("Rep. %")}${th("Samples saved")}${th("Cost")}${th("After")}${th("Cost saved")}${th("%")}${th("Final quote","right","color:#ffd27a;border-left:1px solid rgba(255,255,255,.16);background:rgba(255,210,122,.09)")}${th("Actual saved","right","color:#ffd27a")}${th("Actual %","right","color:#ffd27a")}</tr></thead><tbody>${body}</tbody></table></div>${insight}`}
   </div>`;
 }
 // ---- Tensile (Physical): same navy look as the Sample Optimization Summary; KPI cards on the left, "By test lab" table on the right ----
