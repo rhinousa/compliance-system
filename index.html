@@ -993,19 +993,21 @@ function applyReplication(groups){
     if(!byParent[key]) byParent[key]=[];
     byParent[key].push(i);
   });
+  const nm=v=>String(v||"").trim().toLowerCase().replace(/\s+/g," ");
+  const hasRes=s=>!!(s.p24.length||s.p25.length||s.p26.length);
   Object.values(byParent).forEach(siblings=>{
     if(siblings.length<2) return;
     const donor=siblings.reduce((best,cur)=>{
-      const cs=cur.subs.filter(s=>s.p24.length||s.p25.length||s.p26.length).length;
-      const bs=best.subs.filter(s=>s.p24.length||s.p25.length||s.p26.length).length;
+      const cs=cur.subs.filter(hasRes).length;
+      const bs=best.subs.filter(hasRes).length;
       return cs>bs?cur:best;
     },siblings[0]);
     if(!donor.subs.length) return;
     siblings.forEach(item=>{
       if(item.id===donor.id) return;
-      const hasData=item.subs.some(s=>s.p24.length||s.p25.length||s.p26.length);
+      const hasData=item.subs.some(hasRes);
       if(!hasData){
-        item.subs=donor.subs.map(s=>({...s,_replicated:true,_replicatedFrom:donor.name}));
+        item.subs=donor.subs.map(s=>({...s,_replicated:true,_replicatedFrom:donor.name,_replicatedFromRowId:donor.rowId}));
         // replicate compliance fields
         if(!item.meetsClaim)  item.meetsClaim=donor.meetsClaim;
         if(!item.mechTesting) item.mechTesting=donor.mechTesting;
@@ -1018,6 +1020,15 @@ function applyReplication(groups){
         // a linked SKU shows its mother's supplier test data too
         if(!(item.supplierTests&&item.supplierTests.length)) item.supplierTests=donor.supplierTests||[];
         item._replicatedFrom=donor.name;
+      } else {
+        // A linked SKU with results of its own for SOME tests still REFERS to its mother for every test it has no results for:
+        // the family's data stays in one place (the mother) instead of being copied onto each SKU.
+        const ownDone=new Set(item.subs.filter(hasRes).map(s=>nm(s.name)));
+        const extra=donor.subs.filter(s=>hasRes(s)&&!ownDone.has(nm(s.name))).map(s=>({...s,_replicated:true,_replicatedFrom:donor.name,_replicatedFromRowId:donor.rowId}));
+        if(extra.length){
+          const extraNames=new Set(extra.map(s=>nm(s.name)));
+          item.subs=item.subs.filter(s=>hasRes(s)||!extraNames.has(nm(s.name))).concat(extra);   // its own EMPTY row of the same test gives way to the mother's results
+        }
       }
     });
   });
@@ -5475,12 +5486,15 @@ function cdSubToEditTestType(sub){
   const yearBlocks=sub.yearBlocks||{};
   const originalYears=Object.keys(yearBlocks).filter(y=>yearBlocks[y]&&yearBlocks[y].length).map(y=>"y"+y);
   const allBlocks=Object.values(yearBlocks).flat();
-  return {
+  const tt={
     subId:sub.rowId, name:sub.name, std:sub.std, criteria:sub.criteria, target:sub.target,
     equipment:sub.equipment, accreditation:sub.accreditation, labs:sub.labs,
     originalYears,
     execs: allBlocks.length ? allBlocks.map(cdBlockToExec) : [cdNewExec()],
   };
+  if(sub._replicated){ tt._fromMother=true; tt._inheritedFrom=sub._replicatedFrom||""; tt._ownerRowId=String(sub._replicatedFromRowId||""); }
+  tt._sig=cdTtSig(tt);
+  return tt;
 }
 function cdBuildEditDraftFromItem(item){
   return {
@@ -5491,7 +5505,7 @@ function cdBuildEditDraftFromItem(item){
     country:item.country, colors:item.colors,
     channel: item.channel ? String(item.channel).split(",").map(s=>s.trim()).filter(Boolean) : [],
     statusRemarks: item.status||"",
-    testTypes: item.subs.length ? item.subs.map(cdSubToEditTestType) : [cdNewTestType()],
+    testTypes: item.subs.length ? item.subs.map(s=>{ const tt=cdSubToEditTestType(s); if(!tt._ownerRowId) tt._ownerRowId=String(item.rowId); return tt; }) : [cdNewTestType()],
   };
 }
 function cdOpenItemEdit(itemId){
@@ -5547,7 +5561,7 @@ function cdEditExecBlockHtml(tt, ti, ex, ei){
   </div>`;
 }
 function cdEditTestTypeBlockHtml(tt, ti){
-  return `<div style="border:1.5px solid #e0e3ea;border-radius:8px;padding:14px;margin-bottom:14px;background:#fafbfc">
+  return `<div style="border:1.5px solid #e0e3ea;border-radius:8px;padding:14px;margin-bottom:14px;background:#fafbfc">${tt._fromMother?cdInheritedNoteHtml(tt):""}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:11.5px;font-weight:700;color:#0073ea">${esc(tt.name)||`Test Type ${ti+1}`}</div>
       ${modal.draft.testTypes.length>1?`<button onclick="cdEditRemoveTestType(${ti})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
@@ -5625,9 +5639,16 @@ async function cdWriteTestTypesToSubitems(testTypes, parentItemId){
   if(!rawRes.ok) throw new Error(`Could not read "${SUBITEMS_SHEET}" (${rawRes.status})`);
   const rawData=await rawRes.json();
   const rawRows=rawData.values||[];
+  const hm0=await cdGetHeaderMap(SUBITEMS_SHEET); window.__cdSkippedForeign=[];
   for(const tt of testTypes){
+    if(tt._sig&&tt._sig===cdTtSig(tt)) continue;     // nothing changed in this test: its row is not touched
+    if(tt.subId&&hm0.s!==undefined&&hm0.parent_item_id!==undefined){
+      const fr=rawRows.slice(1).find(r=>String(r[hm0.s]||"").trim()===String(tt.subId)&&String(r[hm0.parent_item_id]||"").trim()!==String(parentItemId));
+      if(fr){ if(tt.execs.some(ex=>ex.supplier||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||(ex.samples||[]).some(q=>q.value||q.verdict))) window.__cdSkippedForeign.push(tt.name||"test"); continue; }   // another SKU's test: never copied onto this one, and no empty row is created for it
+    }
     const hasAnyExecData=tt.execs.some(ex=>ex.supplier||ex.wwl||ex.claim||ex.report||ex.lab||ex.cost||ex.date||(ex.samples||[]).some(s=>s.value||s.verdict));
     if(!tt.name.trim() && !tt.std.trim() && !hasAnyExecData) continue; // skip a fully-blank "+ Add Test Type" row
+    if(tt._inherited && !hasAnyExecData) continue;                      // shown from the mother SKU and nothing of its own entered: write nothing
     const yearBlocks={}, yearExecs={};
     tt.execs.forEach(ex=>{
       // a test standard / method on its own is part of the test's definition, not a result -- it needs a supplier, result, report, lab, cost or date to become one
@@ -5711,7 +5732,10 @@ async function cdWriteTestTypesToSubitems(testTypes, parentItemId){
   }
 }
 async function cdSaveTestTypes(){
-  await cdWriteTestTypesToSubitems(modal.draft.testTypes, modal.draft.rowId);
+  const d=modal.draft, self=String(d.rowId), ref=cdRefOwner(self,d.parentSku), groups={}, skipped=[];
+  d.testTypes.forEach(tt=>{ const o=tt.subId?(tt._ownerRowId||self):ref; (groups[o]=groups[o]||[]).push(tt); });
+  for(const [o,list] of Object.entries(groups)){ await cdWriteTestTypesToSubitems(list,o); skipped.push(...(window.__cdSkippedForeign||[])); }
+  window.__cdSkippedForeign=skipped;
 }
 async function cdSaveItemEdit(){
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
@@ -5724,7 +5748,7 @@ async function cdSaveItemEdit(){
     closeModal();
     await fetchSheetData();
     cdRenderActiveTab();
-    let syncNote="";
+    let syncNote=(window.__cdSkippedForeign&&window.__cdSkippedForeign.length)?"\\n\\nNote: the results shown for "+window.__cdSkippedForeign.join(", ")+" belong to the mother SKU, so they were NOT copied to this SKU.\\n":"";
     if(editedId&&cdCompletedTestIds.has(editedId)){ try{ await cdSyncCompletedRows([cdFindItemById(editedId)]); syncNote=" The Completed Test sheet is updated too."; }catch(e){ syncNote="\n\nBUT the Completed Test sheet could not be updated: "+e.message; } }
     if(editedId){ try{ const upd=await cdSyncListRows(cdFindItemById(editedId)); if(upd.length) syncNote+=" The "+upd.join(" and ")+" sheet"+(upd.length>1?"s are":" is")+" updated too."; }catch(e){ syncNote+="\n\nBUT the Tracking / Deferred items sheet could not be updated: "+e.message; } }
     alert("Saved to the sheet."+syncNote);
@@ -11778,6 +11802,25 @@ document.addEventListener("paste",ev=>{
 })();
 function cdMirrorRefresh(){ const src=document.getElementById("hdr-refresh"); if(!src) return; const cls=["loading","stale","error"].filter(c=>src.classList.contains(c)); document.querySelectorAll(".cd-refresh-clone").forEach(b=>{ b.className="hdr-refresh cd-refresh-clone "+cls.join(" "); }); }
 (function(){ const f=window.setSyncUI; if(typeof f==="function") window.setSyncUI=function(){ const r=f.apply(this,arguments); try{ cdMirrorRefresh(); }catch(e){} return r; }; })();
+// ═══ Round 37: one reference for the family — every test is saved on the row that owns it (the mother's), never copied onto a linked SKU ═══
+// signature of a test as it was loaded into the pop-up: an unchanged test is never written back (so a description edit cannot reformat the mother's rows)
+function cdTtSig(tt){ return JSON.stringify([tt.name,tt.std,tt.criteria,tt.target,tt.equipment,tt.accreditation,tt.labs,tt.execs]); }
+// where a NEW test typed on this SKU goes: a linked SKU with no results of its own records on the family's reference (the member that holds the results)
+function cdRefOwner(rowId,parentSku){
+  const items=[]; GROUPS.forEach(g=>g.items.forEach(i=>items.push(i)));
+  const self=items.find(i=>String(i.rowId)===String(rowId));
+  const key=String((self&&self.parentSku)||parentSku||"").trim(); if(!key) return String(rowId);
+  const fam=items.filter(i=>String(i.parentSku||i.name).trim()===key&&String(i.rowId)!==String(rowId));
+  const own=i=>(i.subs||[]).filter(s=>!s._replicated&&(s.p24.length||s.p25.length||s.p26.length)).length;
+  if(!fam.length||(self&&own(self)>0)) return String(rowId);          // alone, or a SKU that already holds results of its own: nothing moves behind your back
+  let best=null; fam.forEach(i=>{ if(!best||own(i)>own(best)) best=i; });
+  return best&&own(best)>0?String(best.rowId):String(rowId);
+}
+// ═══ Round 35: a linked SKU never gets its mother's results copied onto its own rows ═══
+// A linked SKU with no results yet DISPLAYS its mother's results. The edit pop-up used to load them too, so any Save wrote them onto the SKU's own rows.
+function cdInheritedNoteHtml(tt){
+  return `<div style="margin:-2px 0 12px;padding:8px 11px;border-radius:7px;background:#eef6ff;border:1px solid #c0d8f8;font-size:11px;color:#1c4f8a;line-height:1.5">🔗 This test belongs to the mother SKU <b>${esc(tt._inheritedFrom||"")}</b> — the one reference for the whole family. What you change here is saved on <b>that</b> test, so every SKU linked to it stays in step. Nothing is copied onto this SKU.</div>`;
+}
 // ═══ Round 32: menu header on one line (☰ + logo + "Compliance System"), and "Signed in with Google" beside the refresh icon in every app ═══
 (function(){
   const st=document.createElement("style");
