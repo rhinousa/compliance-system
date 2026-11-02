@@ -11753,6 +11753,36 @@ document.addEventListener("paste",ev=>{
 })();
 function cdMirrorRefresh(){ const src=document.getElementById("hdr-refresh"); if(!src) return; const cls=["loading","stale","error"].filter(c=>src.classList.contains(c)); document.querySelectorAll(".cd-refresh-clone").forEach(b=>{ b.className="hdr-refresh cd-refresh-clone "+cls.join(" "); }); }
 (function(){ const f=window.setSyncUI; if(typeof f==="function") window.setSyncUI=function(){ const r=f.apply(this,arguments); try{ cdMirrorRefresh(); }catch(e){} return r; }; })();
+// ═══ Round 32: menu header on one line (☰ + logo + "Compliance System"), and "Signed in with Google" beside the refresh icon in every app ═══
+(function(){
+  const st=document.createElement("style");
+  st.textContent=`
+  #nav-head{display:flex;align-items:flex-start;gap:10px;padding:0 0 14px;margin:0 0 12px;border-bottom:1px solid rgba(255,255,255,.12)}
+  #nav-head #nav-toggle{margin:0;align-self:flex-start;flex-shrink:0}
+  #nav-head .brand{flex:1;min-width:0;text-align:center!important;border-bottom:none!important;padding:0!important;margin:0!important}
+  #nav-head .brand img{max-width:100%;height:auto;margin:0 0 5px 0!important;display:block}
+  #nav-head .brand div{text-align:center;font-size:12.5px!important;line-height:1.2;white-space:nowrap}
+  #app-sidebar.collapsed #nav-head{justify-content:center;border-bottom:none;padding-bottom:6px;margin-bottom:6px}
+  #app-sidebar.collapsed #nav-head .brand{display:none}
+  .cd-refresh-wrap{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .cd-refresh-wrap .cd-refresh-clone{margin-left:0}
+  .cd-acct-clone{display:none;align-items:center;gap:6px;color:rgba(255,255,255,.6);font-size:11px;white-space:nowrap}
+  .cd-acct-clone .dot{width:7px;height:7px;border-radius:50%;background:#00c875;display:inline-block;flex-shrink:0}`;
+  document.head.appendChild(st);
+  // the ☰ button and the logo share one line; the title is centred under the logo
+  const sb=document.getElementById("app-sidebar"), br=sb&&sb.querySelector(".brand"), tg=document.getElementById("nav-toggle");
+  if(sb&&br&&tg&&!document.getElementById("nav-head")){ const head=document.createElement("div"); head.id="nav-head"; sb.insertBefore(head,sb.firstChild); head.appendChild(tg); head.appendChild(br); }
+  // "Signed in with Google" next to the icon-only refresh (it appears once you are signed in, like in the Compliance Dashboard header)
+  document.querySelectorAll(".cd-refresh-clone").forEach(b=>{
+    if(b.parentElement.classList.contains("cd-refresh-wrap")) return;
+    const w=document.createElement("div"); w.className="cd-refresh-wrap"; b.parentElement.insertBefore(w,b);
+    const a=document.createElement("div"); a.className="cd-acct-clone"; a.innerHTML='<span class="dot"></span>Signed in with Google'; w.appendChild(a); w.appendChild(b);
+  });
+  const src=document.getElementById("hdr-acctBtn");
+  const sync=()=>{ const on=!!(src&&src.style.display&&src.style.display!=="none"); document.querySelectorAll(".cd-acct-clone").forEach(a=>{ a.style.display=on?"inline-flex":"none"; }); };
+  if(src) new MutationObserver(sync).observe(src,{attributes:true,attributeFilter:["style"]});
+  sync();
+})();
 // ═══ Round 28: a shareable link for every view ═══
 // The address bar always shows the view you are on, e.g.  …/#/compliance/tracking   …/#/pmm/compiled/insights   …/#/pca/approval
 // Paste that link to a teammate: after they sign in they land on exactly that tab. Back/forward and editing the #… also work.
