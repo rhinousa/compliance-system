@@ -1972,7 +1972,7 @@ function renderMonitoring(){
   const hl=cdMonSummarize(rowsBase);
 
   const cg="minmax(180px,1.5fr) minmax(200px,2fr) minmax(300px,2fr)";
-  const hdrs=["Product / SKUs","Annual Test Requirements","Schedule per Test"];
+  const hdrs=["Product / SKUs","Annual Test Requirements","Test item"];
 
   let h=`<div style="padding:14px 18px">`;
 
@@ -3124,7 +3124,7 @@ function renderModals(){
               <div style="font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.3px">Components</div>
               <button onclick="pmmDetailAddRow('${e.id}')" style="font-size:10.5px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:4px 10px;cursor:pointer">+ Add Row</button>
             </div>
-            <table style="width:100%;border-collapse:collapse;margin-top:6px">
+            <div class="cd-xl-hint">▦ <a href="#" onclick="cdXlSelectAll(this);return false">Select all cells</a> · drag or Shift+click to select · Ctrl+C / Ctrl+V to copy and paste many cells</div><table class="cd-xl" data-xl="detail:${e.id}" tabindex="-1" style="width:100%;border-collapse:collapse;margin-top:6px">
               <thead><tr>
                 <th style="text-align:left;padding:5px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Item</th>
                 <th style="text-align:left;padding:5px 8px;font-size:9.5px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #e8eaed">Component</th>
@@ -3234,7 +3234,7 @@ function renderModals(){
         <div style="padding:14px 20px;border-top:1px solid #eee;display:flex;gap:10px;justify-content:flex-end;flex-shrink:0">
           <button onclick="closeModal()" style="padding:9px 16px;font-size:12px;font-weight:600;color:#555;background:#f0f2f5;border:none;border-radius:7px;cursor:pointer">Cancel</button>
           <button id="cd-edit-save-btn" onclick="cdSaveItemEdit()" style="padding:9px 20px;font-size:12px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:7px;cursor:pointer">💾 Save Changes</button>
-          <button id="cd-edit-complete-btn" onclick="cdMarkCompleted()" style="padding:9px 20px;font-size:12px;font-weight:700;color:#fff;background:#0a7a46;border:none;border-radius:7px;cursor:pointer">✅ Mark Completed</button>
+          ${(activeTab==="completedtest"||cdCompletedTestIds.has(modal.itemId))?"":`<button id="cd-edit-complete-btn" onclick="cdMarkCompleted()" style="padding:9px 20px;font-size:12px;font-weight:700;color:#fff;background:#0a7a46;border:none;border-radius:7px;cursor:pointer">✅ Mark Completed</button>`}
         </div>
       </div>
     </div>`;
@@ -3929,6 +3929,7 @@ async function cdSaveFailEdit(){
     if(/^20(24|25|26)$/.test(String(m.year))) sub["p"+String(m.year).slice(2)]=blocks;
     try{ localStorage.setItem(LS_CACHE,JSON.stringify(GROUPS)); }catch(e){}
     closeModal();
+    if(cdCompletedTestIds.has(m.itemId)){ cdSyncCompletedRows([cdFindItemById(m.itemId)]).catch(e=>console.warn("Completed Test sheet not updated: "+e.message)); }
     if(activeTab==="completedtest") cdRenderCompletedTest(); else renderAll();
   }catch(e){
     if(modal&&modal.type==="cdFailEdit"){ modal.saving=false; modal.error=String(e.message||e); renderModals(); }
@@ -5719,9 +5720,11 @@ async function cdSaveItemEdit(){
   try{
     await cdSaveItemFields();
     await cdSaveTestTypes();
+    const editedId=modal&&modal.itemId;
     closeModal();
     await fetchSheetData();
-    cdRenderTracking();
+    cdRenderActiveTab();
+    if(editedId&&cdCompletedTestIds.has(editedId)){ try{ await cdSyncCompletedRows([cdFindItemById(editedId)]); }catch(e){ console.warn("Completed Test sheet not updated: "+e.message); } }
     alert("Saved to the sheet.");
   }catch(e){
     alert("Could not save: "+e.message);
@@ -5747,6 +5750,7 @@ async function cdMarkCompleted(){
     await cdAppendCompletedTestRow({rowId:d.rowId, name:d.sku});
     closeModal();
     await fetchSheetData();
+    try{ await cdSyncCompletedRows([cdFindItemById(itemId)]); }catch(e){ console.warn("Completed Test sheet not fully updated: "+e.message); }
     switchTab("completedtest");
     alert("Marked completed — test results saved to Subitems.");
   }catch(e){
@@ -5775,7 +5779,7 @@ async function cdHydrateCompletedTestSet(){
     let changed=false;
     for(let r=1;r<rows.length;r++){
       const rawId=(rows[r][map["Item ID"]]||"").trim();
-      if(rawId && !cdCompletedTestIds.has("i"+rawId)){ cdCompletedTestIds.add("i"+rawId); changed=true; }
+      if(rawId){ if(map["Completed Date"]!==undefined){ const iso=cdTblDate(rows[r][map["Completed Date"]]||""); if(iso&&cdCompletedDates["i"+rawId]!==iso){ cdCompletedDates["i"+rawId]=iso; changed=true; } } if(!cdCompletedTestIds.has("i"+rawId)){ cdCompletedTestIds.add("i"+rawId); changed=true; } }
     }
     if(changed){
       localStorage.setItem(CD_COMPLETED_TEST_LS, JSON.stringify([...cdCompletedTestIds]));
@@ -5813,6 +5817,7 @@ async function cdAddToCompleted(itemId){
   if(!confirm(`Add ${item.name} and its ${item.subs.length} test item${item.subs.length!==1?"s":""} to Completed Test?`)) return;
   try{
     await cdAppendCompletedTestRow({rowId:item.rowId,name:item.name});
+    await cdSyncCompletedRows([item]);
     cdCompletedTestIds.add(itemId); localStorage.setItem(CD_COMPLETED_TEST_LS, JSON.stringify([...cdCompletedTestIds]));
     cdCompletedAddQ=""; cdRenderCompletedTest();
   }catch(e){ alert("Could not add it to Completed Test: "+e.message); }
@@ -5821,10 +5826,10 @@ function cdRenderCompletedTest(){
   cdHydrateCompletedTestSet();
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
   const allItems=[];
-  GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdCompletedTestIds.has(i.id)) allItems.push(i); }));
+  GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdCompletedTestIds.has(i.id)&&cdCompletedVisible(i)) allItems.push(i); }));
   const filtered=cdFilterItemsBySearch(allItems, cdCompletedSearchQ);
   wrap.innerHTML=`<div style="max-width:1300px;margin:0 auto;padding:20px 0">
-    ${cdCompletedAddHtml()}
+    ${cdCompletedAddHtml()}${cdCompletedSyncBarHtml()}
     ${cdCompletedSearchQ?`<div style="margin-bottom:12px"><button onclick="cdCompletedSearchQ='';const b=document.getElementById('cmp-search-box');if(b)b.value='';cdRenderCompletedTest()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:6px;padding:4px 10px;cursor:pointer">✕ Clear search</button></div>`:""}
     ${cdItemsTableHtml(filtered, "completedtest", allItems.length?"No items match your search.":"No completed tests yet — mark one completed from Tracking, or add a product with the box above.")}
   </div>`;
@@ -5903,19 +5908,24 @@ function cdSaveItemTrackingSubs(){
   localStorage.setItem(CD_ITEM_TRACKING_SUBS_LS, JSON.stringify(obj));
 }
 function cdItemScheduleHtml(item, tabKey){
-  let subs=item.subs;
+  let subs=item.subs, note="";
   const trackingNames=cdItemTrackingSubNames[item.id];
   const deferredNames=cdItemDeferredSubNames[item.id];
-  if(tabKey==="tracking" && trackingNames && trackingNames.size){
-    subs=subs.filter(s=>trackingNames.has(s.name));
+  if(tabKey==="tracking"){
+    if(trackingNames && trackingNames.size) subs=subs.filter(s=>trackingNames.has(s.name));
+    else { const all=subs; subs=subs.filter(s=>cdSubInCurrentYear(item,s)); if(!subs.length&&all.length) note="Nothing due this year"; }
   } else if(tabKey==="deferreditems" && deferredNames && deferredNames.size){
     subs=subs.filter(s=>deferredNames.has(s.name));
+  } else if(tabKey==="completedtest"){
+    const all=subs, y=cdThisYear(); subs=subs.filter(s=>{ const l=latestTestDate(s); return l&&l.getFullYear()===y; });
+    if(!subs.length&&all.length) note="No test dated "+y;
   }
-  if(!subs.length) return `<span style="color:#bbb;font-size:10px">—</span>`;
+  if(!subs.length) return `<span style="color:#bbb;font-size:10px">${esc(note)||"—"}</span>`;
   return subs.map(s=>{
     const last=latestTestDate(s);
     return `<div style="margin-bottom:7px;padding:6px 8px;border-radius:5px;background:#f7f8fa;border:1px solid #e0e0e0">
       <div style="font-size:10px;font-weight:600;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</div>
+      ${tabKey==="completedtest"?cdVerdictBadgeHtml(s):""}
       ${last?`<div style="font-size:9px;color:#888;margin-top:2px">Last tested: ${fmtD(last)}</div>`:`<div style="font-size:9px;color:#bbb;margin-top:2px">No test data yet</div>`}
       ${tabKey==="deferreditems"?(()=>{ const f=cdDeferredFlowInfo(item.id,s); return f?`<div style="font-size:9px;color:#0055bb;font-weight:700;margin-top:2px">Next due: ${fmtD(f.next)}</div>`:""; })():""}
     </div>`;
@@ -5977,7 +5987,7 @@ function cdItemsTableHtml(items, tabKey, emptyMessage){
   return `<div style="background:#fff;border:1.5px solid #e0e3ea;border-radius:10px;overflow:auto">
     <table style="width:100%;border-collapse:collapse;font-size:11.5px">
       <thead><tr style="background:#f2f3f6">
-        ${(tabKey==="completedtest"?["Product / SKUs","Description","Priority SKU","Schedule per Test","Failed Tests — Follow-up","Status Remarks",""]:tabKey==="deferreditems"?["Product / SKUs","Description","Priority SKU","Schedule per Test","Deferred Date","Next Due Date","Status Remarks",""]:["Product / SKUs","Description","Priority SKU","Schedule per Test","Status Remarks",""]).map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
+        ${(tabKey==="completedtest"?["Product / SKUs","Description","Priority SKU","Test item","Failed Tests — Follow-up","Status Remarks",""]:tabKey==="deferreditems"?["Product / SKUs","Description","Priority SKU","Test item","Deferred Date","Next Due Date","Deferred Reason",""]:["Product / SKUs","Description","Priority SKU","Test item","Status Remarks",""]).map(h=>`<th style="text-align:left;padding:8px 12px;font-size:10px;font-weight:700;color:#888;text-transform:uppercase;border-bottom:1.5px solid #dde0e9">${h}</th>`).join("")}
       </tr></thead>
       <tbody>
         ${items.map(i=>{
@@ -5992,7 +6002,7 @@ function cdItemsTableHtml(items, tabKey, emptyMessage){
             <td style="padding:9px 12px;min-width:220px;vertical-align:top">${cdItemScheduleHtml(i, tabKey)}</td>
             ${tabKey==="deferreditems"?`<td style="padding:9px 12px;min-width:120px;vertical-align:top;white-space:nowrap">${cdDeferredDateCellHtml(i)}</td><td style="padding:9px 12px;min-width:190px;vertical-align:top">${cdDeferredNextDueCellHtml(i)}</td>`:""}
             ${tabKey==="completedtest"?`<td style="padding:9px 12px;min-width:250px;vertical-align:top">${cdFailCellHtml(i)}</td>`:""}
-            <td style="padding:9px 12px;white-space:normal;min-width:180px;vertical-align:top;color:${i.status?"#333":"#bbb"}">${esc(i.status)||"Click to add remarks…"}</td>
+            ${tabKey==="deferreditems"?cdDeferredReasonCellHtml(i):`<td style="padding:9px 12px;white-space:normal;min-width:180px;vertical-align:top;color:${i.status?"#333":"#bbb"}">${esc(i.status)||"Click to add remarks…"}</td>`}
             <td style="padding:9px 12px;vertical-align:top;white-space:nowrap">
               <button onclick="event.stopPropagation();cdPromptRevertItem('${i.id}')" title="Revert to Monitoring" style="background:none;border:none;cursor:pointer;font-size:13px;margin-right:6px;padding:0">↩️</button>
               <button onclick="event.stopPropagation();cdPromptDeleteItem('${i.id}','${tabKey}')" title="Remove from this list" style="background:none;border:1px solid #ffd5d5;color:#e2445c;border-radius:5px;cursor:pointer;font-size:11px;padding:2px 7px">✕</button>
@@ -6051,6 +6061,7 @@ async function cdHydrateDeferredSet(){
     for(let r=1;r<rows.length;r++){
       const rawId=(rows[r][map["Item ID"]]||"").trim();
       if(!rawId) continue;
+      if(map["Deferred Reason"]!==undefined){ const rs=String(rows[r][map["Deferred Reason"]]||"").trim(); if(cdDeferredReasons["i"+rawId]!==rs){ cdDeferredReasons["i"+rawId]=rs; changedDates=true; } }
       if(map["Deferred Date"]!==undefined){ const iso=cdTblDate(rows[r][map["Deferred Date"]]||""); if(iso&&cdDeferredDates["i"+rawId]!==iso){ cdDeferredDates["i"+rawId]=iso; changedDates=true; } }
       if(map["Deferred Tests"]!==undefined){ if((rows[r][map["Deferred Tests"]]||"").trim()) cdDeferredNeedTests.delete("i"+rawId); else cdDeferredNeedTests.add("i"+rawId); }
       else cdDeferredNeedTests.add("i"+rawId);
@@ -6080,7 +6091,11 @@ async function cdAppendTrackingRow(item){
 // ── Monitoring: right-click an item -> tick the tests to DEFER; unticked tests go to Tracking ──
 function cdMonTestsOf(item){
   const tested=item.subs.filter(s=>Object.values(s.yearBlocks||{}).some(b=>b&&b.length));
-  return {tested, list:tested.length?tested:item.subs};
+  const base=tested.length?tested:item.subs;
+  // only the tests that fall due within the CURRENT YEAR (or are already overdue), not every test it ever had
+  const y=new Date().getFullYear();
+  const dueNow=tested.length?base.filter(s=>{ let e=null; try{ e=calcExpiry(s,item.id); }catch(_){ } return !e||e.getFullYear()<=y; }):base;
+  return {tested, list:dueNow.length?dueNow:base};
 }
 function cdShowMonContextMenu(e, itemId){
   e.preventDefault();
@@ -6701,7 +6716,7 @@ function pmmRenderNewEntry(){
           <div style="font-size:13px;font-weight:700;color:#333">Item / Component / Material</div>
           <button onclick="pmmAddRow()" style="font-size:11px;font-weight:600;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:5px 12px;cursor:pointer">+ Add Row</button>
         </div>
-        <table class="pmm-comp-table" id="pmm-comp-table">
+        <div class="cd-xl-hint">▦ <a href="#" onclick="cdXlSelectAll(this);return false">Select all cells</a> · drag or Shift+click to select · Ctrl+C / Ctrl+V to copy and paste many cells</div><table class="pmm-comp-table cd-xl" id="pmm-comp-table" data-xl="draft" tabindex="-1">
           <thead><tr><th style="width:60px">Item</th><th>Component</th><th>Material</th><th style="width:36px"></th></tr></thead>
           <tbody id="pmm-comp-tbody">${pmmDraftComponents.map((c,i)=>pmmRowHtml(c,i)).join("")}</tbody>
         </table>
@@ -10265,7 +10280,7 @@ function pcaRenderTracking(){
     <button onclick="pcaToggleBatchMode()" style="margin-left:auto;font-size:11px;font-weight:700;padding:6px 12px;border-radius:20px;cursor:pointer;border:1.5px solid ${pcaBatchMode?"#5b21b6":"#dde0e7"};background:${pcaBatchMode?"#f3e4ff":"#fff"};color:${pcaBatchMode?"#5b21b6":"#555"}">🧺 ${pcaBatchMode?"Cancel Batching":"Batch POs"}</button>
   </div>`;
   html+=`<div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-    <button onclick="pcaSyncTracking()" style="font-size:11px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:6px;padding:8px 14px;cursor:pointer">🔄 Refresh</button>
+    <button onclick="pcaSyncTracking()" style="font-size:11px;font-weight:700;color:#fff;background:#0073ea;border:none;border-radius:6px;padding:7px 10px;cursor:pointer" title="Refresh" aria-label="Refresh">🔄</button>
     <span style="font-size:10.5px;color:#888">${rows.length} item${rows.length!==1?"s":""} awaiting action</span>
   </div>`;
   if(pcaBatchMode){
@@ -11390,6 +11405,253 @@ async function cdUpCheck(ta){
     else { st.textContent="⚠ "+r.name+" is not in the shared test folders — upload it here instead, or move it into the right folder first."; st.style.color="#b36b00"; }
   }catch(e){ st.textContent="⚠ Could not check this link: "+e.message; st.style.color="#b36b00"; }
 }
+// ═══ Round 29 ═══
+// (1) Tracking / transfer list: only the test items that fall due within the CURRENT YEAR (or are overdue / not tested yet)
+// (2) Completed Test: this year's completions only, every item shows PASS / FAIL, full record kept in the "Completed Test" sheet and updated live
+// (3) Deferred Items: "Deferred Reason" column = the sheet's Deferred Reason          (4) "Test item" wording
+// (5) spreadsheet-style cell selection (drag / Shift+click / Ctrl+A, copy, paste, delete) in the component tables
+// (6) only Aivan and Kevin can change data; everyone else is view-only            (7) collapsible menu, icon-only refresh buttons
+const CD_EDITORS=["aivan.tioco@rhinousainc.com","kevin.mariano@rhinousainc.com"];
+const cdThisYear=()=>new Date().getFullYear();
+const cdFmtMDY=d=>d?`${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")}/${d.getFullYear()}`:"";
+// ── (1) which test items count as "within the current year" ──
+function cdSubInCurrentYear(item,sub){
+  const y=cdThisYear(), last=latestTestDate(sub);
+  if(!last) return true;                          // nothing tested yet: still to do
+  if(last.getFullYear()===y) return true;         // tested this year
+  let exp=null; try{ exp=calcExpiry(sub,item.id); }catch(e){}
+  return !!(exp&&exp.getFullYear()<=y);           // next test falls due this year, or is already overdue
+}
+function cdBlockVerdict(b){ const r=String((b&&b.result)||""); return /\bFAIL/i.test(r)?"FAIL":(/\bPASS/i.test(r)?"PASS":""); }
+function cdLatestBlock(sub){
+  let best=null;
+  Object.keys(sub.yearBlocks||{}).sort().forEach(yr=>(sub.yearBlocks[yr]||[]).forEach((b,bi)=>{ const d=parseDate(b.date), key=d?d.getTime():0; if(!best||key>=best.key) best={b,key,d,yr,bi}; }));
+  return best;
+}
+function cdVerdictBadgeHtml(sub){
+  const l=cdLatestBlock(sub), v=l?cdBlockVerdict(l.b):""; if(!v) return `<span style="display:inline-block;margin-top:3px;font-size:9px;font-weight:700;padding:1px 7px;border-radius:9px;color:#8a93a6;background:#f1f3f7;border:1px solid #e1e5ec">No result</span>`;
+  const ok=v==="PASS"; return `<span style="display:inline-block;margin-top:3px;font-size:9px;font-weight:800;padding:1px 7px;border-radius:9px;color:${ok?"#0a7a46":"#c0392b"};background:${ok?"#e3f6ec":"#ffe8e8"};border:1px solid ${ok?"#b8e6cf":"#f5c2c2"}">${v}</span>`;
+}
+// ── (2) the Completed Test record that is stored in the Google Sheet ──
+const CD_COMPLETED_COLS=["Test Items","Result","Failed Tests","Supplier CAP","Evidence Remarks","Evidence Link","Last Updated"];
+let cdCompletedDates={};
+function cdCompletedVisible(item){ const iso=cdCompletedDates[item.id]; return !iso||String(iso).slice(0,4)===String(cdThisYear()); }
+function cdCompletedRecordOf(item){
+  const y=cdThisYear(), all=(item.subs||[]).map(s=>({s,l:cdLatestBlock(s)})).filter(x=>x.l);
+  let use=all.filter(x=>x.l.d&&x.l.d.getFullYear()===y); if(!use.length) use=all;
+  const lines=[],failed=[],cap=[],evr=[],evl=[]; let fail=false,pass=0;
+  use.forEach(({s,l})=>{
+    const v=cdBlockVerdict(l.b)||"No result"; if(v==="FAIL") fail=true; if(v==="PASS") pass++;
+    lines.push(`${s.name}: ${v}${l.d?` (${cdFmtMDY(l.d)})`:""}`);
+    Object.keys(s.yearBlocks||{}).sort().forEach(yr=>(s.yearBlocks[yr]||[]).forEach(b=>{
+      if(cdBlockVerdict(b)!=="FAIL") return;
+      const d=parseDate(b.date); if(!(b===l.b||(d&&d.getFullYear()===y))) return;
+      const tag=`${s.name}${b.supplier?` — ${b.supplier}`:""}`;
+      failed.push(`${tag}${d?` (${cdFmtMDY(d)})`:""}`);
+      cap.push(`${tag}: ${b.cap||"not recorded yet"}`);
+      evr.push(`${tag}: ${b.evidence||b.remarks||"not recorded yet"}`);
+      if(b.evidenceLink) evl.push(`${tag}: ${b.evidenceLink}`);
+    }));
+  });
+  return {items:lines.join("\n"),result:fail?"FAIL":(pass?"PASS":""),failed:failed.join("\n"),cap:cap.join("\n"),evr:evr.join("\n"),evl:evl.join("\n")};
+}
+// one read + one write for any number of items: updates the item's row (found by Item ID) or adds it
+async function cdSyncCompletedRows(items){
+  items=(items||[]).filter(i=>i&&i.rowId); if(!items.length||!accessToken) return 0;
+  for(const h of ["Item ID","SKU","Description","Priority SKU","Completed Date",...CD_COMPLETED_COLS]) await cdEnsureColumn(CD_COMPLETED_TEST_SHEET,h);
+  const map=await cdGetHeaderMap(CD_COMPLETED_TEST_SHEET);
+  const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_COMPLETED_TEST_SHEET)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
+  cdCheckAuthError(res); if(!res.ok) throw new Error(`Could not read "${CD_COMPLETED_TEST_SHEET}" (${res.status})`);
+  const rows=(await res.json()).values||[], rowOf={};
+  for(let r=1;r<rows.length;r++){ const id=String(rows[r][map["Item ID"]]||"").trim(); if(id&&!(id in rowOf)) rowOf[id]=r; }
+  const gid=await pmmGetSheetGidFor(CD_COMPLETED_TEST_SHEET), requests=[], add=[], stamp=new Date().toISOString().slice(0,16).replace("T"," ");
+  items.forEach(it=>{
+    const rec=cdCompletedRecordOf(it);
+    const vals={"SKU":it.name||"","Description":it.description||"","Priority SKU":it.prioritySku||"","Test Items":rec.items,"Result":rec.result,"Failed Tests":rec.failed,"Supplier CAP":rec.cap,"Evidence Remarks":rec.evr,"Evidence Link":rec.evl,"Last Updated":stamp};
+    if(it.rowId in rowOf){
+      const r=rowOf[it.rowId]; if(!String(rows[r][map["Completed Date"]]||"").trim()) vals["Completed Date"]=cdLocalISODate();
+      Object.entries(vals).forEach(([k,v])=>{ if(map[k]===undefined) return; requests.push({updateCells:{range:{sheetId:gid,startRowIndex:r,endRowIndex:r+1,startColumnIndex:map[k],endColumnIndex:map[k]+1},rows:[{values:[{userEnteredValue:{stringValue:String(v)}}]}],fields:"userEnteredValue"}}); });
+    } else { vals["Item ID"]=it.rowId; vals["Completed Date"]=cdLocalISODate(); add.push(cdBuildRow(map,vals)); }
+  });
+  if(requests.length){ const b=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({requests})}); cdCheckAuthError(b); if(!b.ok){ const t=await b.text(); throw new Error(`Could not update "${CD_COMPLETED_TEST_SHEET}" (${b.status}): ${t.slice(0,150)}`); } }
+  if(add.length){ const a=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_COMPLETED_TEST_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:add})}); cdCheckAuthError(a); if(!a.ok){ const t=await a.text(); throw new Error(`Could not add to "${CD_COMPLETED_TEST_SHEET}" (${a.status}): ${t.slice(0,150)}`); } }
+  return items.length;
+}
+function cdCompletedCurrentItems(){ const out=[]; GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdCompletedTestIds.has(i.id)&&cdCompletedVisible(i)) out.push(i); })); return out; }
+async function cdCompletedSaveAll(manual){
+  if(!accessToken){ if(manual) alert('Please "Connect & Sync" with Google first.'); return; }
+  if(!cdCanEditNow()){ if(manual) alert("View only — only Aivan and Kevin can save to the sheet."); return; }
+  try{ const n=await cdSyncCompletedRows(cdCompletedCurrentItems()); if(manual) alert(`Saved ${n} completed item${n!==1?"s":""} to the "Completed Test" sheet.`); }
+  catch(e){ if(manual) alert("Could not save: "+e.message); else console.warn("Completed Test backfill: "+e.message); }
+}
+let cdCompletedAutoDone=false;
+function cdCompletedSyncBarHtml(){
+  if(!cdCompletedAutoDone){ cdCompletedAutoDone=true; setTimeout(()=>{ if(accessToken) cdCompletedSaveAll(false); },2500); }
+  return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-4px 0 14px;font-size:10.5px;color:#7a869a"><span>Shows this year's completed tests only (${cdThisYear()}). Earlier years drop off here automatically and stay in the "Completed Test" sheet and the Main Table.</span><button onclick="cdCompletedSaveAll(true)" title="Write every completed item (test items, PASS/FAIL, CAP, evidence) to the Completed Test sheet" style="font-size:10.5px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:6px;padding:4px 10px;cursor:pointer">⟳ Save all to Google Sheet</button></div>`;
+}
+// after any save, show the tab you are on (it used to jump to Tracking)
+function cdRenderActiveTab(){
+  if(activeTab==="tracking") cdRenderTracking(); else if(activeTab==="completedtest") cdRenderCompletedTest(); else if(activeTab==="deferreditems") cdRenderDeferredItems();
+  else if(activeTab==="newentry") cdRenderNewEntry(); else if(activeTab==="monitoring") renderMonitoring(); else if(activeTab==="expense") renderExpense(); else renderAll();
+}
+// ── (3) Deferred Reason, straight from the "Deferred items" sheet ──
+let cdDeferredReasons={};
+function cdDeferredReasonCellHtml(i){
+  const r=cdDeferredReasons[i.id];
+  return `<td style="padding:9px 12px;white-space:normal;min-width:200px;vertical-align:top"><div style="color:${r?"#333":"#bbb"}">${esc(r)||"No reason recorded"}</div><button onclick="event.stopPropagation();cdEditDeferredReason('${i.id}')" title="Edit the reason in the Deferred items sheet" style="margin-top:5px;font-size:10px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:5px;padding:2px 8px;cursor:pointer">✎ Edit reason</button></td>`;
+}
+async function cdEditDeferredReason(itemId){
+  const item=cdFindItemById(itemId); if(!item) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  const next=prompt(`Deferred reason for ${item.name}:`,cdDeferredReasons[itemId]||""); if(next===null) return;
+  try{
+    const map=await cdEnsureColumn(CD_DEFERRED_SHEET,"Deferred Reason");
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_DEFERRED_SHEET)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
+    cdCheckAuthError(res); if(!res.ok) throw new Error(`Could not read "${CD_DEFERRED_SHEET}" (${res.status})`);
+    const rows=(await res.json()).values||[]; let hit=-1;
+    for(let r=1;r<rows.length;r++){ if(String(rows[r][map["Item ID"]]||"").trim()===item.rowId){ hit=r; break; } }
+    if(hit<0) throw new Error(`${item.name} has no row in the "${CD_DEFERRED_SHEET}" sheet yet.`);
+    const gid=await pmmGetSheetGidFor(CD_DEFERRED_SHEET);
+    const b=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({requests:[{updateCells:{range:{sheetId:gid,startRowIndex:hit,endRowIndex:hit+1,startColumnIndex:map["Deferred Reason"],endColumnIndex:map["Deferred Reason"]+1},rows:[{values:[{userEnteredValue:{stringValue:next}}]}],fields:"userEnteredValue"}}]})});
+    cdCheckAuthError(b); if(!b.ok){ const t=await b.text(); throw new Error(`Could not save (${b.status}): ${t.slice(0,150)}`); }
+    cdDeferredReasons[itemId]=next; if(activeTab==="deferreditems") cdRenderDeferredItems();
+  }catch(e){ alert("Could not save the reason: "+e.message); }
+}
+// ── (6) who may change things ──
+let cdIdentity=null, cdIdentityToken=null, cdIdentityBusy=null;
+const cdCanEditNow=()=>!!(cdIdentity&&cdIdentity.canEdit);
+function cdRoleBadge(){
+  const sb=document.getElementById("app-sidebar"); if(!sb) return; let b=document.getElementById("cd-role-badge");
+  if(!b){ b=document.createElement("div"); b.id="cd-role-badge"; sb.appendChild(b); }
+  if(!cdIdentity){ b.style.display="none"; return; }
+  const ed=cdIdentity.canEdit; b.style.display="flex"; b.title=(cdIdentity.email||"unknown account")+(ed?" — can edit and save":" — can view only. Ask Aivan or Kevin for edit access.");
+  b.className=ed?"cd-role editor":"cd-role viewer"; b.innerHTML=`<span class="ic">${ed?"✏️":"👁"}</span><span class="lbl">${ed?"Editor":"View only"}</span>`;
+  document.body.classList.toggle("cd-viewonly",!ed);
+}
+function cdLoadIdentity(){
+  if(cdIdentity&&cdIdentityToken===accessToken) return Promise.resolve(cdIdentity);
+  if(!accessToken) return Promise.resolve(null);
+  if(!cdIdentityBusy){
+    const tok=accessToken;
+    cdIdentityBusy=(async()=>{
+      let email=""; try{ const r=await window.__cdRealFetch("https://www.googleapis.com/oauth2/v3/userinfo",{headers:{Authorization:"Bearer "+tok}}); if(r.ok){ const j=await r.json(); email=String(j.email||"").trim().toLowerCase(); } }catch(e){}
+      cdIdentity={email,canEdit:CD_EDITORS.includes(email)}; cdIdentityToken=tok; cdIdentityBusy=null; cdRoleBadge(); return cdIdentity;
+    })();
+  }
+  return cdIdentityBusy;
+}
+window.__cdRealFetch=window.fetch.bind(window);
+window.fetch=async function(input,init){
+  try{
+    const url=typeof input==="string"?input:((input&&input.url)||String(input||""));
+    const method=String((init&&init.method)||(typeof input!=="string"&&input&&input.method)||"GET").toUpperCase();
+    if(method!=="GET"&&method!=="HEAD"&&/^https:\/\/(sheets\.googleapis\.com|gmail\.googleapis\.com|www\.googleapis\.com\/(drive|upload\/drive|gmail))\//.test(url)){
+      const id=await cdLoadIdentity();
+      if(!id||!id.canEdit) return new Response(JSON.stringify({error:{code:403,message:"View only — "+((id&&id.email)||"this account")+" can look but not change anything. Only Aivan and Kevin can edit and save."}}),{status:403,headers:{"Content-Type":"application/json"}});
+    }
+  }catch(e){}
+  return window.__cdRealFetch(input,init);
+};
+setInterval(()=>{ if(accessToken&&cdIdentityToken!==accessToken&&!cdIdentityBusy) cdLoadIdentity(); },1500);
+// ── (5) spreadsheet-style selection in the component tables ──
+const CD_XL_FIELDS=["item","component","material"];
+let cdXl={t:null,a:null,b:null,multi:false,drag:false};
+function cdXlTable(el){ return el&&el.closest?el.closest("table.cd-xl"):null; }
+function cdXlIndex(t){ const rows=[...t.querySelectorAll("tbody tr")]; rows.forEach((tr,r)=>{ let c=0; [...tr.children].forEach(td=>{ if(td.querySelector("input,textarea")){ td.dataset.xlr=r; td.dataset.xlc=c++; } }); }); return rows.length; }
+function cdXlPos(el){ const t=cdXlTable(el); if(!t) return null; cdXlIndex(t); const td=el.closest("td"); if(!td||td.dataset.xlr===undefined) return null; return {t,r:+td.dataset.xlr,c:+td.dataset.xlc}; }
+function cdXlRect(){ if(!cdXl.t||!cdXl.a||!cdXl.b) return null; return {r1:Math.min(cdXl.a.r,cdXl.b.r),r2:Math.max(cdXl.a.r,cdXl.b.r),c1:Math.min(cdXl.a.c,cdXl.b.c),c2:Math.max(cdXl.a.c,cdXl.b.c)}; }
+function cdXlLive(){ return !!(cdXl.multi&&cdXl.t&&document.body.contains(cdXl.t)); }
+function cdXlPaint(){
+  document.querySelectorAll("td.cd-xl-sel").forEach(td=>td.classList.remove("cd-xl-sel"));
+  const R=cdXlRect(); if(!R||!cdXl.multi||!cdXl.t) return; cdXlIndex(cdXl.t);
+  cdXl.t.querySelectorAll("tbody td[data-xlr]").forEach(td=>{ const r=+td.dataset.xlr,c=+td.dataset.xlc; if(r>=R.r1&&r<=R.r2&&c>=R.c1&&c<=R.c2) td.classList.add("cd-xl-sel"); });
+}
+function cdXlClear(){ cdXl.multi=false; cdXl.a=cdXl.b=null; cdXlPaint(); }
+function cdXlSelectAllIn(t){
+  const n=cdXlIndex(t), cols=Math.max(0,...[...t.querySelectorAll("tbody td[data-xlc]")].map(td=>+td.dataset.xlc));
+  cdXl.t=t; cdXl.a={r:0,c:0}; cdXl.b={r:Math.max(0,n-1),c:cols}; cdXl.multi=true;
+  if(document.activeElement&&document.activeElement.blur) document.activeElement.blur(); try{ t.focus({preventScroll:true}); }catch(e){} cdXlPaint();
+}
+function cdXlSelectAll(btn){ const h=btn.closest(".cd-xl-hint"), t=h&&h.nextElementSibling; if(t&&t.matches("table.cd-xl")) cdXlSelectAllIn(t); }
+function cdXlApply(t,r0,c0,matrix){
+  const key=t.dataset.xl||"", rows=matrix.length, width=Math.max(...matrix.map(x=>x.length),1);
+  const put=(list,mk)=>{ while(list.length<r0+rows) list.push(mk(list.length)); matrix.forEach((row,i)=>row.forEach((v,j)=>{ const f=CD_XL_FIELDS[c0+j]; if(f) list[r0+i][f]=v; })); };
+  const mk=n=>({item:String(n+1),component:"",material:""});
+  if(key==="draft"){ put(pmmDraftComponents,mk); const tb=document.getElementById("pmm-comp-tbody"); if(tb) tb.innerHTML=pmmDraftComponents.map((c,i)=>pmmRowHtml(c,i)).join(""); }
+  else if(key.startsWith("detail:")){ const e=pmmEntries.find(x=>x.id===key.slice(7)); if(!e) return; put(e.components,mk); renderModals(); }
+  else return;
+  setTimeout(()=>{ const nt=[...document.querySelectorAll("table.cd-xl")].find(x=>x.dataset.xl===key); if(!nt) return; cdXl.t=nt; cdXl.a={r:r0,c:c0}; cdXl.b={r:r0+rows-1,c:Math.min(CD_XL_FIELDS.length-1,c0+width-1)}; cdXl.multi=true; cdXlPaint(); try{ nt.focus({preventScroll:true}); }catch(e){} },0);
+}
+document.addEventListener("mousedown",ev=>{
+  const p=cdXlPos(ev.target);
+  if(!p){ if(cdXl.multi&&!(ev.target.closest&&ev.target.closest(".cd-xl-hint"))) cdXlClear(); cdXl.drag=false; return; }
+  if(ev.shiftKey&&cdXl.t===p.t&&cdXl.a){ cdXl.b={r:p.r,c:p.c}; cdXl.multi=true; cdXlPaint(); ev.preventDefault(); if(document.activeElement&&document.activeElement.blur) document.activeElement.blur(); try{ p.t.focus({preventScroll:true}); }catch(e){} return; }
+  cdXl.t=p.t; cdXl.a={r:p.r,c:p.c}; cdXl.b={r:p.r,c:p.c}; cdXl.multi=false; cdXlPaint(); cdXl.drag=true;
+},true);
+document.addEventListener("mousemove",ev=>{
+  if(!cdXl.drag||!(ev.buttons&1)) return; const p=cdXlPos(ev.target); if(!p||p.t!==cdXl.t) return;
+  if(!cdXl.multi&&(p.r!==cdXl.a.r||p.c!==cdXl.a.c)){ cdXl.multi=true; if(document.activeElement&&document.activeElement.blur) document.activeElement.blur(); cdXl.t.classList.add("cd-xl-selecting"); try{ cdXl.t.focus({preventScroll:true}); }catch(e){} }
+  if(cdXl.multi){ cdXl.b={r:p.r,c:p.c}; cdXlPaint(); ev.preventDefault(); }
+});
+document.addEventListener("mouseup",()=>{ cdXl.drag=false; if(cdXl.t) cdXl.t.classList.remove("cd-xl-selecting"); });
+document.addEventListener("keydown",ev=>{
+  const t=cdXlTable(ev.target);
+  if((ev.ctrlKey||ev.metaKey)&&String(ev.key).toLowerCase()==="a"&&t){ ev.preventDefault(); cdXlSelectAllIn(t); return; }
+  if(!cdXlLive()) return;
+  if(ev.key==="Delete"||ev.key==="Backspace"){ const R=cdXlRect(); const m=[]; for(let r=R.r1;r<=R.r2;r++){ m.push(new Array(R.c2-R.c1+1).fill("")); } ev.preventDefault(); cdXlApply(cdXl.t,R.r1,R.c1,m); }
+  else if(ev.key==="Escape") cdXlClear();
+});
+document.addEventListener("copy",ev=>{
+  if(!cdXlLive()) return; const R=cdXlRect(); cdXlIndex(cdXl.t); const lines=[];
+  for(let r=R.r1;r<=R.r2;r++){ const cells=[]; for(let c=R.c1;c<=R.c2;c++){ const td=cdXl.t.querySelector(`td[data-xlr="${r}"][data-xlc="${c}"]`), inp=td&&td.querySelector("input,textarea"); cells.push(String(inp?inp.value:"").replace(/[\t\r\n]+/g," ")); } lines.push(cells.join("\t")); }
+  ev.clipboardData.setData("text/plain",lines.join("\n")); ev.preventDefault();
+});
+document.addEventListener("paste",ev=>{
+  const txt=String((ev.clipboardData||window.clipboardData).getData("text")||""), t=cdXlTable(ev.target), live=cdXlLive(); if(!t&&!live) return;
+  const multiText=/[\t\r\n]/.test(txt.replace(/[\r\n]+$/,"")); if(!multiText&&!live) return;   // one plain value pastes into the cell as usual
+  let tbl,r0,c0,R=null; if(live){ R=cdXlRect(); tbl=cdXl.t; r0=R.r1; c0=R.c1; } else { const p=cdXlPos(ev.target); if(!p) return; tbl=p.t; r0=p.r; c0=p.c; }
+  let rows=txt.replace(/\r\n?/g,"\n").replace(/\n+$/,"").split("\n").map(l=>l.split("\t"));
+  if(R&&rows.length===1&&rows[0].length===1){ const v=rows[0][0]; rows=[]; for(let r=R.r1;r<=R.r2;r++) rows.push(new Array(R.c2-R.c1+1).fill(v)); }   // one value over a selection fills it all
+  ev.preventDefault(); cdXlApply(tbl,r0,c0,rows);
+});
+// ── (7) look & feel: collapsible menu, icon-only refresh, role badge, selection colours ──
+(function(){
+  const st=document.createElement("style");
+  st.textContent=`
+  #app-sidebar{transition:width .18s ease}
+  #app-sidebar.collapsed{width:64px;padding:16px 9px;align-items:center}
+  #app-sidebar.collapsed .brand{display:none}
+  #app-sidebar .nav-btn .nav-ic{font-size:17px;width:22px;text-align:center;flex-shrink:0}
+  #app-sidebar.collapsed .nav-btn{justify-content:center;padding:11px 0;gap:0}
+  #app-sidebar.collapsed .nav-btn .nav-lb{display:none}
+  #nav-toggle{align-self:flex-start;background:rgba(255,255,255,.08);border:1.5px solid rgba(255,255,255,.3);color:#fff;border-radius:9px;width:38px;height:38px;font-size:18px;line-height:1;cursor:pointer;margin-bottom:10px;flex-shrink:0}
+  #nav-toggle:hover{background:rgba(255,255,255,.2)}
+  #app-sidebar.collapsed #nav-toggle{align-self:center}
+  #cd-role-badge{margin-top:auto;display:none;align-items:center;gap:8px;font-size:11px;font-weight:700;border-radius:9px;padding:7px 10px;justify-content:center}
+  #cd-role-badge.editor{background:rgba(0,200,117,.16);color:#7be8b4}
+  #cd-role-badge.viewer{background:rgba(253,171,61,.18);color:#ffc874}
+  #app-sidebar.collapsed #cd-role-badge .lbl{display:none}
+  body.cd-viewonly #cd-edit-save-btn,body.cd-viewonly #cd-edit-complete-btn{display:none}
+  .cd-xl-sel{background:#cfe3ff!important;box-shadow:inset 0 0 0 1px #7fb2ff}
+  .cd-xl-sel input,.cd-xl-sel textarea{background:transparent!important}
+  table.cd-xl{outline:none}table.cd-xl.cd-xl-selecting{user-select:none;-webkit-user-select:none}
+  .cd-xl-hint{font-size:10px;color:#8a93a6;margin:6px 0 2px}.cd-xl-hint a{color:#0073ea;font-weight:700;text-decoration:none}
+  .cd-refresh-clone{margin-left:auto}`;
+  document.head.appendChild(st);
+  const sb=document.getElementById("app-sidebar"); if(!sb) return;
+  sb.querySelectorAll(".nav-btn").forEach(b=>{ if(b.querySelector(".nav-ic")) return; const m=b.textContent.trim().match(/^(\S+)\s+(.*)$/); if(!m) return; b.title=b.title||m[2]; b.innerHTML=`<span class="nav-ic">${m[1]}</span><span class="nav-lb">${m[2]}</span>`; });
+  const tg=document.createElement("button"); tg.id="nav-toggle"; tg.type="button"; tg.title="Collapse / expand the menu"; tg.setAttribute("aria-label","Collapse or expand the menu"); tg.textContent="☰";
+  tg.onclick=()=>{ const c=sb.classList.toggle("collapsed"); try{ localStorage.setItem("cd_sidebar_collapsed",c?"1":"0"); }catch(e){} };
+  sb.insertBefore(tg,sb.firstChild);
+  try{ if(localStorage.getItem("cd_sidebar_collapsed")==="1") sb.classList.add("collapsed"); }catch(e){}
+  cdRoleBadge();
+  // the same icon-only refresh button as the Compliance Dashboard header, in Product Material Matrix and Pantone Color Approval
+  const svg=(document.querySelector("#hdr-refresh svg")||{}).outerHTML||"↻";
+  ["panel-pmm","panel-pca"].forEach(id=>{ const row=document.querySelector("#"+id+" div[style*='justify-content:space-between']"); if(!row||row.querySelector(".cd-refresh-clone")) return;
+    const b=document.createElement("button"); b.type="button"; b.className="hdr-refresh cd-refresh-clone"; b.title="Connect & sync with Google Sheets"; b.setAttribute("aria-label","Refresh from Google Sheets"); b.setAttribute("onclick","triggerSync()"); b.innerHTML=svg; row.appendChild(b); });
+})();
+function cdMirrorRefresh(){ const src=document.getElementById("hdr-refresh"); if(!src) return; const cls=["loading","stale","error"].filter(c=>src.classList.contains(c)); document.querySelectorAll(".cd-refresh-clone").forEach(b=>{ b.className="hdr-refresh cd-refresh-clone "+cls.join(" "); }); }
+(function(){ const f=window.setSyncUI; if(typeof f==="function") window.setSyncUI=function(){ const r=f.apply(this,arguments); try{ cdMirrorRefresh(); }catch(e){} return r; }; })();
 // ═══ Round 28: a shareable link for every view ═══
 // The address bar always shows the view you are on, e.g.  …/#/compliance/tracking   …/#/pmm/compiled/insights   …/#/pca/approval
 // Paste that link to a teammate: after they sign in they land on exactly that tab. Back/forward and editing the #… also work.
