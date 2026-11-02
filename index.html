@@ -2903,7 +2903,7 @@ function renderModals(){
       </div>
     </div>`;
   } else if(modal.type==="pmmGrid"){
-    root.innerHTML=pmmGridModalHtml(); pmmGridFixHeader(); pmmGridSync(); cdAutoGrowAll(); pmmGridRefresh();
+    root.innerHTML=pmmGridModalHtml(); pmmGridFixHeader(); pmmGridSync(); cdAutoGrowAll(); pmmGridRefresh(); if(typeof cdGxPaint==="function") cdGxPaint();
   } else if(modal.type==="pmmFinalQuote"){
     const d=pmmFinalQuoteDraft, ins=pmmLastInsight; if(!d||!ins){ root.innerHTML=""; return; }
     const usd=n=>"$"+Number(n).toLocaleString("en-US",{maximumFractionDigits:2});
@@ -7989,6 +7989,7 @@ function pmmGridOpen(){
   });
   if(!rows.length){ rows.push(pmmGridBlank()); meta.push(null); }
   pmmGrid={rows,meta,orig:rows.map(r=>r.slice()),notice:""};
+  if(typeof cdGxReset==="function") cdGxReset();
   openModal({type:"pmmGrid"});
 }
 function pmmGridDate(v){
@@ -8069,7 +8070,8 @@ function pmmGridModalHtml(){
         <button onclick="document.getElementById('pmm-grid-file').click()" style="font-size:11px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:7px;padding:7px 14px;cursor:pointer">⬆ Upload Excel / CSV</button>
         <input type="file" id="pmm-grid-file" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none" onchange="pmmGridUpload(this.files[0]);this.value=''"/>
         <button onclick="pmmGridExport()" style="font-size:11px;font-weight:700;color:#0a7a46;background:#f0fff8;border:1px solid #c3f0da;border-radius:7px;padding:7px 14px;cursor:pointer">⬇ Download as Excel</button>
-        <div style="font-size:10.5px;color:#777;line-height:1.45;flex:1;min-width:300px">Edit like Excel, or <b>paste</b> rows copied from Excel / Google Sheets. A second row with the <b>same SKU</b> is that product's second test lab (use <b>＋</b> to add one). Delete a row with <b>✕</b>. Nothing changes until you press <b>Save changes</b>.</div>
+        <button onclick="cdGxSelectAll()" title="Highlight every cell (same as Ctrl+A)" style="font-size:11px;font-weight:700;color:#4a5470;background:#f1f4fa;border:1px solid #d5dbe8;border-radius:7px;padding:7px 14px;cursor:pointer">▦ Select all</button>
+        <div style="font-size:10.5px;color:#777;line-height:1.45;flex:1;min-width:300px">Edit like Excel, or <b>paste</b> rows copied from Excel / Google Sheets. <b>Select</b> by dragging, by clicking a row number or a column heading, or <b>Ctrl+A</b> for everything — then <b>Ctrl+C</b> / <b>Ctrl+V</b> / <b>Delete</b>. A second row with the <b>same SKU</b> is that product's second test lab (use <b>＋</b> to add one). Delete a row with <b>✕</b>. Nothing changes until you press <b>Save changes</b>.</div>
       </div>
       ${pmmGrid.notice?`<div style="margin:0 16px 6px;padding:7px 12px;background:#eef6ff;border:1px solid #c0d8f8;border-radius:7px;font-size:11px;color:#0055bb;flex-shrink:0">${esc(pmmGrid.notice)}</div>`:""}
       <div id="pmm-grid-hwrap" style="padding:0 16px;flex-shrink:0">
@@ -8117,7 +8119,7 @@ function pmmGridRefresh(){
   return P;
 }
 function pmmGridSet(r,c,el){ pmmGrid.rows[r][c]=el.value; cdAutoGrow(el); pmmGridSync(); pmmGridRefresh(); }
-function pmmGridRerender(fr,fc){ renderModals(); if(fr!=null){ const el=pmmGridCell(fr,fc); if(el){ el.focus(); try{ el.setSelectionRange(el.value.length,el.value.length); }catch(_){} } } }
+function pmmGridRerender(fr,fc){ const sc0=document.getElementById("pmm-grid-scroll"), top=sc0?sc0.scrollTop:0; renderModals(); const sc1=document.getElementById("pmm-grid-scroll"); if(sc1) sc1.scrollTop=top; if(fr!=null){ const el=pmmGridCell(fr,fc); if(el){ el.focus(); try{ el.setSelectionRange(el.value.length,el.value.length); }catch(_){} } } if(typeof cdGxPaint==="function") cdGxPaint(); }
 function pmmGridAddRow(){ pmmGrid.rows.push(pmmGridBlank()); pmmGrid.meta.push(null); pmmGrid.orig.push(pmmGridBlank()); pmmGridRerender(pmmGrid.rows.length-1,0); }
 function pmmGridDelRow(r){ pmmGrid.rows.splice(r,1); pmmGrid.meta.splice(r,1); pmmGrid.orig.splice(r,1); if(!pmmGrid.rows.length){ pmmGrid.rows.push(pmmGridBlank()); pmmGrid.meta.push(null); pmmGrid.orig.push(pmmGridBlank()); } pmmGrid.notice=""; pmmGridRerender(); }
 function pmmGridAddLab(r){
@@ -9539,7 +9541,7 @@ function pmmTnRightHtml(rows,T){
   const usd=pmmFqUsd, td=(v,al,st)=>`<td style="padding:5px 8px;border-bottom:1px solid #eef0f4;text-align:${al||"left"};${st||""}">${v}</td>`;
   if(!T.keep.length) return `<div style="padding:18px 10px;text-align:center;font-size:11px;color:#8a6d2f;background:#fff8e8;border:1px solid #f3dfb3;border-radius:8px">Every tensile test is marked Skip — nothing is left to test.</div>`;
   return `<table id="pmm-tn-right-table" style="width:100%;border-collapse:collapse;font-size:10.5px;color:#222"><thead><tr>${["Item","Product","Test lab","Tensile test cost"].map((h,i)=>`<th style="text-align:${i===3?"right":i===0?"center":"left"};padding:6px 8px;font-size:9px;font-weight:700;color:#556;text-transform:uppercase;letter-spacing:.3px;background:#f3f5f9;border-bottom:1.5px solid #dfe3ec;white-space:nowrap">${h}</th>`).join("")}</tr></thead>
-    <tbody>${T.keep.map(r=>`<tr>${td(r.n,"center","color:#888")}${td(`<span title="${esc(r.sku)}">${esc(r.desc)}</span>${r.showSku?` <span style="color:#9aa3b5">· ${esc(r.sku)}</span>`:""}`)}${td(esc(r.lab)||"—")}${td(r.cost?usd(r.cost):"—","right","font-weight:600")}</tr>`).join("")}</tbody>
+    <tbody>${T.keep.map((r,i)=>`<tr>${td(i+1,"center","color:#888")}${td(`<span title="${esc(r.sku)}">${esc(r.desc)}</span>${r.showSku?` <span style="color:#9aa3b5">· ${esc(r.sku)}</span>`:""}`)}${td(esc(r.lab)||"—")}${td(r.cost?usd(r.cost):"—","right","font-weight:600")}</tr>`).join("")}</tbody>
     <tfoot><tr style="background:#eaf6ee"><td colspan="3" style="padding:7px 8px;font-weight:800;color:#14532d">Total spend after Skip · ${T.keep.length} test${T.keep.length!==1?"s":""}</td><td style="padding:7px 8px;text-align:right;font-weight:800;color:#14532d">${usd(T.after)}</td></tr></tfoot></table>`;
 }
 function pmmTnLineHtml(T){
@@ -9548,11 +9550,12 @@ function pmmTnLineHtml(T){
   return `💡 <b>Actual savings from the Skip disposition:</b> skipping <b>${T.skipped} of ${T.total}</b> tensile tests brings the spend from <b>${usd(T.all)}</b> before to <b>${usd(T.after)}</b> after — <b style="color:#0a7a46">${usd(T.saved)} saved (${T.pct}%)</b>.${dirty}`;
 }
 function pmmTensileSectionHtml(entries){
-  const rows=pmmTensileRows(entries), T=pmmTensileTotals(rows), usd=pmmFqUsd, dirty=pmmTdDirty();
-  const labs=[...new Set(rows.map(r=>r.lab).filter(Boolean))];
+  const allRows=pmmTensileRows(entries), labs=[...new Set(allRows.map(r=>r.lab).filter(Boolean))];
+  if(pmmTnLab&&!labs.includes(pmmTnLab)) pmmTnLab="";
+  const rows=pmmTnVisibleRows(allRows), T=pmmTensileTotals(rows), usd=pmmFqUsd, dirty=pmmTdDirty();
   const head=`<div style="background:#0e1b3d;border-radius:9px 9px 0 0;padding:11px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">🧾 Tensile (Physical) Testing</div>
-    <div style="font-size:10.5px;color:#a8b8d8;margin-top:2px">${labs.length?`Test lab: <b style="color:#fff">${labs.map(esc).join(", ")}</b> · `:""}Mark a test <b style="color:#fff">Skip</b> when it is already covered — the right table then shows the testing we actually need.</div></div>
+    <div style="font-size:10.5px;color:#a8b8d8;margin-top:2px">${pmmTnLabFilterHtml(labs)}Mark a test <b style="color:#fff">Skip</b> when it is already covered — the right table then shows the testing we actually need.</div></div>
     <div style="display:flex;align-items:center;gap:10px"><span id="pmm-tn-dirty" style="display:${dirty?"inline":"none"};font-size:10.5px;color:#ffd27a;font-weight:700">● unsaved changes</span><button id="pmm-tn-save" onclick="pmmOpenTensileSave()" title="Saved to the &quot;${PMM_TENSILE_SHEET}&quot; tab (asks for the Save password)" style="padding:6px 13px;font-size:11px;font-weight:700;color:${dirty?"#fff":"#8a96b2"};background:${dirty?"#0073ea":"rgba(255,255,255,.1)"};border:none;border-radius:7px;cursor:${dirty?"pointer":"default"}">💾 Save remarks &amp; disposition</button></div></div>`;
   if(!rows.length) return `<div id="pmm-tensile-section" style="margin-top:22px;border:1.5px solid #dfe3ec;border-radius:10px;background:#fff">${head}<div style="padding:22px;text-align:center;font-size:11.5px;color:#999">No Tensile (Physical) quotes in this view yet — add a quotation under Physical Testing in a Test Lab section.</div></div>`;
   const th=(t,al)=>`<th style="text-align:${al||"left"};padding:6px 8px;font-size:9px;font-weight:700;color:#556;text-transform:uppercase;letter-spacing:.3px;background:#f3f5f9;border-bottom:1.5px solid #dfe3ec;white-space:nowrap">${t}</th>`;
@@ -9579,7 +9582,7 @@ function pmmTdSet(key,field,value){
 }
 function pmmTensileRefresh(){
   const sec=document.getElementById("pmm-tensile-section"); if(!sec) return;
-  const rows=pmmTensileRows(pmmInsightEntries()), T=pmmTensileTotals(rows);
+  const rows=pmmTnVisibleRows(pmmTensileRows(pmmInsightEntries())), T=pmmTensileTotals(rows);
   sec.querySelectorAll("#pmm-tn-left tbody tr[data-key]").forEach(tr=>{ const r=rows.find(x=>x.key===tr.dataset.key), skip=!!r&&pmmTdIsSkip(r.disp); tr.style.background=skip?"#fff6e0":""; const s=tr.querySelector(".pmm-tn-disp"); if(s) s.style.fontWeight=skip?700:400; });
   const R=document.getElementById("pmm-tn-right"); if(R) R.innerHTML=pmmTnRightHtml(rows,T);
   const L=document.getElementById("pmm-tn-line"); if(L) L.innerHTML=pmmTnLineHtml(T);
@@ -11404,6 +11407,104 @@ async function cdUpCheck(ta){
     else if(r.inside){ st.textContent="✓ In our test folders: "+r.name; st.style.color="#0a8f4d"; }
     else { st.textContent="⚠ "+r.name+" is not in the shared test folders — upload it here instead, or move it into the right folder first."; st.style.color="#b36b00"; }
   }catch(e){ st.textContent="⚠ Could not check this link: "+e.message; st.style.color="#b36b00"; }
+}
+// ═══ Round 31: Excel-style selection in the "Actual Compilation — table view" ═══
+// drag across cells · click a row number (whole row) · click a column heading (whole column) · corner / Ctrl+A (everything)
+// Shift+click extends · Ctrl+C copy · Ctrl+X cut · Ctrl+V paste (one value fills the whole selection) · Delete clears · Esc deselects
+let cdGx={a:null,b:null,multi:false,drag:false,mode:"cell"};
+const cdGxRows=()=>pmmGrid.rows.length, cdGxCols=()=>PMM_GRID_N;
+function cdGxOpen(){ return !!(typeof modal!=="undefined"&&modal&&modal.type==="pmmGrid"&&document.getElementById("pmm-grid")); }
+function cdGxLive(){ return !!(cdGx.multi&&cdGx.a&&cdGx.b&&cdGxOpen()); }
+function cdGxRect(){ if(!cdGx.a||!cdGx.b) return null; const R=cdGxRows(),C=cdGxCols(); return {r1:Math.max(0,Math.min(cdGx.a.r,cdGx.b.r)),r2:Math.min(R-1,Math.max(cdGx.a.r,cdGx.b.r)),c1:Math.max(0,Math.min(cdGx.a.c,cdGx.b.c)),c2:Math.min(C-1,Math.max(cdGx.a.c,cdGx.b.c))}; }
+function cdGxReset(){ cdGx={a:null,b:null,multi:false,drag:false,mode:"cell"}; }
+function cdGxClear(){ cdGxReset(); cdGxPaint(); }
+function cdGxPaint(){
+  document.querySelectorAll("#pmm-grid td.cd-xl-sel,#pmm-grid td.cd-gx-hdr,#pmm-grid-head th.cd-gx-hdr").forEach(x=>x.classList.remove("cd-xl-sel","cd-gx-hdr"));
+  if(!cdGxLive()) return; const R=cdGxRect(); if(!R) return;
+  document.querySelectorAll("#pmm-grid textarea.cd-cell").forEach(ta=>{ const r=+ta.dataset.r,c=+ta.dataset.c; if(r>=R.r1&&r<=R.r2&&c>=R.c1&&c<=R.c2) ta.closest("td").classList.add("cd-xl-sel"); });
+  if(R.c1===0&&R.c2===cdGxCols()-1) for(let r=R.r1;r<=R.r2;r++){ const n=document.getElementById("pmm-g-n-"+r); if(n) n.classList.add("cd-gx-hdr"); }
+  if(R.r1===0&&R.r2===cdGxRows()-1){ const heads=document.querySelectorAll("#pmm-grid-head thead tr:nth-child(2) th"); for(let c=R.c1;c<=R.c2;c++) if(heads[c]) heads[c].classList.add("cd-gx-hdr"); }
+}
+function cdGxSelectAll(){ cdGx.a={r:0,c:0}; cdGx.b={r:cdGxRows()-1,c:cdGxCols()-1}; cdGx.multi=true; cdGx.mode="all"; if(document.activeElement&&document.activeElement.blur) document.activeElement.blur(); cdGxPaint(); }
+function cdGxFrom(el){
+  if(!el||!el.closest) return null;
+  const ta=el.closest("#pmm-grid textarea.cd-cell"); if(ta) return {kind:"cell",r:+ta.dataset.r,c:+ta.dataset.c};
+  const td=el.closest("#pmm-grid td"); if(td){ const m=(td.id||"").match(/^pmm-g-n-(\d+)$/); if(m) return {kind:"row",r:+m[1]}; const inner=td.querySelector("textarea.cd-cell"); return inner?{kind:"cell",r:+inner.dataset.r,c:+inner.dataset.c}:null; }
+  const th=el.closest("#pmm-grid-head th"); if(th){ const tr=th.parentElement, trs=[...tr.parentElement.children], idx=trs.indexOf(tr);
+    if(idx===1) return {kind:"col",c:[...tr.children].indexOf(th)};
+    if(idx===0&&tr.children[0]===th) return {kind:"all"}; }
+  return null;
+}
+function cdGxValue(r,c){ const ta=pmmGridCell(r,c); return String(ta?ta.value:(pmmGrid.rows[r]?pmmGrid.rows[r][c]:"")||""); }
+function cdGxTsv(){ const R=cdGxRect(), out=[]; for(let r=R.r1;r<=R.r2;r++){ const cells=[]; for(let c=R.c1;c<=R.c2;c++) cells.push(cdGxValue(r,c).replace(/[\t\r\n]+/g," ")); out.push(cells.join("\t")); } return out.join("\n"); }
+function cdGxFill(v){ const R=cdGxRect(), m=[]; for(let r=R.r1;r<=R.r2;r++) m.push(new Array(R.c2-R.c1+1).fill(v)); return m; }
+// write a block of values at (r0,c0): rows are added if the block runs past the end; cells that mirror the SKU's first row are read-only and are skipped
+function cdGxApply(r0,c0,matrix,verb){
+  const C=cdGxCols(); let changed=0, skipped=0;
+  matrix.forEach((row,i)=>{ const r=r0+i; while(pmmGrid.rows.length<=r){ pmmGrid.rows.push(pmmGridBlank()); pmmGrid.meta.push(null); pmmGrid.orig.push(pmmGridBlank()); }
+    row.forEach((val,j)=>{ const c=c0+j; if(c>=C) return; const ta=pmmGridCell(r,c); if(ta&&ta.readOnly){ skipped++; return; } pmmGrid.rows[r][c]=pmmGridClean(val); changed++; }); });
+  const width=Math.max(1,...matrix.map(x=>x.length));
+  cdGx.a={r:r0,c:c0}; cdGx.b={r:r0+matrix.length-1,c:Math.min(C-1,c0+width-1)}; cdGx.multi=true; cdGx.drag=false;
+  pmmGrid.notice=`${verb} ${changed} cell${changed!==1?"s":""}${skipped?` (${skipped} skipped: they follow the first row of their SKU)`:""}. Press Save changes to apply.`;
+  pmmGridRerender();
+}
+document.addEventListener("mousedown",ev=>{
+  if(!cdGxOpen()) return; const f=cdGxFrom(ev.target), R=cdGxRows(), C=cdGxCols();
+  if(!f){ if(cdGx.multi&&!(ev.target.closest&&ev.target.closest("#pmm-grid-hwrap,#pmm-grid-scroll"))) cdGxClear(); cdGx.drag=false; return; }
+  if(f.kind==="cell"){
+    if(ev.shiftKey&&cdGx.a){ cdGx.b={r:f.r,c:f.c}; cdGx.multi=true; cdGx.mode="cell"; ev.preventDefault(); if(document.activeElement&&document.activeElement.blur) document.activeElement.blur(); cdGxPaint(); return; }
+    cdGx.a={r:f.r,c:f.c}; cdGx.b={r:f.r,c:f.c}; cdGx.multi=false; cdGx.mode="cell"; cdGx.drag=true; cdGxPaint(); return;
+  }
+  ev.preventDefault(); if(document.activeElement&&document.activeElement.blur) document.activeElement.blur();
+  if(f.kind==="row"){ const a=(ev.shiftKey&&cdGx.a)?cdGx.a:{r:f.r}; cdGx.a={r:a.r,c:0}; cdGx.b={r:f.r,c:C-1}; cdGx.mode="row"; }
+  else if(f.kind==="col"){ const a=(ev.shiftKey&&cdGx.a)?cdGx.a:{c:f.c}; cdGx.a={r:0,c:a.c}; cdGx.b={r:R-1,c:f.c}; cdGx.mode="col"; }
+  else { cdGx.a={r:0,c:0}; cdGx.b={r:R-1,c:C-1}; cdGx.mode="all"; }
+  cdGx.multi=true; cdGx.drag=(f.kind!=="all"); cdGxPaint();
+},true);
+document.addEventListener("mousemove",ev=>{
+  if(!cdGx.drag||!(ev.buttons&1)||!cdGxOpen()) return; const f=cdGxFrom(ev.target); if(!f) return;
+  if(cdGx.mode==="cell"){ if(f.kind!=="cell") return;
+    if(!cdGx.multi&&(f.r!==cdGx.a.r||f.c!==cdGx.a.c)){ cdGx.multi=true; if(document.activeElement&&document.activeElement.blur) document.activeElement.blur(); }
+    if(cdGx.multi){ cdGx.b={r:f.r,c:f.c}; ev.preventDefault(); cdGxPaint(); } }
+  else if(cdGx.mode==="row"&&f.kind==="row"){ cdGx.b={r:f.r,c:cdGxCols()-1}; cdGxPaint(); }
+  else if(cdGx.mode==="col"&&f.kind==="col"){ cdGx.b={r:cdGxRows()-1,c:f.c}; cdGxPaint(); }
+});
+document.addEventListener("mouseup",()=>{ cdGx.drag=false; });
+document.addEventListener("selectstart",ev=>{ if(cdGx.drag&&cdGx.multi) ev.preventDefault(); });
+document.addEventListener("keydown",ev=>{
+  if(!cdGxOpen()) return; const t=ev.target, tag=(t&&t.tagName)||"", inGrid=!!(t&&t.closest&&t.closest("#pmm-grid,#pmm-grid-head")), editField=/INPUT|SELECT/.test(tag)||(tag==="TEXTAREA"&&!inGrid);
+  if((ev.ctrlKey||ev.metaKey)&&String(ev.key).toLowerCase()==="a"&&!editField&&(inGrid||tag==="BODY"||cdGxLive())){ ev.preventDefault(); cdGxSelectAll(); return; }
+  if(!cdGxLive()||editField) return;
+  if(ev.key==="Delete"||ev.key==="Backspace"){ ev.preventDefault(); const R=cdGxRect(); cdGxApply(R.r1,R.c1,cdGxFill(""),"Cleared"); }
+  else if(ev.key==="Escape"){ ev.stopPropagation(); cdGxClear(); }
+});
+document.addEventListener("copy",ev=>{ if(!cdGxLive()) return; ev.clipboardData.setData("text/plain",cdGxTsv()); ev.preventDefault(); });
+document.addEventListener("cut",ev=>{ if(!cdGxLive()) return; ev.clipboardData.setData("text/plain",cdGxTsv()); ev.preventDefault(); const R=cdGxRect(); cdGxApply(R.r1,R.c1,cdGxFill(""),"Cut and cleared"); });
+document.addEventListener("paste",ev=>{
+  if(!cdGxLive()) return; const txt=String((ev.clipboardData||window.clipboardData).getData("text")||""); if(!txt) return;
+  const R=cdGxRect(); let rows=cdParseDelimited(txt.replace(/\r\n?/g,"\n").replace(/\n+$/,""),"\t");
+  if(rows.length===1&&rows[0].length===1) rows=cdGxFill(rows[0][0]);          // one value over a selection fills the whole selection, like Excel
+  ev.preventDefault(); ev.stopPropagation(); cdGxApply(R.r1,R.c1,rows,"Pasted");
+},true);
+document.addEventListener("input",ev=>{ if(cdGxLive()&&ev.target.closest&&ev.target.closest("#pmm-grid")) cdGxClear(); },true);
+(function(){ const st=document.createElement("style"); st.textContent=`
+  .cd-gx-hdr{background:#bcd6ff!important;color:#0e3a8a!important}
+  #pmm-grid td[id^="pmm-g-n-"],#pmm-grid-head th{user-select:none;-webkit-user-select:none}
+  #pmm-grid td[id^="pmm-g-n-"],#pmm-grid-head thead tr:nth-child(2) th,#pmm-grid-head thead tr:first-child th:first-child{cursor:pointer}`; document.head.appendChild(st); })();
+// ═══ Round 30: Tensile (Physical) Testing — a Test lab filter of its own, and clean 1, 2, 3… numbering ═══
+let pmmTnLab="";    // "" = every lab
+// the rows the section shows: the chosen lab only, numbered 1, 2, 3… in the order shown
+function pmmTnVisibleRows(all){
+  const v=pmmTnLab?all.filter(r=>String(r.lab||"")===pmmTnLab):all;
+  return v.map((r,i)=>Object.assign({},r,{n:i+1}));
+}
+function pmmTnSetLab(v){ pmmTnLab=String(v||""); pmmRenderCompiled(); }
+function pmmTnLabFilterHtml(labs){
+  if(labs.length<2) return labs.length?`Test lab: <b style="color:#fff">${labs.map(esc).join(", ")}</b> · `:"";
+  const opt=(v,t)=>`<option value="${esc(v)}" ${pmmTnLab===v?"selected":""} style="color:#222;background:#fff">${esc(t)}</option>`;
+  return `<span style="display:inline-flex;align-items:center;gap:6px">Test lab:
+    <select id="pmm-tn-lab" onchange="pmmTnSetLab(this.value)" title="Show the tensile quotes of one test lab" style="font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:6px;border:1px solid #4a5d94;background:#16255a;color:#fff;cursor:pointer;max-width:230px">${opt("","All labs ("+labs.length+")")}${labs.map(l=>opt(l,l)).join("")}</select>
+    ${pmmTnLab?`<button type="button" onclick="pmmTnSetLab('')" style="font-size:10px;font-weight:700;color:#ffd27a;background:none;border:none;cursor:pointer;padding:0">✕ all labs</button>`:""}</span> · `;
 }
 // ═══ Round 29 ═══
 // (1) Tracking / transfer list: only the test items that fall due within the CURRENT YEAR (or are overdue / not tested yet)
