@@ -300,6 +300,7 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
     <button class="nav-btn active" id="nav-compliance" onclick="showSection('compliance')">📋 Compliance Dashboard</button>
     <button class="nav-btn" id="nav-pmm" onclick="showSection('pmm')">🧩 Product Material Matrix</button>
     <button class="nav-btn" id="nav-pca" onclick="showSection('pca')">🎨 Pantone Color Approval</button>
+    <button class="nav-btn" id="nav-copylink" onclick="cdCopyViewLink()" title="Copy a link that opens exactly this view for a teammate" style="margin-top:16px;border-top:1px solid rgba(255,255,255,.14);padding-top:14px;opacity:.85">🔗 Copy link to this view</button>
   </nav>
   <div id="app-main">
 
@@ -1470,6 +1471,12 @@ function renderAll(){
   renderKPI();
   renderToolbar();
   if(activeTab==="table") renderTable();
+  else if(activeTab==="monitoring") renderMonitoring();
+  else if(activeTab==="newentry") cdRenderNewEntry();
+  else if(activeTab==="tracking") cdRenderTracking();
+  else if(activeTab==="completedtest") cdRenderCompletedTest();
+  else if(activeTab==="deferreditems") cdRenderDeferredItems();
+  else if(activeTab==="expense") renderExpense();
   else renderMonitoring();
   renderModals();
 }
@@ -3634,7 +3641,7 @@ async function cdEnsureSheetExists(sheetName){
       body:JSON.stringify({requests:[{addSheet:{properties:{title:sheetName}}}]}),
     });
     cdCheckAuthError(res);
-    if(!res.ok){ const t=await res.text(); throw new Error(`Could not create the "${sheetName}" tab (${res.status}): ${t.slice(0,150)}`); }
+    if(!res.ok){ const t=await res.text(); if(!/already exists/i.test(t)) throw new Error(`Could not create the "${sheetName}" tab (${res.status}): ${t.slice(0,150)}`); }
   }
   cdSheetExistsCache[sheetName]=true;
 }
@@ -3973,7 +3980,7 @@ function cdExecBlockHtml(tt, ti, ex, ei){
       <div class="pmm-field"><label class="pmm-label">Test Method</label>${cdTa(ex.method,`cdTestTypes[${ti}].execs[${ei}].method=this.value`)}</div>
     </div>
     ${cdExecPhysHtml(tt, ex, `cdTestTypes[${ti}].execs[${ei}]`, `cdAddSample(${ti},${ei})`, si=>`cdRemoveSample(${ti},${ei},${si})`)}
-    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label>${cdTa(ex.report,`cdTestTypes[${ti}].execs[${ei}].report=this.value`)}</div>
+    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label>${cdTa(ex.report,`cdTestTypes[${ti}].execs[${ei}].report=this.value`,'onblur="cdUpCheck(this)"')}${cdUploadWidgetHtml("rhino",ti,ei)}</div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="cdTestTypes[${ti}].execs[${ei}].lab=this.value"/></div>
       <div class="pmm-field"><label class="pmm-label">Cost</label><input class="pmm-input" placeholder="$0.00" value="${esc(ex.cost)}" oninput="cdTestTypes[${ti}].execs[${ei}].cost=this.value"/></div>
@@ -4048,7 +4055,7 @@ function cdSupTestHtml(t,i){
       ${cdSupTests.length>1?`<button onclick="cdSupRemove(${i})" style="font-size:10.5px;color:#e2445c;background:none;border:1px solid #ffd5d5;border-radius:5px;padding:3px 9px;cursor:pointer">Remove</button>`:""}
     </div>
     ${fld("Test type",cdTa(t.description,`cdSupTests[${i}].description=this.value`,'placeholder="e.g. Salt spray test, 96 hours, on the ratchet housing"'))}
-    ${fld("Test Report Link",cdTa(t.link,`cdSupTests[${i}].link=this.value`,'placeholder="https://drive.google.com/…"'))}
+    ${fld("Test Report Link",cdTa(t.link,`cdSupTests[${i}].link=this.value`,'placeholder="https://drive.google.com/…" onblur="cdUpCheck(this)"')+cdUploadWidgetHtml("supplier",i,0))}
     <div class="pmm-grid2">
       ${fld("Tested Date",`<input type="date" class="pmm-input" value="${esc(t.date)}" oninput="cdSupTests[${i}].date=this.value"/>`)}
       ${fld("Supplier",cdTa(t.supplier,`cdSupTests[${i}].supplier=this.value`,'placeholder="Supplier name"'))}
@@ -5249,6 +5256,26 @@ async function cdUpdateItemFields(rowId, fields){
   cdCheckAuthError(b);
   if(!b.ok){ const t=await b.text(); throw new Error(`Could not update item #${rowId} (${b.status}): ${t.slice(0,150)}`); }
 }
+// ── Where does a submitted entry go? ─────────────────────────────────────────────────────────────
+// Nothing tested yet (no test execution, or no PASS/FAIL result) -> Tracking, as before.
+// Every test on the form already has a test execution AND a PASS/FAIL result -> straight to Completed Test.
+function cdExecHasDetails(ex){ return !!(String(ex.date||"").trim()||String(ex.lab||"").trim()||String(ex.report||"").trim()); }
+function cdExecHasResult(ex){ return (ex.samples||[]).some(s=>/^(PASS|FAIL)$/i.test(String(s&&s.verdict||"").trim())); }
+function cdEntryHasFinishedTests(types){
+  const tts=(types||[]).filter(t=>String(t.name||"").trim());
+  return tts.length>0 && tts.every(tt=>(tt.execs||[]).some(ex=>cdExecHasDetails(ex)&&cdExecHasResult(ex)));
+}
+// After saving: has EVERY test of the item (not only the ones on this form) got a PASS/FAIL result? A product that
+// still has an untested test stays in Tracking.
+function cdItemAllTestsResulted(item){
+  const subs=(item&&item.subs)||[];
+  return subs.length>0 && subs.every(sub=>{
+    const ys=Object.keys(sub.yearBlocks||{}).filter(y=>(sub.yearBlocks[y]||[]).length).sort();
+    if(!ys.length) return false;
+    const r=calcOverall(sub.yearBlocks[ys[ys.length-1]]);
+    return r==="PASS"||r==="FAIL";
+  });
+}
 async function cdSubmitEntry(){
   if(cdSubmitting) return;
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
@@ -5344,20 +5371,42 @@ async function cdSubmitEntry(){
     }
     await cdWriteTestTypesToSubitems(cdTestTypes, newId);
 
+    const entryFinished=cdEntryHasFinishedTests(cdTestTypes);     // decided now, before the form is cleared
     const wasUpdate=updatedExisting;
-    const submittedSku=cdDraft.sku;
+    const submittedSku=cdDraft.sku, submittedParent=cdDraft.parentSku;
     cdDraft={sku:"",parentSku:"",description:"",prioritySku:"",website:"",meetsClaim:"",mechTesting:"",chemTesting:"",corrTesting:"",country:"",colors:"",channel:[]};
     cdTestTypes=[cdNewTestType()]; cdActiveTT=0;
     cdClearLookupRecommendations();
     cdWzReset();
     await fetchSheetData();
+    cdSyncFamilyFolder(submittedSku,submittedParent).then(n=>{ if(n) console.log("Drive family folder renamed to: "+n); }).catch(e=>console.warn("Family folder rename skipped: "+e.message));
     // Items are identified in GROUPS as "i"+id (see buildGroups) -- mark the
     // item as transferred so it shows up in the curated Tracking list.
-    cdTrackingTransferredIds.add("i"+newId);
-    localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
-    cdAppendTrackingRow({rowId:newId, name:trackName||submittedSku}).catch(()=>{});
-    switchTab("tracking");
-    alert(customMsg || (wasUpdate ? "This SKU already existed — updated the existing item instead of creating a duplicate." : "Entry saved. You can now set its status in Tracking."));
+    const itemKey="i"+newId, trackLabel=trackName||submittedSku;
+    let toCompleted=entryFinished && cdItemAllTestsResulted(cdFindItemById(itemKey)), completedErr="";
+    if(toCompleted){
+      // Test execution + PASS/FAIL result already on file: it skips Tracking and goes straight to Completed Test.
+      try{
+        if(!cdCompletedTestIds.has(itemKey)) await cdAppendCompletedTestRow({rowId:newId, name:trackLabel});
+        cdCompletedTestIds.add(itemKey);
+        localStorage.setItem(CD_COMPLETED_TEST_LS, JSON.stringify([...cdCompletedTestIds]));
+        if(cdTrackingTransferredIds.has(itemKey)){       // it was in Tracking from an earlier entry: it has finished, so it leaves
+          cdTrackingTransferredIds.delete(itemKey);
+          localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+          cdDeleteRowByItemId(CD_TRACKING_SHEET, String(newId)).catch(()=>{});
+        }
+      }catch(e){ toCompleted=false; completedErr=e.message; }
+    }
+    if(toCompleted){
+      switchTab("completedtest");
+      alert((customMsg || (wasUpdate ? "This SKU already existed — updated the existing item instead of creating a duplicate." : "Entry saved."))+" It already has its test execution and a PASS/FAIL result, so it went straight to Completed Test.");
+    } else {
+      cdTrackingTransferredIds.add(itemKey);
+      localStorage.setItem(CD_TRACKING_TRANSFER_LS, JSON.stringify([...cdTrackingTransferredIds]));
+      cdAppendTrackingRow({rowId:newId, name:trackLabel}).catch(()=>{});
+      switchTab("tracking");
+      alert((customMsg || (wasUpdate ? "This SKU already existed — updated the existing item instead of creating a duplicate." : "Entry saved. You can now set its status in Tracking."))+(completedErr?` It could not be moved to Completed Test (${completedErr}), so it is in Tracking — use ✅ Mark Completed there.`:""));
+    }
   }catch(e){
     alert("Could not submit: "+e.message);
   }finally{
@@ -5488,7 +5537,7 @@ function cdEditExecBlockHtml(tt, ti, ex, ei){
       <div class="pmm-field"><label class="pmm-label">Test Method</label>${cdTa(ex.method,`modal.draft.testTypes[${ti}].execs[${ei}].method=this.value`)}</div>
     </div>
     ${cdExecPhysHtml(tt, ex, `modal.draft.testTypes[${ti}].execs[${ei}]`, `cdEditAddSample(${ti},${ei})`, si=>`cdEditRemoveSample(${ti},${ei},${si})`)}
-    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label>${cdTa(ex.report,`modal.draft.testTypes[${ti}].execs[${ei}].report=this.value`)}</div>
+    <div class="pmm-field"><label class="pmm-label">Test Report <span style="color:#aaa;font-weight:400">(link, optional)</span></label>${cdTa(ex.report,`modal.draft.testTypes[${ti}].execs[${ei}].report=this.value`,'onblur="cdUpCheck(this)"')}${cdUploadWidgetHtml("edit",ti,ei)}</div>
     <div class="pmm-grid2">
       <div class="pmm-field"><label class="pmm-label">Test Lab</label><input class="pmm-input" value="${esc(ex.lab)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].lab=this.value"/></div>
       <div class="pmm-field"><label class="pmm-label">Cost</label><input class="pmm-input" placeholder="$0.00" value="${esc(ex.cost)}" oninput="modal.draft.testTypes[${ti}].execs[${ei}].cost=this.value"/></div>
@@ -11152,6 +11201,248 @@ function pcaDiscardTicketForm(){
   pcaIsBatchTicket=false; pcaBatchSourceRows=[];
   pcaDoSwitchTab(target);
 }
+// ═══ Round 27: upload a report to Drive in the standard folder layout, check a pasted Drive link, keep family folder names in step ═══
+// Layouts (all by COPY-FREE upload: the file is created once, in its final folder):
+//   Rhino-USA 3rd party : Third Party Testing Files / <Category> / <Family SKUs> / <Year> / <Supplier> / Test Reports / file
+//   Supplier test data  : Supplier Testing / <Supplier> / <Family SKUs> / <Year> / file
+//   Retail              : Test Reports / Walmart|AutoZone|Costco / <Year> / <SKU> / file      Sam's Club / <SKU> / file
+// <Family SKUs> = every SKU that shares the parent SKU, comma separated, in sheet order. When a new SKU joins a family
+// that already has a folder, that folder is RENAMED to include the new SKU (nothing is moved or copied).
+const CD_DRIVE = {
+  thirdPartyRoot:"1LWkcqVQ99xB7KEgHwAkpR939-3-aYrIq",   // "Third Party Testing Files - New"
+  supplierRoot:"13WHLYfO0GgVm9yloh5niYCn8eTVU3KbP",     // "Supplier Testing"
+  retailRoot:"1D7aY-ygyXjdrZU5hbcKz6s42HyDbExTO",       // retail "Test Reports"
+  categories:{"Tie-Down Straps":"1trPs5olRTNyPXkOswYxWKyLEZsCjckLL","Recovery Gear":"1exQaRozw3cxLXV2UFgkhEPvlPcsyV-J0","Trailer & Hitch":"1lHTK03T1RIuSPDk7cTl9_yaqo-HLKZSy","Accessories & Camping":"1MVMvPUMaDGYBxjsNWMkdKmGLgb_kL5sT"},
+  groupToCategory:{"tie-down straps":"Tie-Down Straps","recovery gear":"Recovery Gear","towing":"Trailer & Hitch","trailer & hitch":"Trailer & Hitch","accesories":"Accessories & Camping","accessories":"Accessories & Camping","camping":"Accessories & Camping"},
+};
+// ── pure helpers (no Google calls; unit-tested) ──
+function cdDrvClean(n){ return String(n||"").replace(/[\\\/]+/g,"-").replace(/\s+/g," ").trim(); }
+function cdDrvQ(n){ return String(n).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
+function cdDrvIdFromUrl(u){
+  const s=String(u||"").trim();
+  const m=s.match(/\/(?:file|document|spreadsheets|presentation)\/d\/([A-Za-z0-9_-]{15,})/)||s.match(/\/folders\/([A-Za-z0-9_-]{15,})/)||s.match(/[?&]id=([A-Za-z0-9_-]{15,})/);
+  return m?m[1]:"";
+}
+function cdDrvYear(dateStr){ const m=String(dateStr||"").match(/(20\d{2})/); return m?m[1]:String(new Date().getFullYear()); }
+function cdRetailerOf(sku){
+  const s=String(sku||"").trim().toUpperCase();
+  if(/-AZ$/.test(s)) return "AutoZone";
+  if(/-S$/.test(s)) return "Sam's Club";
+  if(/-C$/.test(s)) return "Costco";
+  if(/-W$/.test(s)||/^WM/.test(s)) return "Walmart";
+  return "";
+}
+function cdFamilySkusFrom(groups, sku, parentSku){
+  const s=String(sku||"").trim(), p=String(parentSku||"").trim().toUpperCase(), out=[];
+  const has=n=>out.some(x=>x.toUpperCase()===n.toUpperCase());
+  if(p){ (groups||[]).forEach(g=>(g.items||[]).forEach(i=>{ if(String(i.parentSku||"").trim().toUpperCase()===p){ const n=String(i.name||"").trim(); if(n&&!has(n)) out.push(n); } })); }
+  if(s&&!has(s)) out.push(s);
+  return out;
+}
+function cdFamilyName(skus){ return (skus||[]).map(cdDrvClean).filter(Boolean).join(", "); }
+function cdFolderTokens(name){ return String(name||"").split(",").map(t=>t.trim().toUpperCase()).filter(Boolean); }
+// Which existing folder is this family's? An exact name wins; otherwise the folder whose SKUs are ALL part of the family
+// (the family has grown since it was named) -> rename it to the full list.
+function cdPickFamilyFolder(folders, skus){
+  const want=cdFamilyName(skus), set=new Set((skus||[]).map(s=>String(s).trim().toUpperCase()));
+  const exact=(folders||[]).find(f=>f.name===want);
+  if(exact) return {folder:exact, rename:null};
+  let best=null;
+  (folders||[]).forEach(f=>{ const t=cdFolderTokens(f.name); if(t.length&&t.every(x=>set.has(x))&&(!best||t.length>best.n)) best={f,n:t.length}; });
+  return best?{folder:best.f, rename:want}:{folder:null, rename:null};
+}
+function cdTargetPath(kind, c){
+  const year=cdDrvYear(c.date), sup=cdDrvClean(c.supplier)||"Unknown supplier";
+  if(kind==="supplier") return {rootId:CD_DRIVE.supplierRoot, names:[sup,"{family}",year]};
+  const g=String(c.group||"").trim().toLowerCase();
+  if(g==="retail compliance"||g==="retail"){
+    const r=cdRetailerOf(c.sku); if(!r) return null;
+    return {rootId:CD_DRIVE.retailRoot, retail:true, names:r==="Sam's Club"?[r,cdDrvClean(c.sku)]:[r,year,cdDrvClean(c.sku)]};
+  }
+  const cat=CD_DRIVE.groupToCategory[g]; if(!cat) return null;
+  return {rootId:CD_DRIVE.categories[cat], names:["{family}",year,sup,"Test Reports"]};
+}
+function cdGroupOfSku(sku){
+  const t=String(sku||"").trim().toUpperCase(); if(!t) return "";
+  let own="", parent="";
+  (GROUPS||[]).forEach(g=>g.items.forEach(i=>{ if(String(i.name||"").trim().toUpperCase()===t){ own=g.title; parent=i.parentSku||""; } }));
+  const known=x=>!!CD_DRIVE.groupToCategory[String(x||"").trim().toLowerCase()]||/^retail/i.test(x||"");
+  if(known(own)) return own;
+  if(parent){ let found=""; (GROUPS||[]).forEach(g=>g.items.forEach(i=>{ if(!found&&String(i.parentSku||"").trim().toUpperCase()===String(parent).trim().toUpperCase()&&known(g.title)) found=g.title; })); if(found) return found; }
+  return "";
+}
+function cdAskCategory(){
+  const a=prompt("Which category does this product belong to?\n1 = Tie-Down Straps\n2 = Recovery Gear\n3 = Trailer & Hitch\n4 = Accessories & Camping\n5 = Retail (Walmart / AutoZone / Sam's Club / Costco)");
+  return ({"1":"Tie-Down Straps","2":"Recovery Gear","3":"Towing","4":"Accessories","5":"Retail Compliance"})[String(a||"").trim()]||"";
+}
+// ── Google Drive calls ──
+async function cdDrv(path, opts){
+  const r=await fetch("https://www.googleapis.com/drive/v3/"+path, Object.assign({headers:{Authorization:"Bearer "+accessToken}}, opts||{}));
+  if(r.status===401){ accessToken=null; try{ pmmKickSilentReauth(); }catch(e){} throw new Error("Your Google session expired. Re-sync from the Compliance Dashboard tab, then try again."); }
+  if(!r.ok){ const t=await r.text(); throw new Error("Google Drive error ("+r.status+"): "+t.slice(0,160)); }
+  return r.json();
+}
+const CD_DRV_ALL="&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives";
+async function cdDrvListFolders(parentId, name){
+  const q="'"+parentId+"' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"+(name?" and name='"+cdDrvQ(name)+"'":"");
+  const out=[]; let tok="";
+  do{ const j=await cdDrv("files?q="+encodeURIComponent(q)+"&fields=nextPageToken,files(id,name)&pageSize=200"+CD_DRV_ALL+(tok?"&pageToken="+encodeURIComponent(tok):"")); out.push(...(j.files||[])); tok=j.nextPageToken||""; }while(tok);
+  return out;
+}
+async function cdDrvEnsureFolder(parentId, name){
+  const f=await cdDrvListFolders(parentId,name); if(f.length) return f[0];
+  return cdDrv("files?supportsAllDrives=true&fields=id,name",{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({name,mimeType:"application/vnd.google-apps.folder",parents:[parentId]})});
+}
+async function cdDrvRename(id, name){
+  return cdDrv("files/"+id+"?supportsAllDrives=true&fields=id,name",{method:"PATCH",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({name})});
+}
+async function cdDrvFindFile(parentId, name){
+  const q="'"+parentId+"' in parents and name='"+cdDrvQ(name)+"' and trashed=false and mimeType!='application/vnd.google-apps.folder'";
+  const j=await cdDrv("files?q="+encodeURIComponent(q)+"&fields=files(id,name,size)"+CD_DRV_ALL); return j.files||[];
+}
+async function cdDrvUpload(file, parentId, name){
+  const meta={name,parents:[parentId]}, type=file.type||"application/octet-stream"; let res;
+  if(file.size<=5*1024*1024){
+    const b="cd"+Date.now().toString(36);
+    const body=new Blob(["--"+b+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+JSON.stringify(meta)+"\r\n--"+b+"\r\nContent-Type: "+type+"\r\n\r\n",file,"\r\n--"+b+"--"]);
+    res=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,size",{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"multipart/related; boundary="+b},body});
+  } else {   // large PDFs (some reports are 200 MB+): resumable upload
+    const init=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true&fields=id,name,size",{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json; charset=UTF-8","X-Upload-Content-Type":type,"X-Upload-Content-Length":String(file.size)},body:JSON.stringify(meta)});
+    if(init.status===401){ accessToken=null; throw new Error("Your Google session expired. Re-sync, then try again."); }
+    if(!init.ok){ const t=await init.text(); throw new Error("Google Drive upload could not start ("+init.status+"): "+t.slice(0,160)); }
+    res=await fetch(init.headers.get("Location"),{method:"PUT",headers:{"Content-Type":type},body:file});
+  }
+  if(res.status===401){ accessToken=null; throw new Error("Your Google session expired. Re-sync, then try again."); }
+  if(!res.ok){ const t=await res.text(); throw new Error("Google Drive upload failed ("+res.status+"): "+t.slice(0,160)); }
+  return res.json();
+}
+// Walk down the layout (creating what is missing), rename the family folder if a new SKU has joined, upload the file.
+async function cdUploadReport(file, kind, ctx, setStatus){
+  if(!accessToken) throw new Error('Please "Connect & Sync" with Google first.');
+  const t=cdTargetPath(kind,ctx); if(!t) throw new Error("Could not work out the folder for this product.");
+  const skus=cdFamilySkusFrom(GROUPS,ctx.sku,ctx.parentSku); let parent=t.rootId;
+  for(const n of t.names){
+    let name=n;
+    if(n==="{family}"){
+      setStatus("Finding the family folder…");
+      const pick=cdPickFamilyFolder(await cdDrvListFolders(parent),skus);
+      if(pick.folder){ if(pick.rename){ setStatus("Adding the new SKU to the folder name…"); await cdDrvRename(pick.folder.id,pick.rename); } parent=pick.folder.id; continue; }
+      name=cdFamilyName(skus);
+    }
+    setStatus('Opening "'+name+'"…'); parent=(await cdDrvEnsureFolder(parent,name)).id;
+  }
+  const same=await cdDrvFindFile(parent,file.name), hit=same.find(f=>String(f.size)===String(file.size));
+  if(hit) return {id:hit.id,reused:true,folderId:parent};
+  const name=same.length?file.name.replace(/(\.[^.]*)?$/," (2)$1"):file.name;
+  setStatus("Uploading "+(file.size>1048576?(file.size/1048576).toFixed(1)+" MB":Math.max(1,Math.round(file.size/1024))+" KB")+"…");
+  const up=await cdDrvUpload(file,parent,name); return {id:up.id,reused:false,folderId:parent};
+}
+// After a new SKU is saved: if its family already has a folder, add the SKU to that folder's name.
+async function cdSyncFamilyFolder(sku, parentSku){
+  if(!accessToken||!sku) return null;
+  const group=cdGroupOfSku(sku); const t=cdTargetPath("rhino",{sku,group,supplier:"x"}); if(!t||t.retail) return null;
+  const skus=cdFamilySkusFrom(GROUPS,sku,parentSku); if(skus.length<2) return null;
+  const pick=cdPickFamilyFolder(await cdDrvListFolders(t.rootId),skus);
+  if(pick.folder&&pick.rename){ await cdDrvRename(pick.folder.id,pick.rename); return pick.rename; }
+  return null;
+}
+// A pasted link: is it a real Drive file, and is it inside our test folders?
+async function cdCheckDriveLink(url){
+  const id=cdDrvIdFromUrl(url); if(!id) return {ok:false,msg:"This doesn't look like a Google Drive link."};
+  const m=await cdDrv("files/"+id+"?fields=id,name,parents&supportsAllDrives=true");
+  const roots=[CD_DRIVE.thirdPartyRoot,CD_DRIVE.supplierRoot,CD_DRIVE.retailRoot]; let cur=m.parents&&m.parents[0], depth=0, inside=false;
+  while(cur&&depth<9){ if(roots.includes(cur)){ inside=true; break; } const p=await cdDrv("files/"+cur+"?fields=id,parents&supportsAllDrives=true"); cur=p.parents&&p.parents[0]; depth++; }
+  return {ok:true,name:m.name,inside};
+}
+// ── the little widget under each report-link box ──
+function cdUploadWidgetHtml(kind,a,b){
+  return `<div class="cd-up" style="display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap"><button type="button" onclick="this.nextElementSibling.click()" style="font-size:10.5px;font-weight:600;color:#0055bb;background:#eef5ff;border:1px solid #cfe0fb;border-radius:6px;padding:4px 10px;cursor:pointer">📎 Upload file</button><input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" style="display:none" onchange="cdUpChosen(this,'${kind}',${a},${b})"><span class="cd-up-st" style="font-size:10.5px;color:#6b7a99">or paste a Drive link above</span></div>`;
+}
+function cdUpCtx(kind,a,b){
+  if(kind==="rhino"){ const ex=((cdTestTypes[a]||{}).execs||[])[b]||{}; return {sku:cdDraft.sku,parentSku:cdDraft.parentSku,supplier:ex.supplier,date:ex.date}; }
+  if(kind==="edit"){ const d=modal.draft, ex=d.testTypes[a].execs[b]; return {sku:d.sku,parentSku:d.parentSku,supplier:ex.supplier,date:ex.date}; }
+  const t=cdSupTests[a]||{}; return {sku:cdDraft.sku,parentSku:cdDraft.parentSku,supplier:t.supplier,date:t.date};
+}
+async function cdUpChosen(inp,kind,a,b){
+  const file=inp.files&&inp.files[0]; inp.value=""; if(!file) return;
+  const box=inp.parentElement, st=box.querySelector(".cd-up-st"), field=inp.closest(".pmm-field")||box.parentElement;
+  const set=(m,c)=>{ st.textContent=m; st.style.color=c||"#6b7a99"; };
+  try{
+    const ctx=cdUpCtx(kind,a,b);
+    if(!ctx.sku){ set("Choose the product first.","#e2445c"); return; }
+    ctx.group=cdGroupOfSku(ctx.sku)||cdAskCategory(); if(!ctx.group){ set("Cancelled — no category chosen.","#e2445c"); return; }
+    const isRetail=/^retail/i.test(ctx.group);
+    if(isRetail&&!cdRetailerOf(ctx.sku)){ set("Can't tell the retailer from the SKU ending (-W Walmart, -AZ AutoZone, -S Sam's Club, -C Costco).","#e2445c"); return; }
+    if(!isRetail&&!String(ctx.supplier||"").trim()){ set("Enter the supplier first — it names the folder.","#e2445c"); return; }
+    const r=await cdUploadReport(file,kind==="supplier"?"supplier":"rhino",ctx,set);
+    const ta=field.querySelector("textarea"); ta.value="https://drive.google.com/file/d/"+r.id+"/view"; ta.dispatchEvent(new Event("input",{bubbles:true}));
+    set((r.reused?"✓ Already in the folder — linked: ":"✓ Uploaded and linked: ")+file.name,"#0a8f4d");
+  }catch(e){ set("✗ "+e.message,"#e2445c"); }
+}
+async function cdUpCheck(ta){
+  const st=(ta.closest(".pmm-field")||ta.parentElement).querySelector(".cd-up-st"); if(!st) return;
+  const v=String(ta.value||"").trim(); if(!v){ st.textContent="or paste a Drive link above"; st.style.color="#6b7a99"; return; }
+  if(!/drive\.google\.com|docs\.google\.com/i.test(v)) return;
+  if(!accessToken){ return; }
+  try{ st.textContent="Checking the link…"; st.style.color="#6b7a99"; const r=await cdCheckDriveLink(v);
+    if(!r.ok){ st.textContent="⚠ "+r.msg; st.style.color="#b36b00"; }
+    else if(r.inside){ st.textContent="✓ In our test folders: "+r.name; st.style.color="#0a8f4d"; }
+    else { st.textContent="⚠ "+r.name+" is not in the shared test folders — upload it here instead, or move it into the right folder first."; st.style.color="#b36b00"; }
+  }catch(e){ st.textContent="⚠ Could not check this link: "+e.message; st.style.color="#b36b00"; }
+}
+// ═══ Round 28: a shareable link for every view ═══
+// The address bar always shows the view you are on, e.g.  …/#/compliance/tracking   …/#/pmm/compiled/insights   …/#/pca/approval
+// Paste that link to a teammate: after they sign in they land on exactly that tab. Back/forward and editing the #… also work.
+const CD_ROUTES={
+  compliance:{label:"Compliance Dashboard",tabs:{table:"Main Table",monitoring:"Annual Test",newentry:"New Entry",tracking:"Tracking",completedtest:"Completed Test",deferreditems:"Deferred Items",expense:"Test Expense"}},
+  pmm:{label:"Product Material Matrix",tabs:{"new":"New Entry",compiled:"Compiled View",suppack:"Supplier Ack.",costsavings:"Cost Savings"}},
+  pca:{label:"Pantone Color Approval",tabs:{tracking:"Tracking",approval:"Approval Process",completed:"Ticket Completed"}},
+};
+function cdRouteParts(hash){
+  return String(hash==null?location.hash:hash).replace(/^#\/?/,"").split("?")[0].split("/").map(x=>{ try{ return decodeURIComponent(x); }catch(e){ return x; } }).map(x=>x.trim().toLowerCase()).filter(Boolean);
+}
+function cdRouteNormalise(parts){            // -> [section, tab, sub] or null when it is not one of our links
+  const sec=parts[0], r=CD_ROUTES[sec]; if(!r) return null;
+  const tab=Object.prototype.hasOwnProperty.call(r.tabs,parts[1])?parts[1]:Object.keys(r.tabs)[0];
+  const sub=(sec==="pmm"&&tab==="compiled")?(parts[2]==="insights"?"insights":"compilation"):"";
+  return [sec,tab,sub];
+}
+function cdRouteCurrent(){
+  const pm=document.getElementById("panel-pmm"), pc=document.getElementById("panel-pca");
+  if(pm&&pm.classList.contains("active")){ const t=pmmActiveTab||"new"; return ["pmm",t,(t==="compiled"&&pmmCompiledSub==="insights")?"insights":""]; }
+  if(pc&&pc.classList.contains("active")){ const t=(pcaActiveTab==="newticket")?"tracking":(pcaActiveTab||"tracking"); return ["pca",t,""]; }
+  return ["compliance",activeTab||"table",""];
+}
+function cdRouteHash(r){ return "#/"+r.filter(Boolean).join("/"); }
+function cdRouteTitle(r){ const x=CD_ROUTES[r[0]]; return "Compliance System"+(x?" – "+x.label+" · "+(x.tabs[r[1]]||""):""); }
+let cdRouteMuted=false;
+function cdRouteWrite(){
+  if(cdRouteMuted) return;
+  try{ const r=cdRouteCurrent(), h=cdRouteHash(r); if(location.hash!==h) history.replaceState(null,"",location.pathname+location.search+h); document.title=cdRouteTitle(r); }catch(e){}
+}
+function cdRouteApply(hash){
+  const n=cdRouteNormalise(cdRouteParts(hash)); if(!n) return false;
+  const [sec,tab,sub]=n; cdRouteMuted=true;
+  try{
+    if(sec==="compliance"){ showSection("compliance"); switchTab(tab); }
+    else if(sec==="pmm"){ if(tab==="compiled") pmmCompiledSub=sub||"compilation"; showSection("pmm"); pmmSwitchTab(tab); }
+    else { showSection("pca"); pcaSwitchTab(tab); }
+  }catch(e){ console.warn("That link could not be opened: "+e.message); }
+  cdRouteMuted=false; cdRouteWrite(); return true;
+}
+function cdCopyViewLink(){
+  cdRouteWrite(); const url=location.href;
+  const done=()=>{ const b=document.getElementById("nav-copylink"); if(b){ const t=b.innerHTML; b.innerHTML="✓ Link copied"; setTimeout(()=>{ b.innerHTML=t; },1600); } };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done).catch(()=>prompt("Copy this link:",url));
+  else prompt("Copy this link:",url);
+}
+// keep the address bar in step with every tab change
+["switchTab","showSection","pmmSwitchTab","pmmSetCompiledSub","pcaDoSwitchTab"].forEach(n=>{
+  const f=window[n]; if(typeof f!=="function") return;
+  window[n]=function(){ const r=f.apply(this,arguments); cdRouteWrite(); return r; };
+});
+window.addEventListener("hashchange",()=>{ if(location.hash&&location.hash!==cdRouteHash(cdRouteCurrent())) cdRouteApply(); });
+if(!cdRouteApply()) cdRouteWrite();
 </script>
 </body>
 </html>
