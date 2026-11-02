@@ -3929,7 +3929,7 @@ async function cdSaveFailEdit(){
     if(/^20(24|25|26)$/.test(String(m.year))) sub["p"+String(m.year).slice(2)]=blocks;
     try{ localStorage.setItem(LS_CACHE,JSON.stringify(GROUPS)); }catch(e){}
     closeModal();
-    if(cdCompletedTestIds.has(m.itemId)){ cdSyncCompletedRows([cdFindItemById(m.itemId)]).catch(e=>console.warn("Completed Test sheet not updated: "+e.message)); }
+    if(cdCompletedTestIds.has(m.itemId)){ cdSyncCompletedRows([cdFindItemById(m.itemId)]).catch(e=>alert("Saved, but the Completed Test sheet could not be updated: "+e.message)); }
     if(activeTab==="completedtest") cdRenderCompletedTest(); else renderAll();
   }catch(e){
     if(modal&&modal.type==="cdFailEdit"){ modal.saving=false; modal.error=String(e.message||e); renderModals(); }
@@ -5724,8 +5724,10 @@ async function cdSaveItemEdit(){
     closeModal();
     await fetchSheetData();
     cdRenderActiveTab();
-    if(editedId&&cdCompletedTestIds.has(editedId)){ try{ await cdSyncCompletedRows([cdFindItemById(editedId)]); }catch(e){ console.warn("Completed Test sheet not updated: "+e.message); } }
-    alert("Saved to the sheet.");
+    let syncNote="";
+    if(editedId&&cdCompletedTestIds.has(editedId)){ try{ await cdSyncCompletedRows([cdFindItemById(editedId)]); syncNote=" The Completed Test sheet is updated too."; }catch(e){ syncNote="\n\nBUT the Completed Test sheet could not be updated: "+e.message; } }
+    if(editedId){ try{ const upd=await cdSyncListRows(cdFindItemById(editedId)); if(upd.length) syncNote+=" The "+upd.join(" and ")+" sheet"+(upd.length>1?"s are":" is")+" updated too."; }catch(e){ syncNote+="\n\nBUT the Tracking / Deferred items sheet could not be updated: "+e.message; } }
+    alert("Saved to the sheet."+syncNote);
   }catch(e){
     alert("Could not save: "+e.message);
   }finally{
@@ -5750,9 +5752,9 @@ async function cdMarkCompleted(){
     await cdAppendCompletedTestRow({rowId:d.rowId, name:d.sku});
     closeModal();
     await fetchSheetData();
-    try{ await cdSyncCompletedRows([cdFindItemById(itemId)]); }catch(e){ console.warn("Completed Test sheet not fully updated: "+e.message); }
+    let syncNote=""; try{ await cdSyncCompletedRows([cdFindItemById(itemId)]); }catch(e){ syncNote="\n\nBUT the Completed Test sheet could not be updated: "+e.message; }
     switchTab("completedtest");
-    alert("Marked completed — test results saved to Subitems.");
+    alert("Marked completed — test results saved to Subitems."+syncNote);
   }catch(e){
     alert("Could not mark completed: "+e.message);
   }finally{
@@ -11538,8 +11540,7 @@ const CD_COMPLETED_COLS=["Test Items","Result","Failed Tests","Supplier CAP","Ev
 let cdCompletedDates={};
 function cdCompletedVisible(item){ const iso=cdCompletedDates[item.id]; return !iso||String(iso).slice(0,4)===String(cdThisYear()); }
 function cdCompletedRecordOf(item){
-  const y=cdThisYear(), all=(item.subs||[]).map(s=>({s,l:cdLatestBlock(s)})).filter(x=>x.l);
-  let use=all.filter(x=>x.l.d&&x.l.d.getFullYear()===y); if(!use.length) use=all;
+  const y=cdThisYear(), use=(item.subs||[]).map(s=>({s,l:cdLatestBlock(s)})).filter(x=>x.l);   // every test that has a result: its latest run, with the date
   const lines=[],failed=[],cap=[],evr=[],evl=[]; let fail=false,pass=0;
   use.forEach(({s,l})=>{
     const v=cdBlockVerdict(l.b)||"No result"; if(v==="FAIL") fail=true; if(v==="PASS") pass++;
@@ -11577,6 +11578,30 @@ async function cdSyncCompletedRows(items){
   if(requests.length){ const b=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({requests})}); cdCheckAuthError(b); if(!b.ok){ const t=await b.text(); throw new Error(`Could not update "${CD_COMPLETED_TEST_SHEET}" (${b.status}): ${t.slice(0,150)}`); } }
   if(add.length){ const a=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_COMPLETED_TEST_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:add})}); cdCheckAuthError(a); if(!a.ok){ const t=await a.text(); throw new Error(`Could not add to "${CD_COMPLETED_TEST_SHEET}" (${a.status}): ${t.slice(0,150)}`); } }
   return items.length;
+}
+// Tracking and Deferred items keep COPIES of a few item fields (SKU, Description, Priority SKU). After an item is edited, refresh those copies
+// (only the rows of that item, only cells that actually differ; nothing is created and the reason / dates / tests are never touched).
+async function cdSyncListRows(item){
+  if(!accessToken||!item||!item.rowId) return [];
+  const updated=[];
+  const jobs=[[CD_TRACKING_SHEET,"Tracking",{"SKU":item.name||""}],[CD_DEFERRED_SHEET,"Deferred items",{"SKU":item.name||"","Description":item.description||"","Priority SKU":item.prioritySku||""}]];
+  for(const [sheet,label,vals] of jobs){
+    let map; try{ map=await cdGetHeaderMap(sheet); }catch(e){ continue; }
+    if(!map||map["Item ID"]===undefined) continue;
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(sheet)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
+    cdCheckAuthError(res); if(!res.ok) continue;
+    const rows=(await res.json()).values||[], reqs=[]; let gid=null;
+    for(let r=1;r<rows.length;r++){
+      if(String(rows[r][map["Item ID"]]||"").trim()!==String(item.rowId)) continue;
+      Object.entries(vals).forEach(([k,v])=>{ if(map[k]===undefined||String(rows[r][map[k]]||"")===String(v)) return; if(gid===null) gid=-1; reqs.push({r,k,v}); });
+    }
+    if(!reqs.length) continue;
+    gid=await pmmGetSheetGidFor(sheet);
+    const b=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}:batchUpdate`,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({requests:reqs.map(q=>({updateCells:{range:{sheetId:gid,startRowIndex:q.r,endRowIndex:q.r+1,startColumnIndex:map[q.k],endColumnIndex:map[q.k]+1},rows:[{values:[{userEnteredValue:{stringValue:String(q.v)}}]}],fields:"userEnteredValue"}}))})});
+    cdCheckAuthError(b); if(!b.ok){ const t=await b.text(); throw new Error(`Could not update "${sheet}" (${b.status}): ${t.slice(0,150)}`); }
+    updated.push(label);
+  }
+  return updated;
 }
 function cdCompletedCurrentItems(){ const out=[]; GROUPS.forEach(g=>g.items.forEach(i=>{ if(cdCompletedTestIds.has(i.id)&&cdCompletedVisible(i)) out.push(i); })); return out; }
 async function cdCompletedSaveAll(manual){
