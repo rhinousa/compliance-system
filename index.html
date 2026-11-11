@@ -6911,6 +6911,7 @@ function pmmBuildCostSnapshotsFromRows(rows){
     if(type==="chemical") byId[id].chemical=rowData;
     else if(type.startsWith("corrosion")) byId[id].corrosion=rowData;
     else if(type==="total") byId[id].total=rowData;
+    else if(type.startsWith("tensile")){ byId[id].tensile=rowData; byId[id].tensileFilter=pmmPick(row,"Filter Summary"); }
   });
   return Object.values(byId).sort((a,b)=>String(b.savedDate||"").localeCompare(String(a.savedDate||"")));
 }
@@ -6949,11 +6950,15 @@ async function pmmSaveCostSavingsSnapshot(){
   const filterSummary=pmmFilterSummaryText();
   const skusIncluded=entries.map(e=>e.sku).join(", ");
 
+  // the Tensile (Physical) result, with ITS OWN filter (default none = every lab), is saved in the same snapshot
+  const tnRows=pmmTnVisibleRows(pmmTensileRows(pmmEntries)), tnT=pmmTensileTotals(tnRows);
+  const tnFilter="Tensile (Physical) · "+(pmmTnLab?("Test lab: "+pmmTnLab):"All labs");
   const rows=[
     [snapshotId,savedDate,filterSummary,"Chemical",chem.totalSamples,chem.repSamples,chem.samplesSaved,chem.totalCost,chem.repCost,chem.costSaved,chem.pctSaved,skusIncluded],
     [snapshotId,savedDate,filterSummary,"Corrosion (metal)",corr.totalSamples,corr.repSamples,corr.samplesSaved,corr.totalCost,corr.repCost,corr.costSaved,corr.pctSaved,skusIncluded],
     [snapshotId,savedDate,filterSummary,"Total",chem.totalSamples+corr.totalSamples,chem.repSamples+corr.repSamples,totalSamplesSaved,combinedCostBefore,combinedCostAfter,totalCostSaved,totalPctSaved,skusIncluded],
   ];
+  if(tnRows.length) rows.push([snapshotId,savedDate,tnFilter,"Tensile (Physical)",tnT.total,tnT.keep.length,tnT.skipped,tnT.all,tnT.after,tnT.saved,tnT.pct,[...new Set(tnRows.map(r=>r.sku))].join(", ")]);
 
   try{
     await pmmEnsureCostSavingsHeaders();
@@ -6970,6 +6975,7 @@ async function pmmSaveCostSavingsSnapshot(){
     pmmCostSavingsSnapshots.unshift({
       id:snapshotId, savedDate, filterSummary, skus:entries.map(e=>e.sku), rowIndexes,
       chemical:chem, corrosion:corr,
+      tensile:tnRows.length?{totalSamples:tnT.total,repSamples:tnT.keep.length,samplesSaved:tnT.skipped,totalCost:tnT.all,repCost:tnT.after,costSaved:tnT.saved,pctSaved:tnT.pct}:null, tensileFilter:tnRows.length?tnFilter:"",
       total:{totalSamples:chem.totalSamples+corr.totalSamples,repSamples:chem.repSamples+corr.repSamples,samplesSaved:totalSamplesSaved,totalCost:combinedCostBefore,repCost:combinedCostAfter,costSaved:totalCostSaved,pctSaved:totalPctSaved},
     });
     pmmSwitchTab("costsavings");
@@ -7864,7 +7870,22 @@ async function pmmEnsureColumns(sheetName, needed){
 // ---- Final lab quotes (saved in their own "Final Quotes" tab, one row per scope + testing type) ----
 const PMM_FQ_TYPES={chem:"Chemical",corr:"Corrosion (metal)"};
 function pmmFqKey(scope,kind){ return scope+"||"+kind; }
-function pmmGetFinalQuote(kind){ return pmmFinalQuotes[pmmFqKey(pmmFilterSummaryText(),kind)]||null; }
+// A final quote is a test lab's price for a set of products. If it was saved under a different filter text (e.g. just "Test lab: TUV") but for the SAME lab,
+// the SAME number of products and the SAME original cost, it is still the right quote — so adding Supplier / Category on top of the lab does not hide it.
+function pmmLabPartOfScope(scope){ return String(scope||"").split(" · ").find(p=>/^Test lab:/.test(p))||""; }
+function pmmFindFinalQuote(scope,kind,cost,products){
+  const exact=pmmFinalQuotes[pmmFqKey(scope,kind)]; if(exact) return exact;
+  const lab=pmmLabPartOfScope(scope); if(!lab||cost==null) return null;
+  let best=null;
+  Object.values(pmmFinalQuotes).forEach(q=>{
+    if(q.kind!==kind||pmmLabPartOfScope(q.scope)!==lab) return;
+    if(Math.abs((q.original||0)-cost)>0.5) return;
+    if(products!=null&&q.products&&q.products!==products) return;
+    if(!best||String(q.savedAt||"")>String(best.savedAt||"")) best=q;
+  });
+  return best;
+}
+function pmmGetFinalQuote(kind){ const ins=pmmLastInsight; return pmmFindFinalQuote(pmmFilterSummaryText(),kind,ins&&ins[kind]?ins[kind].cost:null,ins?ins.products:null); }
 async function pmmLoadFinalQuotes(){
   if(!accessToken) return;
   try{
@@ -8288,9 +8309,14 @@ function pmmSectionTitleHtml(entries){
     right:`<button id="pmm-grid-open" type="button" onclick="pmmGridOpen()" title="Open every product and its test labs as an Excel-style table you can edit" style="margin-left:auto;font-size:12px;font-weight:700;color:#0055bb;background:#e8f2ff;border:1.5px solid #c0d8f8;border-radius:8px;padding:8px 15px;cursor:pointer;white-space:nowrap">📋 Table view — edit like Excel</button>`});
 }
 // ---- Cost Savings tab: same summary table (with Final quote), same lab comparison, same card / heading style as the compiled view ----
+function pmmSnapTensileHtml(snap){
+  const t=snap.tensile; if(!t) return "";
+  const fU=n=>"$"+Number(n||0).toLocaleString("en-US",{maximumFractionDigits:2}), lab=String(snap.tensileFilter||"").replace(/^Tensile \(Physical\) · /,"")||"All labs";
+  return `<div class="pmm-snap-tensile" style="margin-top:12px;border-top:1px solid rgba(255,255,255,.15);padding-top:10px"><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Tensile (Physical) Testing · ${esc(lab)}</div><div style="font-size:11px;color:#e8ecf5">${t.totalSamples} tensile tests → only <b>${t.repSamples}</b> need testing (${t.samplesSaved} skipped) · ${fU(t.totalCost)} → <b>${fU(t.repCost)}</b> · <b style="color:#7ee8b8">saved ${fU(t.costSaved)} (${t.pctSaved}%)</b></div></div>`;
+}
 function pmmCostSnapshotRowsHtml(snap){
   const fU=n=>"$"+Number(n||0).toLocaleString("en-US",{maximumFractionDigits:2}), sv=n=>(n<0?"-":"")+"$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:2});
-  const mk=(kind)=>{ const fq=pmmFinalQuotes[pmmFqKey(snap.filterSummary||"All entries",kind)]; return fq||null; };
+  const mk=(kind)=>{ const d=kind==="chem"?snap.chemical:snap.corrosion; return pmmFindFinalQuote(snap.filterSummary||"All entries",kind,d?d.totalCost:null,snap.skus.length); };
   const fC=mk("chem"), fR=mk("corr"), dC=snap.chemical, dR=snap.corrosion, dT=snap.total;
   const calc=(fq,d)=>{ if(!fq||!d) return null; const saved=Math.round((d.totalCost-fq.final)*100)/100; return {final:fq.final,saved,pct:d.totalCost>0?Math.round(saved/d.totalCost*1000)/10:0,stale:Math.abs((fq.original||0)-d.totalCost)>0.5}; };
   const cC=calc(fC,dC), cR=calc(fR,dR); let cT=null; if(cC&&cR&&dT){ const fin=cC.final+cR.final, s=Math.round((dT.totalCost-fin)*100)/100; cT={final:fin,saved:s,pct:dT.totalCost>0?Math.round(s/dT.totalCost*1000)/10:0,stale:cC.stale||cR.stale}; }
@@ -8300,7 +8326,7 @@ function pmmCostSnapshotRowsHtml(snap){
   const row=(label,d,f,total)=>d?`<tr style="border-bottom:1px solid rgba(255,255,255,${total?".2":".1"});${total?"font-weight:700":""}"><td style="padding:6px 8px;font-weight:${total?800:600};${total?"color:#fff":""}">${label}</td><td style="padding:6px 8px;text-align:right">${d.totalSamples}</td><td style="padding:6px 8px;text-align:right">${d.repSamples}</td><td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${d.samplesSaved}</td><td style="padding:6px 8px;text-align:right">${fU(d.totalCost)}</td><td style="padding:6px 8px;text-align:right">${fU(d.repCost)}</td><td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${fU(d.costSaved)}</td><td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${d.pctSaved}%</td>${fq(f,total)}</tr>`:"";
   return `<div class="pmm-snap-summary" style="background:#0e1b3d;border-radius:8px;padding:12px 14px"><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Sample Optimization Summary</div>
     <table style="width:100%;border-collapse:collapse;font-size:10.5px;color:#e8ecf5"><thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">${th("Testing Type","",1)}${th("Samples")}${th("Rep.")}${th("Saved")}${th("Cost")}${th("After")}${th("Saved")}${th("%")}${th("Final quote","#ffd27a")}${th("Actual saved","#ffd27a").replace("border-left:1px solid rgba(255,255,255,.18);","")}${th("Actual %","#ffd27a").replace("border-left:1px solid rgba(255,255,255,.18);","")}</tr></thead>
-    <tbody>${row("Chemical",dC,cC)}${row("Corrosion <span style='color:#a8b8d8;font-weight:400'>(metal)</span>",dR,cR)}${row("Total",dT,cT,true)}</tbody></table>${(cC&&cC.stale)||(cR&&cR.stale)?`<div style="font-size:10px;color:#fdab3d;margin-top:6px">⚠ The quotes changed after a final quote was entered — re-enter it from the Compiled View.</div>`:""}</div>`;
+    <tbody>${row("Chemical",dC,cC)}${row("Corrosion <span style='color:#a8b8d8;font-weight:400'>(metal)</span>",dR,cR)}${row("Total",dT,cT,true)}</tbody></table>${pmmSnapTensileHtml(snap)}${(cC&&cC.stale)||(cR&&cR.stale)?`<div style="font-size:10px;color:#fdab3d;margin-top:6px">⚠ The quotes changed after a final quote was entered — re-enter it from the Compiled View.</div>`:""}</div>`;
 }
 function pmmRenderCostSavings(){
   const body=document.getElementById("pmm-body"); if(!body) return;
@@ -8361,7 +8387,7 @@ function pmmLabCompareSectionHtml(entries,opts){
   const KINDS=[["chem","Chemical"],["corr","Corrosion <span style=\"color:#a8b8d8;font-weight:400\">(metal)</span>"]];
   const data={}; KINDS.forEach(([k])=>{ data[k]={all:pmmSavingsFor(entries,k,snap?null:labsLower), labs:labs.map(l=>({lab:l,r:pmmSavingsFor(entries,k,[l.toLowerCase()])})).filter(x=>x.r.has)}; });
   const best={}; KINDS.forEach(([k])=>{ best[k]={fin:null}; });
-  const fq=(kind,scope,r)=>{ if(!scope) return null; const q=pmmFinalQuotes[pmmFqKey(scope,kind)]; if(!q) return null; const s=Math.round((r.totalCost-q.final)*100)/100; return {final:q.final,saved:s,pct:r.totalCost>0?Math.round(s/r.totalCost*1000)/10:0,stale:Math.abs((q.original||0)-r.totalCost)>0.5}; };
+  const fq=(kind,scope,r)=>{ if(!scope) return null; const q=pmmFindFinalQuote(scope,kind,r.totalCost,null); if(!q) return null; const s=Math.round((r.totalCost-q.final)*100)/100; return {final:q.final,saved:s,pct:r.totalCost>0?Math.round(s/r.totalCost*1000)/10:0,stale:Math.abs((q.original||0)-r.totalCost)>0.5}; };
   KINDS.forEach(([k])=>{ data[k].labs.forEach(x=>{ x.f=snap?null:fq(k,pmmScopeWithLabs([x.lab]),x.r); }); const fs=data[k].labs.filter(x=>x.f); best[k].fin=fs.length>1?Math.min(...fs.map(x=>x.f.final)):null; });
   const td=(v,st)=>`<td style="padding:3px 6px;text-align:right;white-space:nowrap;${st||""}">${v}</td>`;
   const TINT="background:rgba(255,210,122,.09)", SGN=f=>f.saved>0?"#7ee8b8":f.saved<0?"#ff9b9b":"#e8ecf5";
@@ -8490,7 +8516,7 @@ function pmmInsightsHtml(){
   // Final quote from the test lab (entered with the ✏ button): the summary compares it with the ORIGINAL quotes
   const scopeText=pmmFilterSummaryText();
   pmmLastInsight={scope:scopeText,products:entries.length,chem:{cost:chem.totalCost,after:chem.repCost},corr:{cost:corr.totalCost,after:corr.repCost}};
-  const fqCalc=(kind,cost)=>{ const fq=pmmFinalQuotes[pmmFqKey(scopeText,kind)]; if(!fq) return null; const saved=Math.round((cost-fq.final)*100)/100; return {final:fq.final,saved,pct:cost>0?Math.round((saved/cost)*1000)/10:0,stale:Math.abs((fq.original||0)-cost)>0.5||(fq.products&&fq.products!==entries.length)}; };
+  const fqCalc=(kind,cost)=>{ const fq=pmmFindFinalQuote(scopeText,kind,cost,entries.length); if(!fq) return null; const saved=Math.round((cost-fq.final)*100)/100; return {final:fq.final,saved,pct:cost>0?Math.round((saved/cost)*1000)/10:0,stale:Math.abs((fq.original||0)-cost)>0.5||(fq.products&&fq.products!==entries.length)}; };
   const fqC=fqCalc("chem",chem.totalCost), fqR=fqCalc("corr",corr.totalCost);
   let fqT=null; if(fqC&&fqR){ const fin=fqC.final+fqR.final, sv=Math.round((combinedCostBefore-fin)*100)/100; fqT={final:fin,saved:sv,pct:combinedCostBefore>0?Math.round((sv/combinedCostBefore)*1000)/10:0,stale:fqC.stale||fqR.stale}; }
   const fmtSaved=n=>(n<0?"-":"")+"$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:2});
@@ -8520,7 +8546,7 @@ function pmmInsightsHtml(){
           <div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">💰 Actual Material Consolidation Savings</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button id="pmm-final-quote-btn" onclick="pmmOpenFinalQuote()" title="Enter the final quote the test lab gave after we sent the consolidated materials" style="font-size:10.5px;font-weight:700;color:#0e1b3d;background:#ffd27a;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">✏ Enter final quote</button>
-            <button onclick="pmmRequestSaveCostSavings()" style="font-size:10.5px;font-weight:700;color:#0e1b3d;background:#7ee8b8;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">💾 Save to Cost Savings</button>
+            <button onclick="pmmRequestSaveCostSavings()" title="Saves this summary (with the filters above) AND the Tensile (Physical) result (with its own filter) in one snapshot" style="font-size:10.5px;font-weight:700;color:#0e1b3d;background:#7ee8b8;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">💾 Save to Cost Savings</button>
           </div>
         </div>
         <ul style="margin:0 0 12px 0;padding-left:18px;font-size:11px;color:#e8ecf5;line-height:1.7">
@@ -8909,6 +8935,7 @@ function confirmTextGate(){
 }
 
 function pmmRequestSaveCostSavings(){
+  if(pmmTdDirty()){ alert('You have unsaved Skip / remarks changes in Tensile (Physical) Testing.\n\nPress "Save remarks & disposition" there first, so what is saved to Cost Savings matches what is saved for the tensile tests.'); return; }
   openModal({type:"pmmSaveGate"});
   setTimeout(()=>document.getElementById("pmm-savegate-input")?.focus(), 50);
 }
@@ -9551,7 +9578,7 @@ function pmmTdIsSkip(v){ return /^\s*skip/i.test(String(v||"")); }
 function pmmTdDirty(){ return Object.keys(pmmTensileDraft).length>0; }
 function pmmTensileRows(entries){
   const rows=[];
-  entries.forEach(e=>pmmLinesInView(e).forEach(l=>{ if(l.kind!=="phys") return; const key=pmmTdKey(e.sku,l.lab), d=pmmTdGet(key);
+  pmmEntries.forEach(e=>pmmTestLines(e).forEach(l=>{ if(l.kind!=="phys") return; const key=pmmTdKey(e.sku,l.lab), d=pmmTdGet(key);   // every tensile quote: the filters above do not apply here
     rows.push({n:rows.length+1,key,sku:e.sku,desc:pmmNormalizeProductName(e.description)||e.sku,lab:l.lab||"",cost:l.cost||0,remarks:d.remarks,disp:d.disp}); }));
   // the SKU is shown next to the name only where two different SKUs share the same description (it is always in the hover text)
   const skus={}; rows.forEach(r=>{ (skus[r.desc.toLowerCase()]=skus[r.desc.toLowerCase()]||new Set()).add(r.sku); });
@@ -9581,7 +9608,7 @@ function pmmTensileSectionHtml(entries){
   const rows=pmmTnVisibleRows(allRows), T=pmmTensileTotals(rows), usd=pmmFqUsd, dirty=pmmTdDirty();
   const head=`<div style="background:#0e1b3d;border-radius:9px 9px 0 0;padding:11px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
     <div><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">🧾 Tensile (Physical) Testing</div>
-    <div style="font-size:10.5px;color:#a8b8d8;margin-top:2px">${pmmTnLabFilterHtml(labs)}Mark a test <b style="color:#fff">Skip</b> when it is already covered — the right table then shows the testing we actually need.</div></div>
+    <div style="font-size:10.5px;color:#a8b8d8;margin-top:2px">${pmmTnLabFilterHtml(labs)}Mark a test <b style="color:#fff">Skip</b> when it is already covered — the right table then shows the testing we actually need.<br><span style="color:#8ab4f8">Own filter (default: none = every lab) — the Supplier / Test lab / Category filters above do not change this table. It is saved to Cost Savings together with the summary above.</span></div></div>
     <div style="display:flex;align-items:center;gap:10px"><span id="pmm-tn-dirty" style="display:${dirty?"inline":"none"};font-size:10.5px;color:#ffd27a;font-weight:700">● unsaved changes</span><button id="pmm-tn-save" onclick="pmmOpenTensileSave()" title="Saved to the &quot;${PMM_TENSILE_SHEET}&quot; tab (asks for the Save password)" style="padding:6px 13px;font-size:11px;font-weight:700;color:${dirty?"#fff":"#8a96b2"};background:${dirty?"#0073ea":"rgba(255,255,255,.1)"};border:none;border-radius:7px;cursor:${dirty?"pointer":"default"}">💾 Save remarks &amp; disposition</button></div></div>`;
   if(!rows.length) return `<div id="pmm-tensile-section" style="margin-top:22px;border:1.5px solid #dfe3ec;border-radius:10px;background:#fff">${head}<div style="padding:22px;text-align:center;font-size:11.5px;color:#999">No Tensile (Physical) quotes in this view yet — add a quotation under Physical Testing in a Test Lab section.</div></div>`;
   const th=(t,al)=>`<th style="text-align:${al||"left"};padding:6px 8px;font-size:9px;font-weight:700;color:#556;text-transform:uppercase;letter-spacing:.3px;background:#f3f5f9;border-bottom:1.5px solid #dfe3ec;white-space:nowrap">${t}</th>`;
