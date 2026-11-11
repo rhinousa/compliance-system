@@ -3007,13 +3007,14 @@ function renderModals(){
     const snap=pmmCostSavingsSnapshots.find(s=>s.id===modal.snapshotId);
     if(!snap){ root.innerHTML=""; return; }
     const matchedEntries=pmmEntries.filter(e=>snap.skus.includes(e.sku));
+    const tOnly=!snap.chemical&&!snap.corrosion&&!snap.total;   // a snapshot of the Tensile (Physical) result only
     const missingCount=snap.skus.length-matchedEntries.length;
-    const cover=matchedEntries.length?pmmComputeSetCover(matchedEntries):null;
-    const metalCover=matchedEntries.length?pmmComputeSetCover(matchedEntries, pmmIsMetalMaterial):null;
+    const cover=(matchedEntries.length&&!tOnly)?pmmComputeSetCover(matchedEntries):null;
+    const metalCover=(matchedEntries.length&&!tOnly)?pmmComputeSetCover(matchedEntries, pmmIsMetalMaterial):null;
     let dateStr=snap.savedDate;
     try{ dateStr=new Date(snap.savedDate).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"}); }catch(e){}
 
-    const entryDetailsHtml=matchedEntries.map(e=>pmmAckEntryBlockHtml(e)).join("");
+    const entryDetailsHtml=(tOnly?[]:matchedEntries).map(e=>pmmAckEntryBlockHtml(e)).join("");
 
     root.innerHTML=`<div class="modal-wrap" onclick="if(event.target===this)closeModal()">
       <div class="modal-box" style="max-width:1400px;max-height:88vh;display:flex;flex-direction:column">
@@ -3025,9 +3026,8 @@ function renderModals(){
           <button onclick="closeModal()" style="background:rgba(255,255,255,.15);border:none;border-radius:6px;color:#fff;width:28px;height:28px;cursor:pointer;font-size:15px;flex-shrink:0">✕</button>
         </div>
         <div style="padding:20px;overflow-y:auto">
-          ${pmmCostSnapshotRowsHtml(snap)}
-          ${matchedEntries.length?pmmSpendSummaryHtml(matchedEntries,{respectFilter:false,standalone:true}):""}
-          ${missingCount>0?`<div style="font-size:10.5px;color:#b07000;margin-top:10px">⚠ ${missingCount} of ${snap.skus.length} products from this snapshot could not be found (likely edited or deleted since it was saved) — showing details for the ${matchedEntries.length} still available.</div>`:""}
+          ${tOnly?pmmSnapTensileDetailHtml(snap):pmmCostSnapshotRowsHtml(snap)}
+          ${missingCount>0&&!tOnly?`<div style="font-size:10.5px;color:#b07000;margin-top:10px">⚠ ${missingCount} of ${snap.skus.length} products from this snapshot could not be found (likely edited or deleted since it was saved) — showing details for the ${matchedEntries.length} still available.</div>`:""}
 
           ${(cover||metalCover)?`<div style="margin-top:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
             ${cover?`<div>
@@ -3040,10 +3040,10 @@ function renderModals(){
             </div>`:""}
           </div>`:""}
 
-          <div style="margin-top:20px">
+          ${tOnly?"":`<div style="margin-top:20px">
             <div style="font-size:11px;font-weight:700;color:#333;margin-bottom:8px">Full Product Details</div>
             ${entryDetailsHtml?`<div class="pmm-compiled-grid">${entryDetailsHtml}</div>`:`<div style="color:#aaa;font-size:11px">None of the products from this snapshot could be found.</div>`}
-          </div>
+          </div>`}
         </div>
       </div>
     </div>`;
@@ -6911,14 +6911,15 @@ function pmmBuildCostSnapshotsFromRows(rows){
     if(type==="chemical") byId[id].chemical=rowData;
     else if(type.startsWith("corrosion")) byId[id].corrosion=rowData;
     else if(type==="total") byId[id].total=rowData;
-    else if(type.startsWith("tensile")){ byId[id].tensile=rowData; byId[id].tensileFilter=pmmPick(row,"Filter Summary"); }
+    else if(type.startsWith("tensile")){ byId[id].tensile=rowData; byId[id].tensileFilter=pmmPick(row,"Filter Summary"); try{ const dj=pmmPick(row,"Details"); if(dj) byId[id].tensileRows=JSON.parse(dj); }catch(e){} }
   });
   return Object.values(byId).sort((a,b)=>String(b.savedDate||"").localeCompare(String(a.savedDate||"")));
 }
 
 async function pmmEnsureCostSavingsHeaders(){
-  const headers=["Snapshot ID","Saved Date","Filter Summary","Testing Type","Total Samples","Rep Samples","Samples Saved","Total Cost","Cost After","Cost Saved","% Saved","SKUs Included"];
-  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_COST_SHEET)}!A1:L1?valueInputOption=USER_ENTERED`;
+  const headers=["Snapshot ID","Saved Date","Filter Summary","Testing Type","Total Samples","Rep Samples","Samples Saved","Total Cost","Cost After","Cost Saved","% Saved","SKUs Included","Details"];
+  try{ await pmmEnsureColumns(PMM_COST_SHEET,headers.length); }catch(e){}   // the tensile quotes of a saved snapshot are kept in the "Details" column
+  const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_COST_SHEET)}!A1:M1?valueInputOption=USER_ENTERED`;
   await fetch(url,{
     method:"PUT",
     headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},
@@ -6931,39 +6932,38 @@ async function pmmEnsureCostSavingsHeaders(){
 // exact Testing Type breakdown as a snapshot, so it can be looked back on later
 // even after the underlying entries change.
 async function pmmSaveCostSavingsSnapshot(mode){
-  mode=mode==="tensile"?"tensile":"both";
+  mode=mode==="tensile"?"tensile":"summary";
   if(!accessToken){ alert('Please "Connect & Sync" with Google first (top of the Compliance Dashboard tab).'); return; }
-  const tnRows=pmmTnVisibleRows(pmmTensileRows(pmmEntries)), tnT=pmmTensileTotals(tnRows), tnFilter=pmmTnFilterText();
   const snapshotId="cs_"+Date.now(), savedDate=new Date().toISOString(), rows=[];
-  let entries=[], chem=null, corr=null, totals=null, filterSummary=tnFilter, skus;
+  let snap;
   if(mode==="tensile"){
+    const tnRows=pmmTnVisibleRows(pmmTensileRows(pmmEntries)), tnT=pmmTensileTotals(tnRows), tnFilter=pmmTnFilterText();
     if(!tnRows.length){ alert("Choose a Supplier and/or a Test lab in Tensile (Physical) Testing first — with none selected there is nothing to save."); return; }
-    skus=[...new Set(tnRows.map(r=>r.sku))];
+    const detail=tnRows.map(r=>({k:r.sku,d:r.desc,l:r.lab,c:r.cost,r:r.remarks||"",s:r.disp||"",u:r.sup||"",x:r.showSku?1:0}));
+    const skus=[...new Set(tnRows.map(r=>r.sku))], tdata={totalSamples:tnT.total,repSamples:tnT.keep.length,samplesSaved:tnT.skipped,totalCost:tnT.all,repCost:tnT.after,costSaved:tnT.saved,pctSaved:tnT.pct};
+    rows.push([snapshotId,savedDate,tnFilter,"Tensile (Physical)",tnT.total,tnT.keep.length,tnT.skipped,tnT.all,tnT.after,tnT.saved,tnT.pct,skus.join(", "),JSON.stringify(detail)]);
+    snap={id:snapshotId,savedDate,filterSummary:tnFilter,skus,tensile:tdata,tensileFilter:tnFilter,tensileRows:detail};
   } else {
-    entries=pmmInsightEntries();
+    const entries=pmmInsightEntries();
     if(entries.length<3){ alert("Need at least 3 entries in the current Compiled View filters to save a snapshot."); return; }
     const generalCover=pmmComputeSetCover(entries), metalCover=pmmComputeSetCover(entries, pmmIsMetalMaterial);
-    chem=pmmComputeTestingSavings(entries,"chemTestCost","chemTestSample",generalCover);
-    corr=pmmComputeTestingSavings(entries,"corrTestCost","corrTestSample",metalCover);
+    const chem=pmmComputeTestingSavings(entries,"chemTestCost","chemTestSample",generalCover);
+    const corr=pmmComputeTestingSavings(entries,"corrTestCost","corrTestSample",metalCover);
     const totalSamplesSaved=chem.samplesSaved+corr.samplesSaved, totalCostSaved=Math.round((chem.costSaved+corr.costSaved)*100)/100;
     const before=chem.totalCost+corr.totalCost, after=Math.round((chem.repCost+corr.repCost)*100)/100;
-    totals={totalSamples:chem.totalSamples+corr.totalSamples,repSamples:chem.repSamples+corr.repSamples,samplesSaved:totalSamplesSaved,totalCost:before,repCost:after,costSaved:totalCostSaved,pctSaved:before>0?Math.round((totalCostSaved/before)*1000)/10:0};
-    filterSummary=pmmFilterSummaryText(); skus=entries.map(e=>e.sku);
-    const incl=skus.join(", ");
+    const totals={totalSamples:chem.totalSamples+corr.totalSamples,repSamples:chem.repSamples+corr.repSamples,samplesSaved:totalSamplesSaved,totalCost:before,repCost:after,costSaved:totalCostSaved,pctSaved:before>0?Math.round((totalCostSaved/before)*1000)/10:0};
+    const filterSummary=pmmFilterSummaryText(), skus=entries.map(e=>e.sku), incl=skus.join(", ");
     rows.push([snapshotId,savedDate,filterSummary,"Chemical",chem.totalSamples,chem.repSamples,chem.samplesSaved,chem.totalCost,chem.repCost,chem.costSaved,chem.pctSaved,incl]);
     rows.push([snapshotId,savedDate,filterSummary,"Corrosion (metal)",corr.totalSamples,corr.repSamples,corr.samplesSaved,corr.totalCost,corr.repCost,corr.costSaved,corr.pctSaved,incl]);
     rows.push([snapshotId,savedDate,filterSummary,"Total",totals.totalSamples,totals.repSamples,totals.samplesSaved,totals.totalCost,totals.repCost,totals.costSaved,totals.pctSaved,incl]);
+    snap={id:snapshotId,savedDate,filterSummary,skus,chemical:chem,corrosion:corr,total:totals,tensile:null,tensileFilter:""};
   }
-  // the Tensile (Physical) result — with ITS OWN Supplier / Test lab filter — goes in the same snapshot when a tensile filter is set
-  if(tnRows.length) rows.push([snapshotId,savedDate,tnFilter,"Tensile (Physical)",tnT.total,tnT.keep.length,tnT.skipped,tnT.all,tnT.after,tnT.saved,tnT.pct,[...new Set(tnRows.map(r=>r.sku))].join(", ")]);
   try{
     await pmmEnsureCostSavingsHeaders();
     const url=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(PMM_COST_SHEET)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`;
     const res=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json"},body:JSON.stringify({values:rows})});
     if(!res.ok){ const t=await res.text(); throw new Error(`Sheets write failed (${res.status}): ${t.slice(0,150)}`); }
-    const resJson=await res.json(), rowIndexes=pmmParseRowRange(resJson?.updates?.updatedRange);
-    const snap={id:snapshotId,savedDate,filterSummary,skus,rowIndexes,tensile:tnRows.length?{totalSamples:tnT.total,repSamples:tnT.keep.length,samplesSaved:tnT.skipped,totalCost:tnT.all,repCost:tnT.after,costSaved:tnT.saved,pctSaved:tnT.pct}:null,tensileFilter:tnRows.length?tnFilter:""};
-    if(mode==="both"){ snap.chemical=chem; snap.corrosion=corr; snap.total=totals; }
+    const resJson=await res.json(); snap.rowIndexes=pmmParseRowRange(resJson?.updates?.updatedRange);
     pmmCostSavingsSnapshots.unshift(snap);
     pmmSwitchTab("costsavings");
   }catch(e){
@@ -8298,11 +8298,35 @@ function pmmSectionTitleHtml(entries){
 // ---- Cost Savings tab: same summary table (with Final quote), same lab comparison, same card / heading style as the compiled view ----
 function pmmFilterPart(text,label){ const p=String(text||"").split(" · ").find(x=>x.startsWith(label+": ")); return p?p.slice(label.length+2):""; }
 function pmmSnapChipsHtml(snap){
-  const chip=t=>`<span class="pmm-chip">${esc(t)}</span>`, f=snap.filterSummary||"", tf=snap.tensileFilter||"";
+  const chip=t=>`<span class="pmm-chip">${esc(t)}</span>`, hasSummary=!!(snap.chemical||snap.corrosion||snap.total);
   let h="";
-  if(snap.chemical||snap.corrosion||snap.total) h+=chip("Summary · Supplier: "+(pmmFilterPart(f,"Supplier")||"All"))+chip("Summary · Test lab: "+(pmmFilterPart(f,"Test lab")||"All"));
-  if(snap.tensile) h+=chip("Physical · Supplier: "+(pmmFilterPart(tf,"Supplier")||(/All suppliers/.test(tf)?"All":"—")))+chip("Physical · Test lab: "+(pmmFilterPart(tf,"Test lab")||(/All labs/.test(tf)?"All":"—")));
+  if(hasSummary){ const f=snap.filterSummary||""; h+=chip("Summary · Supplier: "+(pmmFilterPart(f,"Supplier")||"All"))+chip("Summary · Test lab: "+(pmmFilterPart(f,"Test lab")||"All")); }
+  else if(snap.tensile){ const tf=snap.tensileFilter||snap.filterSummary||""; h+=chip("Physical · Supplier: "+(pmmFilterPart(tf,"Supplier")||(/All suppliers/.test(tf)?"All":"—")))+chip("Physical · Test lab: "+(pmmFilterPart(tf,"Test lab")||(/All labs/.test(tf)?"All":"—"))); }
   return h?`<div style="margin-top:7px;display:flex;gap:5px;flex-wrap:wrap">${h}</div>`:"";
+}
+// the quotes of a Tensile snapshot: as saved (older snapshots did not keep them: rebuilt from today's quotes with the saved filter)
+function pmmSnapTensileRowsOf(snap){
+  if(snap.tensileRows&&snap.tensileRows.length) return {recomputed:false,rows:snap.tensileRows.map(x=>({sku:x.k,desc:x.d,lab:x.l,cost:Number(x.c)||0,remarks:x.r||"",disp:x.s||"",sup:x.u||"",showSku:!!x.x}))};
+  const f=snap.tensileFilter||snap.filterSummary||"", sup=pmmFilterPart(f,"Supplier"), lab=pmmFilterPart(f,"Test lab");
+  let all=pmmTensileRows(pmmEntries); if(sup) all=all.filter(r=>r.sup===sup); if(lab) all=all.filter(r=>r.lab===lab);
+  return {recomputed:true,rows:all};
+}
+// the Tensile (Physical) Testing tables of a saved snapshot: all quotes with Skip / Test, what actually needs testing, and the saving
+function pmmSnapTensileDetailHtml(snap){
+  const src=pmmSnapTensileRowsOf(snap), rows=src.rows.map((r,i)=>Object.assign({},r,{n:i+1})), T=pmmTensileTotals(rows), usd=pmmFqUsd;
+  if(!rows.length) return `<div style="padding:22px;text-align:center;font-size:11.5px;color:#999">No tensile quotes are saved with this snapshot.</div>`;
+  const th=(t,al)=>`<th style="text-align:${al||"left"};padding:6px 8px;font-size:9px;font-weight:700;color:#556;text-transform:uppercase;letter-spacing:.3px;background:#f3f5f9;border-bottom:1.5px solid #dfe3ec;white-space:nowrap">${t}</th>`;
+  const td=(v,al,st)=>`<td style="padding:5px 8px;border-bottom:1px solid #eef0f4;text-align:${al||"left"};vertical-align:middle;${st||""}">${v}</td>`;
+  const prod=r=>`<span title="${esc(r.sku)}">${esc(r.desc)}</span>${r.showSku?` <span style="color:#9aa3b5">· ${esc(r.sku)}</span>`:""}`;
+  const left=rows.map(r=>{ const sk=pmmTdIsSkip(r.disp); return `<tr style="${sk?"background:#fff6e0":""}">${td(r.n,"center","color:#888")}${td(prod(r))}${td(esc(r.lab)||"—")}${td(r.cost?usd(r.cost):"—","right","font-weight:600")}${td(esc(r.remarks)||`<span style="color:#bbb">—</span>`)}${td(`<b>${sk?"Skip":"Test"}</b>`)}</tr>`; }).join("");
+  const right=T.keep.length?`<table style="width:100%;border-collapse:collapse;font-size:10.5px;color:#222"><thead><tr>${th("Item","center")}${th("Product")}${th("Test lab")}${th("Tensile test cost","right")}</tr></thead><tbody>${T.keep.map((r,i)=>`<tr>${td(i+1,"center","color:#888")}${td(prod(r))}${td(esc(r.lab)||"—")}${td(r.cost?usd(r.cost):"—","right","font-weight:600")}</tr>`).join("")}</tbody><tfoot><tr style="background:#eaf6ee"><td colspan="3" style="padding:7px 8px;font-weight:800;color:#14532d">Total spend after Skip · ${T.keep.length} test${T.keep.length!==1?"s":""}</td><td style="padding:7px 8px;text-align:right;font-weight:800;color:#14532d">${usd(T.after)}</td></tr></tfoot></table>`:`<div style="padding:18px 10px;text-align:center;font-size:11px;color:#8a6d2f;background:#fff8e8;border:1px solid #f3dfb3;border-radius:8px">Every tensile test is marked Skip — nothing is left to test.</div>`;
+  return `<div class="pmm-snap-tn-detail">${src.recomputed?`<div style="font-size:10.5px;color:#b07000;margin-bottom:8px">This snapshot was saved before its tensile quotes were stored, so they are rebuilt from today's quotes with the saved filter.</div>`:""}
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:2.4 1 600px;min-width:0"><div style="font-size:11px;font-weight:800;color:#222;margin-bottom:6px">All tensile quotes <span style="font-weight:400;color:#888">· ${rows.length} test${rows.length!==1?"s":""}</span></div>
+        <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:10.5px;color:#222"><thead><tr>${th("Item","center")}${th("Product")}${th("Test lab")}${th("Tensile test cost","right")}${th("Remarks")}${th("Disposition")}</tr></thead><tbody>${left}</tbody><tfoot><tr style="background:#eef3fb"><td colspan="3" style="padding:7px 8px;font-weight:800;color:#0e1b3d">Total spend · ${rows.length} test${rows.length!==1?"s":""}</td><td style="padding:7px 8px;text-align:right;font-weight:800;color:#0e1b3d">${usd(T.all)}</td><td colspan="2"></td></tr></tfoot></table></div></div>
+      <div style="flex:1 1 290px;min-width:0"><div style="font-size:11px;font-weight:800;color:#14532d;margin-bottom:6px">Actual testing needed <span style="font-weight:400;color:#888">· after Skip</span></div>${right}</div>
+    </div>
+    <div style="margin-top:14px;padding:9px 14px;border-radius:8px;background:#effaf4;border:1px solid #bfe8d1;font-size:11.5px;color:#14532d">💡 <b>Actual savings from the Skip disposition:</b> skipping <b>${T.skipped} of ${T.total}</b> tensile test${T.total!==1?"s":""} brings the spend from <b>${usd(T.all)}</b> before to <b>${usd(T.after)}</b> after — <b>${usd(T.saved)} saved (${T.pct}%)</b>.</div></div>`;
 }
 function pmmSnapTensileHtml(snap){
   const t=snap.tensile; if(!t) return "";
@@ -8322,7 +8346,7 @@ function pmmCostSnapshotRowsHtml(snap){
   const row=(label,d,f,total)=>d?`<tr style="border-bottom:1px solid rgba(255,255,255,${total?".2":".1"});${total?"font-weight:700":""}"><td style="padding:6px 8px;font-weight:${total?800:600};${total?"color:#fff":""}">${label}</td><td style="padding:6px 8px;text-align:right">${d.totalSamples}</td><td style="padding:6px 8px;text-align:right">${d.repSamples}</td><td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${d.samplesSaved}</td><td style="padding:6px 8px;text-align:right">${fU(d.totalCost)}</td><td style="padding:6px 8px;text-align:right">${fU(d.repCost)}</td><td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${fU(d.costSaved)}</td><td style="padding:6px 8px;text-align:right;color:#7ee8b8;font-weight:600">${d.pctSaved}%</td>${fq(f,total)}</tr>`:"";
   return `<div class="pmm-snap-summary" style="background:#0e1b3d;border-radius:8px;padding:12px 14px"><div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Sample Optimization Summary</div>
     <table style="width:100%;border-collapse:collapse;font-size:10.5px;color:#e8ecf5"><thead><tr style="border-bottom:1px solid rgba(255,255,255,.2)">${th("Testing Type","",1)}${th("Samples")}${th("Rep.")}${th("Saved")}${th("Cost")}${th("After")}${th("Saved")}${th("%")}${th("Final quote","#ffd27a")}${th("Actual saved","#ffd27a").replace("border-left:1px solid rgba(255,255,255,.18);","")}${th("Actual %","#ffd27a").replace("border-left:1px solid rgba(255,255,255,.18);","")}</tr></thead>
-    <tbody>${row("Chemical",dC,cC)}${row("Corrosion <span style='color:#a8b8d8;font-weight:400'>(metal)</span>",dR,cR)}${row("Total",dT,cT,true)}</tbody></table>${pmmSnapTensileHtml(snap)}${(cC&&cC.stale)||(cR&&cR.stale)?`<div style="font-size:10px;color:#fdab3d;margin-top:6px">⚠ The quotes changed after a final quote was entered — re-enter it from the Compiled View.</div>`:""}</div>`;
+    <tbody>${row("Chemical",dC,cC)}${row("Corrosion <span style='color:#a8b8d8;font-weight:400'>(metal)</span>",dR,cR)}${row("Total",dT,cT,true)}</tbody></table>${(cC&&cC.stale)||(cR&&cR.stale)?`<div style="font-size:10px;color:#fdab3d;margin-top:6px">⚠ The quotes changed after a final quote was entered — re-enter it from the Compiled View.</div>`:""}</div>`;
 }
 function pmmRenderCostSavings(){
   const body=document.getElementById("pmm-body"); if(!body) return;
@@ -8542,7 +8566,7 @@ function pmmInsightsHtml(){
           <div style="font-size:10px;font-weight:700;color:#8ab4f8;text-transform:uppercase;letter-spacing:.4px">💰 Actual Material Consolidation Savings</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button id="pmm-final-quote-btn" onclick="pmmOpenFinalQuote()" title="Enter the final quote the test lab gave after we sent the consolidated materials" style="font-size:10.5px;font-weight:700;color:#0e1b3d;background:#ffd27a;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">✏ Enter final quote</button>
-            <button onclick="pmmRequestSaveCostSavings()" title="Saves this summary (with the filters above) AND the Tensile (Physical) result (with its own filter) in one snapshot" style="font-size:10.5px;font-weight:700;color:#0e1b3d;background:#7ee8b8;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">💾 Save to Cost Savings</button>
+            <button onclick="pmmRequestSaveCostSavings()" title="Saves this Sample Optimization Summary (with the filters above) to the Cost Savings tab" style="font-size:10.5px;font-weight:700;color:#0e1b3d;background:#7ee8b8;border:none;border-radius:6px;padding:5px 12px;cursor:pointer">💾 Save to Cost Savings</button>
           </div>
         </div>
         <ul style="margin:0 0 12px 0;padding-left:18px;font-size:11px;color:#e8ecf5;line-height:1.7">
@@ -8930,11 +8954,13 @@ function confirmTextGate(){
   if(onSuccess) onSuccess(val);
 }
 
-let pmmSaveMode="both";   // "both" = Sample Optimization Summary (+ the Tensile result if a tensile filter is set) · "tensile" = only the filtered Tensile result
+let pmmSaveMode="summary";   // "summary" = the Sample Optimization Summary only · "tensile" = the filtered Tensile (Physical) result only
 function pmmRequestSaveCostSavings(mode){
-  pmmSaveMode=mode==="tensile"?"tensile":"both";
-  if(pmmTdDirty()){ alert('You have unsaved Skip / remarks changes in Tensile (Physical) Testing.\n\nPress "Save remarks & disposition" there first, so what is saved to Cost Savings matches what is saved for the tensile tests.'); return; }
-  if(pmmSaveMode==="tensile"&&!pmmTnActive()){ alert("Choose a Supplier and/or a Test lab in Tensile (Physical) Testing first — with none selected there is nothing to save."); return; }
+  pmmSaveMode=mode==="tensile"?"tensile":"summary";
+  if(pmmSaveMode==="tensile"){
+    if(!pmmTnActive()){ alert("Choose a Supplier and/or a Test lab in Tensile (Physical) Testing first — with none selected there is nothing to save."); return; }
+    if(pmmTdDirty()){ alert('You have unsaved Skip / remarks changes in Tensile (Physical) Testing.\n\nPress "Save remarks & disposition" first, so what is saved to Cost Savings matches what is saved for the tensile tests.'); return; }
+  }
   openModal({type:"pmmSaveGate"});
   setTimeout(()=>document.getElementById("pmm-savegate-input")?.focus(), 50);
 }
