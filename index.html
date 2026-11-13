@@ -300,7 +300,7 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
     <button class="nav-btn active" id="nav-compliance" onclick="showSection('compliance')">📋 Compliance Dashboard</button>
     <button class="nav-btn" id="nav-pmm" onclick="showSection('pmm')">🧩 Product Material Matrix</button>
     <button class="nav-btn" id="nav-pca" onclick="showSection('pca')">🎨 Pantone Color Approval</button>
-    <button class="nav-btn" id="nav-copylink" onclick="cdCopyViewLink()" title="Copy a link that opens exactly this view for a teammate" style="margin-top:16px;border-top:1px solid rgba(255,255,255,.14);padding-top:14px;opacity:.85">🔗 Copy link to this view</button>
+    <button class="nav-btn" id="nav-copylink" onclick="cdCopyViewLink()" title="Copy a link that opens exactly this view, with its filters, for a teammate" style="margin-top:16px;border-top:1px solid rgba(255,255,255,.14);padding-top:14px;opacity:.85">🔗 Copy link to this view</button>
   </nav>
   <div id="app-main">
 
@@ -11931,7 +11931,59 @@ function cdRouteCurrent(){
   if(pc&&pc.classList.contains("active")){ const t=(pcaActiveTab==="newticket")?"tracking":(pcaActiveTab||"tracking"); return ["pca",t,""]; }
   return ["compliance",activeTab||"table",""];
 }
-function cdRouteHash(r){ return "#/"+r.filter(Boolean).join("/"); }
+// ── filters in the link ──  #/pmm/compiled/insights?supplier=XULI…&lab=TUV,SGS&q=strap   (only filters that are not at their default are written)
+function cdFilterSpecs(sec,tab,sub){
+  const S=(k,get,set,def,inp,list)=>({k,get,set,def:def===undefined?"":def,inp,list:!!list});
+  const q=(get,set,inp)=>S("q",get,set,"",inp);
+  if(sec==="compliance"){
+    if(tab==="table") return [q(()=>searchQ,v=>{searchQ=v;},"searchBox"),S("country",()=>fCountry,v=>{fCountry=v;},"ALL"),S("result",()=>fResult,v=>{fResult=v;},"ALL"),S("pri",()=>fPriority,v=>{fPriority=v;},"ALL"),S("from",()=>fDateFrom,v=>{fDateFrom=v;}),S("to",()=>fDateTo,v=>{fDateTo=v;}),S("sku",()=>fSku,v=>{fSku=v;}),S("group",()=>fGroup,v=>{fGroup=v;},"ALL"),S("supplier",()=>fSupplier,v=>{fSupplier=v;},"ALL"),S("sort",()=>sortS?sortS.col+":"+sortS.dir:"",v=>{ const i=String(v).lastIndexOf(":"); sortS=i>0?{col:v.slice(0,i),dir:v.slice(i+1)==="desc"?"desc":"asc"}:null; })];
+    if(tab==="monitoring") return [q(()=>monSearchQ,v=>{monSearchQ=v;},"mon-search-box"),S("status",()=>monFilterStatus,v=>{monFilterStatus=v;},"ALL"),S("decision",()=>monFilterDecision,v=>{monFilterDecision=v;},"ALL"),S("pri",()=>monFilterPriority,v=>{monFilterPriority=v;},"ALL"),S("focus",()=>monFocusParent,v=>{monFocusParent=v;})];
+    if(tab==="tracking") return [q(()=>cdTrackingSearchQ,v=>{cdTrackingSearchQ=v;},"trk-search-box")];
+    if(tab==="completedtest") return [q(()=>cdCompletedSearchQ,v=>{cdCompletedSearchQ=v;},"cmp-search-box")];
+    if(tab==="deferreditems") return [q(()=>cdDeferredSearchQ,v=>{cdDeferredSearchQ=v;},"def-search-box")];
+    if(tab==="expense") return [q(()=>expSearchQ,v=>{expSearchQ=v;},"exp-search-box"),S("pri",()=>expFilterPriority,v=>{expFilterPriority=v;},"ALL"),S("cat",()=>expFilterCategory,v=>{expFilterCategory=v;},"ALL"),S("year",()=>expFilterYear,v=>{expFilterYear=v;},"ALL")];
+    return [];
+  }
+  if(sec==="pmm"){
+    if(tab==="compiled"){
+      const a=[S("cat",()=>pmmFilterCategory,v=>{pmmFilterCategory=v;},"ALL"),S("supplier",()=>pmmFilterSupplier,v=>{pmmFilterSupplier=v;},"ALL"),S("test",()=>pmmFilterTest,v=>{pmmFilterTest=v;},"ALL"),S("lab",()=>pmmFilterLabs,v=>{pmmFilterLabs=v;},[],null,true),q(()=>pmmSearchSku,v=>{pmmSearchSku=v;},"pmm-search-input"),S("from",()=>pmmInsightDateFrom,v=>{pmmInsightDateFrom=v;}),S("to",()=>pmmInsightDateTo,v=>{pmmInsightDateTo=v;})];
+      if(sub==="insights") a.push(S("tnsup",()=>pmmTnSup,v=>{pmmTnSup=v;}),S("tnlab",()=>pmmTnLab,v=>{pmmTnLab=v;}));   // Tensile (Physical) Testing has its own Supplier / Test lab filters
+      return a;
+    }
+    if(tab==="suppack") return [q(()=>pmmAckSupplierSearch,v=>{pmmAckSupplierSearch=v;})];
+    return [];
+  }
+  if(sec==="pca") return [S("status",()=>pcaTrackingStatusFilter,v=>{pcaTrackingStatusFilter=v;},"all"),q(()=>pcaSearchQuery,v=>{pcaSearchQuery=v;})];
+  return [];
+}
+function cdRouteQueryFor(r){
+  const out=[];
+  cdFilterSpecs(r[0],r[1],r[2]).forEach(sp=>{
+    let v; try{ v=sp.get(); }catch(e){ return; }
+    if(sp.list){ if(v&&v.length) out.push(sp.k+"="+v.map(x=>encodeURIComponent(x)).join(",")); return; }
+    v=v==null?"":String(v); if(v===""||v===String(sp.def)) return; out.push(sp.k+"="+encodeURIComponent(v));
+  });
+  return out.join("&");
+}
+function cdRouteQueryMap(hash){
+  const h=String(hash==null?location.hash:hash), i=h.indexOf("?"), m={}; if(i<0) return m;
+  h.slice(i+1).split("&").forEach(p=>{ if(!p) return; const j=p.indexOf("="); m[j<0?p:p.slice(0,j)]=j<0?"":p.slice(j+1); });
+  return m;
+}
+const cdDecodeQ=v=>{ try{ return decodeURIComponent(v); }catch(e){ return v; } };
+// a link means exactly that view: every filter of the view is set from the link, or put back to its default when the link does not mention it
+function cdFiltersFromHash(sec,tab,sub,hash){
+  const m=cdRouteQueryMap(hash);
+  cdFilterSpecs(sec,tab,sub).forEach(sp=>{
+    const has=Object.prototype.hasOwnProperty.call(m,sp.k);
+    try{ if(sp.list) sp.set(has&&m[sp.k]!==""?m[sp.k].split(",").map(cdDecodeQ):[]); else sp.set(has?cdDecodeQ(m[sp.k]):sp.def); }catch(e){}
+  });
+}
+// the search boxes are built once and keep their own text: show what the link set
+function cdSyncFilterInputs(sec,tab,sub){
+  cdFilterSpecs(sec,tab,sub).forEach(sp=>{ if(!sp.inp) return; const el=document.getElementById(sp.inp); let v=""; try{ v=String(sp.get()||""); }catch(e){} if(el&&el.value!==v) el.value=v; });
+}
+function cdRouteHash(r){ const q=cdRouteQueryFor(r); return "#/"+r.filter(Boolean).join("/")+(q?"?"+q:""); }
 function cdRouteTitle(r){ const x=CD_ROUTES[r[0]]; return "Compliance System"+(x?" – "+x.label+" · "+(x.tabs[r[1]]||""):""); }
 let cdRouteMuted=false;
 function cdRouteWrite(){
@@ -11941,11 +11993,13 @@ function cdRouteWrite(){
 function cdRouteApply(hash){
   const n=cdRouteNormalise(cdRouteParts(hash)); if(!n) return false;
   const [sec,tab,sub]=n; cdRouteMuted=true;
+  try{ cdFiltersFromHash(sec,tab,sub,hash); }catch(e){ console.warn("Filters in that link could not be read: "+e.message); }
   try{
     if(sec==="compliance"){ showSection("compliance"); switchTab(tab); }
     else if(sec==="pmm"){ if(tab==="compiled") pmmCompiledSub=sub||"compilation"; showSection("pmm"); pmmSwitchTab(tab); }
     else { showSection("pca"); pcaSwitchTab(tab); }
   }catch(e){ console.warn("That link could not be opened: "+e.message); }
+  cdSyncFilterInputs(sec,tab,sub); setTimeout(()=>cdSyncFilterInputs(sec,tab,sub),350);
   cdRouteMuted=false; cdRouteWrite(); return true;
 }
 function cdCopyViewLink(){
@@ -11960,6 +12014,7 @@ function cdCopyViewLink(){
   window[n]=function(){ const r=f.apply(this,arguments); cdRouteWrite(); return r; };
 });
 window.addEventListener("hashchange",()=>{ if(location.hash&&location.hash!==cdRouteHash(cdRouteCurrent())) cdRouteApply(); });
+setInterval(()=>{ if(!document.hidden) cdRouteWrite(); },700);     // picks up any filter change, wherever it was made
 if(!cdRouteApply()) cdRouteWrite();
 </script>
 </body>
