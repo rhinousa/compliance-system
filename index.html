@@ -66,8 +66,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .sync-cta{display:inline-flex;align-items:center;gap:8px;background:#0073ea;color:#fff;padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;border:none;cursor:pointer}.sync-cta:hover{background:#005cc8}
 .tab-btn{padding:8px 16px;font-size:12px;background:none;border:none;border-bottom:2px solid transparent;color:rgba(255,255,255,.65);font-weight:500;cursor:pointer;white-space:nowrap}
 .tab-btn.active{border-bottom-color:#fff;color:#fff;font-weight:700}
-.sub-btn{font-size:11.5px;padding:8px 15px;color:rgba(255,255,255,.6)}
-.sub-btn.active{background:rgba(255,255,255,.12);border-radius:6px 6px 0 0}
+/* the tabs under Monitoring (Annual Test · New Entry · Tracking · Completed Test · Deferred Items): bordered tabs, the open one highlighted */
+#mon-subtabs{gap:8px;padding:8px 10px 8px 18px!important}
+.sub-btn{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:30px;font-size:11.5px;padding:0 14px;color:rgba(255,255,255,.8);background:rgba(255,255,255,.04);border:2px solid rgba(255,255,255,.28);border-radius:9px;font-weight:600;transition:border-color .12s,background .12s,box-shadow .12s}
+.sub-btn:hover{color:#fff;border-color:rgba(255,255,255,.65);background:rgba(255,255,255,.12)}
+.sub-btn.active{color:#0044a8;font-weight:700;background:#e6f1ff;border-color:#4da3ff;box-shadow:0 2px 10px rgba(0,115,234,.35)}
 .hdr-refresh{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:30px;min-width:30px;border-radius:8px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.08);color:#fff;cursor:pointer;position:relative;transition:background .15s;font-size:11.5px;font-weight:600;padding:0}
 .hdr-refresh:hover{background:rgba(255,255,255,.2)}
 .hdr-refresh svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
@@ -219,11 +222,12 @@ textarea.pmm-input.cd-ta{display:block;resize:none;overflow:hidden;min-height:38
 .pmm-label{font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px;display:block}
 .pmm-input{width:100%;padding:9px 12px;border:1.5px solid #c8cdd7;border-radius:7px;font-size:12.5px;color:#333;outline:none}
 .pmm-input:focus{border-color:#0073ea;box-shadow:0 0 0 3px rgba(0,115,234,.1)}
-.pmm-segbar{display:flex;gap:2px;margin:0 0 8px;border-bottom:1px solid #e3e6ec;overflow-x:auto}
-.pmm-seg{display:inline-flex;align-items:center;gap:7px;padding:7px 15px;font-size:12px;font-weight:600;color:#6b7a99;background:none;border:none;border-bottom:3px solid transparent;margin-bottom:-1px;cursor:pointer;white-space:nowrap}
-.pmm-seg:hover{color:#0055bb}
-.pmm-seg.active{color:#0055bb;border-bottom-color:#0073ea}
+.pmm-segbar{display:flex;gap:10px;margin:0 0 12px;padding:3px 3px 6px;overflow-x:auto}
+.pmm-seg{display:inline-flex;align-items:center;gap:8px;padding:8px 17px;font-size:12.5px;font-weight:600;color:#55648a;background:#fff;border:2px solid #cfd6e4;border-radius:10px;cursor:pointer;white-space:nowrap;transition:border-color .12s,background .12s,box-shadow .12s}
+.pmm-seg:hover{color:#0055bb;border-color:#8db8f0;background:#f5f9ff}
+.pmm-seg.active{color:#0044a8;font-weight:700;background:#e6f1ff;border-color:#0073ea;box-shadow:0 2px 8px rgba(0,115,234,.2)}
 .pmm-seg-n{background:#0073ea;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700}
+.pmm-seg:not(.active) .pmm-seg-n{background:#9aa9c7}
 textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
 .pmm-field{margin-bottom:16px}
 .pmm-grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -11731,7 +11735,7 @@ function cdRoleBadge(){
   const sb=document.getElementById("app-sidebar"); if(!sb) return; let b=document.getElementById("cd-role-badge");
   if(!b){ b=document.createElement("div"); b.id="cd-role-badge"; sb.appendChild(b); }
   if(!cdIdentity){ b.style.display="none"; return; }
-  const ed=cdIdentity.canEdit; b.style.display="flex"; b.title=(cdIdentity.email||"unknown account")+(ed?" — can edit and save":" — can view only. Ask Aivan or Kevin for edit access.");
+  const ed=cdIdentity.canEdit; b.style.display=ed?"none":"flex"; b.title=(cdIdentity.email||"unknown account")+(ed?" — can edit and save":" — can view only. Ask Aivan or Kevin for edit access.");
   b.className=ed?"cd-role editor":"cd-role viewer"; b.innerHTML=`<span class="ic">${ed?"✏️":"👁"}</span><span class="lbl">${ed?"Editor":"View only"}</span>`;
   document.body.classList.toggle("cd-viewonly",!ed);
 }
