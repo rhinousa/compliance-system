@@ -67,7 +67,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tab-btn{padding:8px 16px;font-size:12px;background:none;border:none;border-bottom:2px solid transparent;color:rgba(255,255,255,.65);font-weight:500;cursor:pointer;white-space:nowrap}
 .tab-btn.active{border-bottom-color:#fff;color:#fff;font-weight:700}
 /* the tabs under Monitoring (Annual Test · New Entry · Tracking · Completed Test · Deferred Items): bordered tabs, the open one highlighted */
-#mon-subtabs{gap:8px;padding:8px 10px 8px 18px!important}
+#mon-subtabs,#main-subtabs{gap:8px;padding:8px 10px 8px 18px!important}
 .sub-btn{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;height:30px;font-size:11.5px;padding:0 14px;color:rgba(255,255,255,.8);background:rgba(255,255,255,.04);border:2px solid rgba(255,255,255,.28);border-radius:9px;font-weight:600;transition:border-color .12s,background .12s,box-shadow .12s}
 .sub-btn:hover{color:#fff;border-color:rgba(255,255,255,.65);background:rgba(255,255,255,.12)}
 .sub-btn.active{color:#0044a8;font-weight:700;background:#e6f1ff;border-color:#4da3ff;box-shadow:0 2px 10px rgba(0,115,234,.35)}
@@ -332,6 +332,10 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
       <button class="tab-btn" id="tab-expense" onclick="switchTab('expense')">💰 Test Expense</button>
     </div>
     <div id="hdr-progress" style="display:none;height:2px;background:#0073ea;width:0%;transition:width .4s ease"></div>
+    <div id="main-subtabs" style="display:flex;align-items:center;padding:0 10px 0 18px;background:rgba(0,0,0,.22);border-top:1px solid rgba(255,255,255,.1)">
+      <button class="tab-btn sub-btn active" id="subm-table" onclick="switchTab('table')">📋 All Products</button>
+      <button class="tab-btn sub-btn" id="subm-notest" onclick="switchTab('notest')">🚫 No Test <span id="subm-notest-n" style="display:none;background:#e2445c;color:#fff;border-radius:10px;padding:0 7px;font-size:10px;font-weight:700;margin-left:3px"></span></button>
+    </div>
     <div id="mon-subtabs" style="display:none;align-items:center;padding:0 10px 0 18px;background:rgba(0,0,0,.22);border-top:1px solid rgba(255,255,255,.1)">
       <button class="tab-btn sub-btn active" id="sub-annual" onclick="switchTab('monitoring')">🗓 Annual Test</button>
       <button class="tab-btn sub-btn" id="sub-newentry" onclick="switchTab('newentry')">➕ New Entry</button>
@@ -398,6 +402,11 @@ textarea.pmm-input{resize:vertical;min-height:52px;font-family:inherit}
       <div style="display:flex;align-items:center;gap:6px">
         <span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">Country</span>
         <div id="fp-country" class="fp-compact" style="display:flex;gap:4px;flex-wrap:nowrap"></div>
+      </div>
+      <!-- Category (Product Master Data Catalogue): pills -->
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">Category</span>
+        <div id="fp-category" class="fp-compact" style="display:flex;gap:4px;flex-wrap:wrap"></div>
       </div>
       <!-- Group: compact select -->
       <div style="display:flex;align-items:center;gap:6px">
@@ -574,6 +583,18 @@ const PMM_PALETTE_TEXT = ["#0055bb","#0a7a46","#7a5500","#a02020","#5b21b6","#00
 let GROUPS = [];
 let searchQ = "", openDD = null, modal = null;
 let fCountry = "ALL", fResult = "ALL", fPriority = "ALL", fDateFrom = "", fDateTo = "", fSku = "", fGroup = "ALL", fSupplier = "ALL", sortS = null;
+let fCategory = "ALL";
+// Category per SKU (Product Master Data Catalogue, column J)
+const CD_CATEGORY_NAMES={TD:"Tie Down",RG:"Recovery Gear",TO:"Towing",CA:"Camping",AC:"Accessories",BO:"Boat",MERCH:"Merchandise"};
+const CD_CATEGORY_ORDER=["TD","RG","TO","CA","AC","BO","MERCH"];
+const CD_CATEGORY_COLORS={TD:["#e8f2ff","#0055bb","#c0d8f8"],RG:["#fff0e0","#a85b00","#f5d3a8"],TO:["#e8f7ee","#14703c","#b9e3c9"],CA:["#f0f7e2","#4a7a12","#d3e6ae"],AC:["#f3ecff","#6a3fb0","#dccaf5"],BO:["#e1f5f9","#0b7285","#b4e1ea"],MERCH:["#fde8f1","#b0245e","#f5bfd6"]};
+function cdCategoryName(c){ c=String(c||"").trim().toUpperCase(); return CD_CATEGORY_NAMES[c]||c; }
+function cdCategoryBadgeHtml(c,compact){
+  c=String(c||"").trim().toUpperCase(); if(!c) return "";
+  const col=CD_CATEGORY_COLORS[c]||["#eef0f4","#5a6478","#d9dde6"];
+  return `<span class="cd-cat" title="Category ${c}${CD_CATEGORY_NAMES[c]?" — "+CD_CATEGORY_NAMES[c]:""} (Product Master Data Catalogue)" style="display:inline-block;margin-top:${compact?2:3}px;font-size:${compact?9:9.5}px;font-weight:700;line-height:1.5;padding:0 7px;border-radius:9px;background:${col[0]};color:${col[1]};border:1px solid ${col[2]};white-space:nowrap">${esc(cdCategoryName(c))}</span>`;
+}
+function setFCat(v){ fCategory=v; openDD=null; renderAll(); }
 let activeTab = "table";
 let isSyncing = false, lastSynced = "Never", syncStatus = "ready";
 let syncProgress = 0, syncMsg = "";
@@ -962,6 +983,7 @@ function buildGroups(itemRows, subRows){
       country:row.country||"",
       colors:row.colors||"",
       channel:row.channel||"",
+      category:String(row.category||"").trim().toUpperCase(),     // the Product Master Data Catalogue's category: TD / RG / TO / CA / AC / BO / MERCH ...
       status:row["Status Remarks"]||row.Status||"",
       subs:subMap[rid]||[],
       supplierTests:[...parseSupplierTestData(row["Supplier Test Data"]),...(supMap[rid]||[])],   // Items-row column first; older Subitems-row entries still show
@@ -1333,6 +1355,7 @@ function matchF(item){
   // Test result is judged per PRODUCT: Failed = any test failed (latest year); Passed = results on file and none failed.
   if(fResult!=="ALL"){ const k=itemResultKind(item); if((fResult==="FAIL"&&k!=="fail")||(fResult==="PASS"&&k!=="pass")||(fResult==="notest"&&k!=="none")) return false; }
   if(fPriority!=="ALL"&&item.prioritySku!==fPriority) return false;
+  if(fCategory!=="ALL"&&item.category!==fCategory) return false;
   if(fSupplier==="with"&&!(item.supplierTests||[]).length) return false;
   if(fSupplier==="none"&&(item.supplierTests||[]).length) return false;
   if(fSku&&item.id!=="i"+fSku&&item.name!==fSku) return false;
@@ -1486,6 +1509,7 @@ function renderAll(){
   renderKPI();
   renderToolbar();
   if(activeTab==="table") renderTable();
+  else if(activeTab==="notest") cdRenderNoTest();
   else if(activeTab==="monitoring") renderMonitoring();
   else if(activeTab==="newentry") cdRenderNewEntry();
   else if(activeTab==="tracking") cdRenderTracking();
@@ -1494,6 +1518,7 @@ function renderAll(){
   else if(activeTab==="expense") renderExpense();
   else renderMonitoring();
   renderModals();
+  if(typeof cdNtUpdateBadge==="function") cdNtUpdateBadge();
 }
 
 function updateHeader(){
@@ -1597,6 +1622,14 @@ function renderToolbar(){
   const ce=document.getElementById("fp-country");
   if(ce) ce.innerHTML=["ALL","US","US/CA","US/EU","EU"].map(v=>pill(v,v==="ALL"?"All":v,fCountry===v,`setFC('${v}')`)).join("");
 
+  // Category pills: only the categories that exist in the data, in a fixed order
+  const cge=document.getElementById("fp-category");
+  if(cge){
+    const present=new Set(GROUPS.flatMap(g=>g.items.map(i=>i.category)).filter(Boolean));
+    const codes=[...CD_CATEGORY_ORDER.filter(c=>present.has(c)),...[...present].filter(c=>!CD_CATEGORY_ORDER.includes(c)).sort()];
+    cge.innerHTML=codes.length?[["ALL","All"],...codes.map(c=>[c,cdCategoryName(c)])].map(([v,l])=>pill(v,l,fCategory===v,`setFCat('${v}')`)).join(""):`<span style="font-size:10.5px;color:#bbb">no category in the sheet yet</span>`;
+  }
+
   // Group select (dynamic)
   const groupNames=[...new Set(GROUPS.map(g=>g.title))].sort();
   const ge=document.getElementById("fp-group-sel");
@@ -1620,7 +1653,7 @@ function renderToolbar(){
   if(se) se.innerHTML=[["ALL","All"],["with","With data"],["none","None"]].map(([v,l])=>pill(v,l,fSupplier===v,`setFS('${v}')`)).join("");
 
   // Clear All button
-  const af=(fCountry!=="ALL"?1:0)+(fResult!=="ALL"?1:0)+(fPriority!=="ALL"?1:0)+(fSupplier!=="ALL"?1:0)+(fGroup!=="ALL"?1:0)+((fDateFrom||fDateTo)?1:0)+(fSku?1:0);
+  const af=(fCountry!=="ALL"?1:0)+(fResult!=="ALL"?1:0)+(fPriority!=="ALL"?1:0)+(fSupplier!=="ALL"?1:0)+(fGroup!=="ALL"?1:0)+((fDateFrom||fDateTo)?1:0)+(fSku?1:0)+(fCategory!=="ALL"?1:0);
   const cab=document.getElementById("clear-all-filters"); if(cab) cab.style.display=af>0?"inline-flex":"none";
 
   // Sort badge
@@ -1631,7 +1664,7 @@ function renderToolbar(){
   renderDropdowns();
 }
 
-function clearAllFilters(){ fCountry="ALL";fResult="ALL";fPriority="ALL";fSupplier="ALL";fGroup="ALL";fDateFrom="";fDateTo="";fSku="";onSkuSelect(""); renderAll(); }
+function clearAllFilters(){ fCategory="ALL"; fCountry="ALL";fResult="ALL";fPriority="ALL";fSupplier="ALL";fGroup="ALL";fDateFrom="";fDateTo="";fSku="";onSkuSelect(""); renderAll(); }
 
 
 function renderDropdowns(){
@@ -1766,7 +1799,7 @@ function renderTable(){
             <button class="exp-btn${iOpen?" open":""}" onclick="event.stopPropagation();toggleItem('${item.id}')" title="${iOpen?"Hide":"Show"} test details" aria-label="${iOpen?"Collapse":"Expand"} test details" aria-expanded="${iOpen}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
             <div style="width:4px;min-height:18px;border-radius:2px;background:${grp.color};flex-shrink:0;margin-top:2px"></div>
             <div style="overflow:hidden;flex:1;min-width:0">
-              <div style="font-size:12px;font-weight:600;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(item.name)}</div>
+              <div style="font-size:12px;font-weight:600;color:#222;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(item.name)}</div>${cdCategoryBadgeHtml(item.category)}
               ${item.description?`<div style="font-size:10px;color:#666;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px">${esc(item.description)}</div>`:""}
               ${item.parentSku?`<div style="font-size:9px;color:#aaa;margin-top:1px">Parent: ${esc(item.parentSku)}</div>`:""}
             </div>
@@ -2381,7 +2414,7 @@ function renderExpense(){
         <div style="display:flex;align-items:flex-start;gap:5px">
           <div style="width:3px;min-height:14px;border-radius:2px;background:${r.groupColor};flex-shrink:0;margin-top:2px"></div>
           <div style="overflow:hidden;flex:1;min-width:0">
-            <div style="font-size:11px;font-weight:600;color:#0073ea;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.item.name)}</div>
+            <div style="font-size:11px;font-weight:600;color:#0073ea;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.item.name)}</div>${cdCategoryBadgeHtml(r.item.category,true)}
             <div style="font-size:9px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.subName)}</div>
             ${sibCount?`<button onclick="event.stopPropagation();openSiblingModal('${r.item.id}')" style="font-size:8px;color:#0073ea;background:#e8f2ff;border:1px solid #c0d8f8;border-radius:4px;padding:1px 6px;cursor:pointer;margin-top:2px">+${sibCount} SKUs ▾</button>`:""}
           </div>
@@ -3208,8 +3241,10 @@ function renderModals(){
               <div class="pmm-field"><label class="pmm-label">Priority SKU</label>
                 <select class="pmm-input" onchange="modal.draft.prioritySku=this.value">
                   <option value="">Select…</option>
-                  ${CD_PRIORITY_SKU_OPTIONS.map(o=>`<option value="${o}" ${d.prioritySku===o?"selected":""}>${o}</option>`).join("")}
+                  ${CD_PRIORITY_SKU_OPTIONS.map(o=>`<option value="${o}" ${d.prioritySku===o?"selected":""}>${o}</option>`).join("")}${d.prioritySku==="NPD"?`<option value="NPD" selected>NPD</option>`:""}
                 </select>
+                <div style="font-size:10px;color:#8a93a6;margin-top:3px">Follows the Product Master Data Catalogue (Tier) — a different value is corrected at the next sync.</div>
+                ${(()=>{ const it=cdFindItemById(modal.itemId); return it&&it.category?`<div style="margin-top:6px;font-size:10px;color:#8a93a6">Category: ${cdCategoryBadgeHtml(it.category)} <span style="color:#b5bccb">from the catalogue</span></div>`:""; })()}
               </div>
               <div class="pmm-field"><label class="pmm-label">Website</label>${cdTa(d.website,"modal.draft.website=this.value")}</div>
             </div>
@@ -3563,11 +3598,13 @@ function exportMonitoringExcel(){
 const CD_MON_GROUP=["monitoring","newentry","tracking","completedtest","deferreditems"];
 function switchTab(t){
   activeTab=t;
-  document.getElementById("tab-table").className="tab-btn"+(t==="table"?" active":"");
+  document.getElementById("tab-table").className="tab-btn"+(t==="table"||t==="notest"?" active":"");
   document.getElementById("tab-expense").className="tab-btn"+(t==="expense"?" active":"");
   const inMon=CD_MON_GROUP.includes(t);                 // Annual Test / New Entry / Tracking / Completed Test / Deferred Items all belong to Monitoring
   document.getElementById("tab-monitoring").className="tab-btn"+(inMon?" active":"");
   const subBar=document.getElementById("mon-subtabs"); if(subBar) subBar.style.display=inMon?"flex":"none";
+  const mainBar=document.getElementById("main-subtabs"); if(mainBar) mainBar.style.display=(t==="table"||t==="notest")?"flex":"none";      // the tabs under Main Table
+  [["subm-table","table"],["subm-notest","notest"]].forEach(([id,k])=>{ const b=document.getElementById(id); if(b) b.className="tab-btn sub-btn"+(t===k?" active":""); });
   [["sub-annual","monitoring"],["sub-newentry","newentry"],["sub-tracking","tracking"],["sub-completedtest","completedtest"],["sub-deferreditems","deferreditems"]].forEach(([id,k])=>{ const b=document.getElementById(id); if(b) b.className="tab-btn sub-btn"+(t===k?" active":""); });
   const kpiEl=document.getElementById("kpi-section");
   if(kpiEl) kpiEl.style.display=t==="table"?"":"none";
@@ -3580,6 +3617,7 @@ function switchTab(t){
   const cmpSw=document.getElementById("cmp-search-wrap"); if(cmpSw) cmpSw.style.display=t==="completedtest"?"block":"none";
   const defSw=document.getElementById("def-search-wrap"); if(defSw) defSw.style.display=t==="deferreditems"?"block":"none";
   if(t==="table") renderTable();
+  else if(t==="notest") cdRenderNoTest();
   else if(t==="monitoring") renderMonitoring();
   else if(t==="newentry") cdRenderNewEntry();
   else if(t==="tracking") cdRenderTracking();
@@ -4048,7 +4086,8 @@ function cdSetNewMode(m){
   cdDraft=cdBlankDraft(); cdTestTypes=[cdNewTestType()]; cdActiveTT=0; cdSupTests=[cdSupNewEntry()]; cdActiveSup=0;
   cdClearLookupRecommendations(); cdWzReset(); cdNewMode=m; cdRenderNewEntry();
 }
-function cdNewModeBarHtml(){
+function cdNewModeBarHtml(){ return (typeof cdNtQueueHtml==="function"?cdNtQueueHtml():"")+cdNewModeBarHtml0(); }
+function cdNewModeBarHtml0(){
   const b=(k,label,sub)=>`<button onclick="cdSetNewMode('${k}')" style="flex:1;min-width:230px;text-align:left;padding:11px 15px;cursor:pointer;border-radius:10px;border:1.5px solid ${cdNewMode===k?"#0073ea":"#dde0e7"};background:${cdNewMode===k?"#e8f2ff":"#fff"};box-shadow:${cdNewMode===k?"0 1px 5px rgba(0,115,234,.25)":"none"}"><div style="font-size:12.5px;font-weight:800;color:${cdNewMode===k?"#0055bb":"#444"}">${label}</div><div style="font-size:10.5px;color:#888;margin-top:2px;font-weight:400">${sub}</div></button>`;
   return `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">${b("rhino","Rhino-USA 3rd Party Test","New product, test types and results")}${b("supplier","Supplier Test Data","Tests done by the supplier, for an existing product")}</div>`;
 }
@@ -6024,7 +6063,7 @@ function cdItemsTableHtml(items, tabKey, emptyMessage){
           const siblings=cdSiblingNames(i);
           return `<tr onclick="cdOpenItemEdit('${i.id}')" style="border-bottom:0.5px solid #f0f1f3;cursor:pointer">
             <td style="padding:9px 12px;vertical-align:top;min-width:160px">
-              <div style="font-weight:700;color:#222">${esc(i.name)}</div>
+              <div style="font-weight:700;color:#222">${esc(i.name)}</div>${cdCategoryBadgeHtml(i.category,true)}
               ${siblings.map(n=>`<div style="font-size:10px;color:#bbb;margin-top:2px">${esc(n)}</div>`).join("")}
             </td>
             <td style="padding:9px 12px;white-space:normal;min-width:200px;vertical-align:top">${esc(i.description)}</td>
@@ -11912,11 +11951,274 @@ function cdInheritedNoteHtml(tt){
   if(src) new MutationObserver(sync).observe(src,{attributes:true,attributeFilter:["style"]});
   sync();
 })();
+// ═══ Round 45: the Priority SKU follows the Product Master Data Catalogue ═══
+// Priority SKU (Items col F) = the catalogue's Tier (col E). Whenever an EDITOR syncs, the dashboard reads the catalogue and
+//   1) corrects any Items priority that differs  (only tiers the app has: A / B / C / Retail / NPD — Merch, Other, 999, blank are left alone)
+//   2) adds the A / Retail / NPD SKUs the catalogue has and Items does not
+// Every change is written to the "Priority Sync Log" tab. People who can only view never write.
+const CD_PRIO_TIERS=["A","B","C","Retail","NPD"], CD_PRIO_ADD_TIERS=["A","Retail","NPD"], CD_PRIO_MIN_GAP_MS=10*60*1000, CD_PRIO_MAX_CHANGES=150, CD_PRIO_LOG_SHEET="Priority Sync Log";
+let cdPrioLastRun=0, cdPrioBusy=false, cdPrioLastError="";
+const cdPrioCanon=t=>{ const u=String(t||"").trim().toUpperCase(); return CD_PRIO_TIERS.find(x=>x.toUpperCase()===u)||""; };
+const cdPrioClean=v=>{ v=String(v==null?"":v).replace(/\r/g,"").replace(/\s+/g," ").trim(); return /^[-\u2013\u2014]+$/.test(v)?"":v; };
+const cdPrioGroup=(tier,cat)=>tier==="Retail"?"Retail Compliance":(({TD:"Tie-Down Straps",BO:"Tie-Down Straps",RG:"Recovery Gear",TO:"Towing",CA:"Camping",AC:"Accesories"})[String(cat||"").trim().toUpperCase()]||"");
+const cdPrioCountry=v=>String(v||"").replace(/USA/g,"US").replace(/\s*,\s*/g,"/").trim();
+function cdPrioChannel(sku,tier){ if(tier!=="Retail") return ""; const s=String(sku).toUpperCase(); if(/-AZ$/.test(s)) return "AutoZone"; if(/-C$/.test(s)) return "Costco"; if(/-S$/.test(s)) return "Sam's Club"; return /-(W|WM)$/.test(s)?"Walmart":""; }
+// what would change (no writing): ref = catalogue rows, items = Items rows {row,id,sku,priority}
+function cdPrioPlan(ref,items,genId){
+  const bySku={}, refBy={}, ids=new Set(items.map(i=>String(i.id)));
+  items.forEach(i=>{ const k=String(i.sku||"").trim().toUpperCase(); if(k&&!bySku[k]) bySku[k]=i; });
+  ref.forEach(r=>{ const k=String(r.sku||"").trim().toUpperCase(); if(k&&!refBy[k]) refBy[k]=r; });
+  const updates=[], adds=[], catUpdates=[];
+  Object.keys(refBy).forEach(k=>{
+    const r=refBy[k], tier=cdPrioCanon(r.tier), it=bySku[k], cat=String(r.cat||"").trim().toUpperCase();
+    if(it){
+      if(tier&&String(it.priority||"").trim()!==tier) updates.push({row:it.row,sku:String(it.sku).trim(),from:String(it.priority||"").trim(),to:tier});
+      if(cat&&it.category!==undefined&&String(it.category||"").trim().toUpperCase()!==cat) catUpdates.push({row:it.row,sku:String(it.sku).trim(),from:String(it.category||"").trim(),to:cat});
+    }
+    else if(CD_PRIO_ADD_TIERS.includes(tier)){ let id; do{ id=genId(); }while(ids.has(id)); ids.add(id); adds.push({id,sku:String(r.sku).trim(),family:cdPrioClean(r.family),desc:cdPrioClean(r.desc),tier,color:cdPrioClean(r.color),group:cdPrioGroup(tier,r.cat),category:cat,country:cdPrioCountry(cdPrioClean(r.country)),channel:cdPrioChannel(r.sku,tier)}); }
+  });
+  return {updates,adds,catUpdates};
+}
+async function cdPrioReadReference(){
+  const H={headers:{Authorization:"Bearer "+accessToken}}, base="https://sheets.googleapis.com/v4/spreadsheets/"+CD_FULFIL_LOOKUP_SPREADSHEET_ID;
+  const mres=await fetch(base+"?fields=sheets.properties",H); cdCheckAuthError(mres); if(!mres.ok) throw new Error("the catalogue could not be opened ("+mres.status+")");
+  const tabs=((await mres.json()).sheets||[]).map(x=>x.properties), tab=tabs.find(x=>x.sheetId===0)||tabs[0]; if(!tab) throw new Error("the catalogue has no tab");
+  const rres=await fetch(base+"/values/"+encodeURIComponent(tab.title)+"!A:L?valueRenderOption=FORMATTED_VALUE",H); cdCheckAuthError(rres); if(!rres.ok) throw new Error("the catalogue could not be read ("+rres.status+")");
+  const vals=(await rres.json()).values||[], head=(vals[0]||[]).map(h=>String(h||"").trim().toLowerCase());
+  const col=(re,fb)=>{ const i=head.findIndex(h=>re.test(h)); return i>=0?i:fb; };
+  const cSku=col(/^sku$/,0), cFam=col(/sku family/,1), cDesc=col(/^description$/,3), cTier=col(/^tier/,4), cColor=col(/^colou?r$/,7), cCat=col(/^category/,9), cCty=col(/country of sale/,11);
+  if(head[cSku]!=="sku"||!/^tier/.test(head[cTier]||"")) throw new Error("the catalogue's columns changed (SKU / Tier not found)");
+  return vals.slice(1).map(r=>({sku:r[cSku],family:r[cFam],desc:r[cDesc],tier:r[cTier],color:r[cColor],cat:r[cCat],country:r[cCty]})).filter(r=>String(r.sku||"").trim());
+}
+function cdPrioColLetter(i){ let t="",n=i+1; while(n>0){ const m=(n-1)%26; t=String.fromCharCode(65+m)+t; n=Math.floor((n-1)/26); } return t; }
+async function cdPrioReadItems(){
+  const H={headers:{Authorization:"Bearer "+accessToken}}, base="https://sheets.googleapis.com/v4/spreadsheets/"+SPREADSHEET_ID, tab=encodeURIComponent(ITEMS_SHEET);
+  const res=await fetch(`${base}/values/${tab}!A:F?valueRenderOption=FORMATTED_VALUE`,H);
+  cdCheckAuthError(res); if(!res.ok) throw new Error("Items could not be read ("+res.status+")");
+  const rows=(await res.json()).values||[];
+  let catIdx=-1, cats=null;     // the "category" column of Items (found by its header name)
+  try{
+    const hr=await fetch(`${base}/values/${tab}!A1:AA1`,H);
+    if(hr.ok){ const head=((await hr.json()).values||[[]])[0]||[]; catIdx=head.findIndex(h=>/^category$/i.test(String(h||"").trim())); }
+    if(catIdx>=0){ const Lt=cdPrioColLetter(catIdx), cr=await fetch(`${base}/values/${tab}!${Lt}:${Lt}?valueRenderOption=FORMATTED_VALUE`,H); if(cr.ok) cats=((await cr.json()).values||[]).map(r=>String((r&&r[0])||"").trim().toUpperCase()); else catIdx=-1; }
+  }catch(e){ catIdx=-1; cats=null; }
+  const items=rows.map((r,i)=>({row:i+1,id:String(r[0]||"").trim(),sku:String(r[2]||"").trim(),priority:String(r[5]||"").trim(),category:cats?(cats[i]||""):undefined})).slice(1).filter(x=>x.id||x.sku);
+  items.catIdx=catIdx; return items;
+}
+async function cdPrioLog(entries,who){
+  if(!entries.length) return;
+  const base="https://sheets.googleapis.com/v4/spreadsheets/"+SPREADSHEET_ID, H={Authorization:"Bearer "+accessToken,"Content-Type":"application/json"};
+  const meta=await fetch(base+"?fields=sheets.properties",{headers:{Authorization:"Bearer "+accessToken}}); const tabs=meta.ok?((await meta.json()).sheets||[]).map(x=>x.properties.title):[];
+  if(!tabs.includes(CD_PRIO_LOG_SHEET)){
+    await fetch(base+":batchUpdate",{method:"POST",headers:H,body:JSON.stringify({requests:[{addSheet:{properties:{title:CD_PRIO_LOG_SHEET,gridProperties:{columnCount:8,rowCount:500}}}}]})});
+    await fetch(base+"/values/"+encodeURIComponent(CD_PRIO_LOG_SHEET)+"!A1:F1?valueInputOption=USER_ENTERED",{method:"PUT",headers:H,body:JSON.stringify({values:[["When","SKU","What","Was","Now","By"]]})});
+  }
+  const when=new Date().toISOString().slice(0,16).replace("T"," ");
+  await fetch(base+"/values/"+encodeURIComponent(CD_PRIO_LOG_SHEET)+":append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS",{method:"POST",headers:H,body:JSON.stringify({values:entries.map(e=>[when,e.sku,e.what,e.was,e.now,who])})});
+}
+async function cdPrioSync(opts){
+  opts=opts||{};
+  if(cdPrioBusy||!accessToken) return null;
+  if(!opts.force&&Date.now()-cdPrioLastRun<CD_PRIO_MIN_GAP_MS) return null;
+  const id=await cdLoadIdentity(); if(!id||!id.canEdit) return null;          // only editors write
+  cdPrioBusy=true;
+  try{
+    const ref=await cdPrioReadReference(); if(ref.length<100) throw new Error("the catalogue looks empty ("+ref.length+" rows)");
+    const items=await cdPrioReadItems(), plan=cdPrioPlan(ref,items,cdGenerateId), total=plan.updates.length+plan.adds.length+plan.catUpdates.length;
+    cdPrioLastRun=Date.now(); cdPrioLastError="";
+    if(!total) return {updated:0,added:0,categories:0};
+    if(total>CD_PRIO_MAX_CHANGES) throw new Error(total+" changes is unusually many, so nothing was written — please check the catalogue");
+    const base="https://sheets.googleapis.com/v4/spreadsheets/"+SPREADSHEET_ID, H={Authorization:"Bearer "+accessToken,"Content-Type":"application/json"}, cl=items.catIdx>=0?cdPrioColLetter(items.catIdx):"";
+    const data=[...plan.updates.map(u=>({range:`${ITEMS_SHEET}!F${u.row}`,values:[[u.to]]})),...plan.catUpdates.map(u=>({range:`${ITEMS_SHEET}!${cl}${u.row}`,values:[[u.to]]}))];
+    if(data.length){ const r=await fetch(base+"/values:batchUpdate",{method:"POST",headers:H,body:JSON.stringify({valueInputOption:"USER_ENTERED",data})}); if(!r.ok) throw new Error("writing priorities / categories failed ("+r.status+")"); }
+    if(plan.adds.length){
+      const rows=plan.adds.map(a=>{ const row=[a.id,a.group,a.sku,a.family,a.desc,a.tier,"","","","","",a.country,a.color,a.channel,"","",""]; if(items.catIdx>=17){ while(row.length<items.catIdx) row.push(""); row[items.catIdx]=a.category||""; } return row; });
+      const r=await fetch(base+"/values/"+encodeURIComponent(ITEMS_SHEET)+":append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS",{method:"POST",headers:H,body:JSON.stringify({values:rows})}); if(!r.ok) throw new Error("adding SKUs failed ("+r.status+")"); }
+    try{ await cdPrioLog([...plan.updates.map(u=>({sku:u.sku,what:"Priority updated",was:u.from||"(blank)",now:u.to})),...plan.catUpdates.map(u=>({sku:u.sku,what:"Category updated",was:u.from||"(blank)",now:u.to})),...plan.adds.map(a=>({sku:a.sku,what:"Added to Items",was:"",now:a.tier+(a.category?" · "+a.category:"")}))],id.email); }catch(e){ console.warn("Priority Sync Log not written: "+e.message); }
+    return {updated:plan.updates.length,added:plan.adds.length,categories:plan.catUpdates.length};
+  }catch(e){ cdPrioLastError=String(e.message||e); console.warn("Priority sync: "+cdPrioLastError); return {error:cdPrioLastError}; }
+  finally{ cdPrioBusy=false; }
+}
+function cdToast(msg,warn){
+  const d=document.createElement("div"); d.className="cd-toast"; d.textContent=msg;
+  d.style.cssText="position:fixed;right:18px;bottom:18px;max-width:380px;z-index:99999;padding:11px 15px;border-radius:10px;font-size:12px;line-height:1.45;color:#fff;box-shadow:0 6px 24px rgba(0,0,0,.3);background:"+(warn?"#8a5a00":"#0e1b3d");
+  document.body.appendChild(d); setTimeout(()=>d.remove(),9000);
+}
+async function cdPrioAfterSync(){
+  const res=await cdPrioSync(); if(!res) return;
+  if(res.error) cdToast("Priority sync skipped: "+res.error,true);
+  else if(res.updated||res.added||res.categories){ cdToast(`Synced from the catalogue: ${res.updated} priorities updated, ${res.categories||0} categories updated, ${res.added} SKUs added. Details are in the "${CD_PRIO_LOG_SHEET}" tab.`); try{ await window.fetchSheetData(); }catch(e){} }
+}
+// run it after every successful data sync (at most once every 10 minutes, editors only)
+(function(){ const f=window.fetchSheetData; if(typeof f!=="function") return; window.fetchSheetData=async function(){ const r=await f.apply(this,arguments); setTimeout(()=>{ cdPrioAfterSync().catch(()=>{}); },600); return r; }; })();
+// ═══ Round 47: Main Table › "No Test" — SKUs that have no test result yet ═══
+// Each SKU gets a Remarks note and a Disposition: Deferred or For test. Both are saved as you go to the "No Test Dispositions" tab.
+// "Submit dispositions": Deferred SKUs are written to Deferred Items (the remark becomes the deferral reason);
+// For-test SKUs are queued for New Entry, and the first one opens there, already searched.
+const CD_NT_SHEET="No Test Dispositions";
+const CD_NT_HEADERS=["Item ID","SKU","Priority SKU","Category","Group","Remarks","Disposition","Status","Updated By","Updated At"];
+const CD_NT_DISPS=["Deferred","For test"];
+CD_AUTO_CREATE_SHEETS.add(CD_NT_SHEET);
+let cdNtMap={}, cdNtLoaded=false, cdNtBusy=false, cdNtSaveChain=Promise.resolve(), cdNtSavedAt="", cdNtErr="";
+let cdNtQ="", cdNtPri="ALL", cdNtCat="ALL", cdNtGroup="ALL", cdNtDisp="ALL";
+const cdNtPriRank=p=>{ const i=["A","Retail","NPD","B","C"].indexOf(String(p||"").trim()); return i<0?9:i; };
+const cdNtState=id=>cdNtMap[id]||(cdNtMap[id]={row:0,remarks:"",disp:"",status:""});
+function cdNtFindItem(rowId){ let f=null; GROUPS.forEach(g=>g.items.forEach(i=>{ if(!f&&String(i.rowId)===String(rowId)) f={item:i,group:g.title}; })); return f; }
+// SKUs with no test result (the same rule as the Main Table's "No test" filter), not already deferred and not already in Tracking
+function cdNtItems(){
+  const out=[];
+  GROUPS.forEach(g=>g.items.forEach(i=>{
+    if(itemResultKind(i)!=="none") return;
+    if(cdDeferredItemIds.has(i.id)||cdTrackingTransferredIds.has(i.id)) return;
+    const st=cdNtMap[i.rowId]||{};
+    out.push({id:i.id,item:i,rowId:i.rowId,name:i.name,desc:i.description||"",pri:i.prioritySku||"",category:i.category||"",group:g.title,remarks:st.remarks||"",disp:st.disp||"",status:st.status||""});
+  }));
+  out.sort((a,b)=>(cdNtPriRank(a.pri)-cdNtPriRank(b.pri))||String(a.name).localeCompare(String(b.name)));
+  return out;
+}
+function cdNtFiltered(all){
+  const q=cdNtQ.trim().toLowerCase();
+  return all.filter(r=>{
+    if(q&&![r.name,r.desc,r.group,r.remarks,cdCategoryName(r.category)].some(v=>String(v||"").toLowerCase().includes(q))) return false;
+    if(cdNtPri!=="ALL"&&r.pri!==cdNtPri) return false;
+    if(cdNtCat!=="ALL"&&r.category!==cdNtCat) return false;
+    if(cdNtGroup!=="ALL"&&r.group!==cdNtGroup) return false;
+    if(cdNtDisp==="NONE"&&r.disp) return false;
+    if((cdNtDisp==="Deferred"||cdNtDisp==="For test")&&r.disp!==cdNtDisp) return false;
+    return true;
+  });
+}
+function cdNtUpdateBadge(){ const el=document.getElementById("subm-notest-n"); if(!el) return; const n=GROUPS.length?cdNtItems().length:0; el.textContent=n?String(n):""; el.style.display=n?"inline-block":"none"; }
+function cdRenderNoTest(){
+  const wrap=document.getElementById("board-wrap"); if(!wrap) return;
+  if(!cdNtLoaded&&accessToken&&!cdNtBusy){ cdNtBusy=true; cdNtLoad().finally(()=>{ cdNtBusy=false; if(activeTab==="notest") cdRenderNoTest(); }); }
+  const act=document.activeElement, keep=(act&&act.id==="cd-nt-q")?act.selectionStart:null;
+  const all=cdNtItems(), rows=cdNtFiltered(all), edit=cdCanEditNow();
+  const pill=(label,active,fn)=>`<button onclick="${fn}" style="padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid ${active?"#0073ea":"#e0e3ea"};background:${active?"#0073ea":"#fff"};color:${active?"#fff":"#555"};white-space:nowrap">${esc(label)}</button>`;
+  const lab=t=>`<span style="font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.4px;flex-shrink:0">${t}</span>`;
+  const pris=[...new Set(all.map(r=>r.pri).filter(Boolean))].sort((a,b)=>cdNtPriRank(a)-cdNtPriRank(b)||a.localeCompare(b));
+  const cats=[...new Set(all.map(r=>r.category).filter(Boolean))]; const cOrder=[...CD_CATEGORY_ORDER.filter(c=>cats.includes(c)),...cats.filter(c=>!CD_CATEGORY_ORDER.includes(c)).sort()];
+  const groups=[...new Set(all.map(r=>r.group))].sort();
+  const nDef=all.filter(r=>r.disp==="Deferred").length, nTest=all.filter(r=>r.disp==="For test").length, nNone=all.length-nDef-nTest;
+  const nSubDef=all.filter(r=>r.disp==="Deferred").length, nSubTest=all.filter(r=>r.disp==="For test"&&r.status!=="Queued").length;
+  const bar=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px">${lab("Search")}<input id="cd-nt-q" class="pmm-input" style="width:230px;padding:6px 10px;font-size:12px" placeholder="SKU, description, remark…" value="${esc(cdNtQ)}" oninput="cdNtSetQ(this.value)"/>
+    ${lab("Priority")}<div style="display:flex;gap:4px;flex-wrap:wrap">${pill("All",cdNtPri==="ALL","cdNtSetPri('ALL')")}${pris.map(p=>pill(p==="Retail"?"★ Retail":p,cdNtPri===p,`cdNtSetPri('${esc(p)}')`)).join("")}</div></div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">${lab("Category")}<div style="display:flex;gap:4px;flex-wrap:wrap">${pill("All",cdNtCat==="ALL","cdNtSetCat('ALL')")}${cOrder.map(c=>pill(cdCategoryName(c),cdNtCat===c,`cdNtSetCat('${esc(c)}')`)).join("")}</div>
+    ${lab("Group")}<select id="cd-nt-group" onchange="cdNtSetGroup(this.value)" style="padding:4px 26px 4px 10px;border:1.5px solid ${cdNtGroup!=="ALL"?"#0073ea":"#dde0e7"};border-radius:20px;font-size:11px;font-weight:600;background:#fff;color:#333;height:30px;cursor:pointer"><option value="ALL">All Groups</option>${groups.map(g=>`<option value="${esc(g)}" ${cdNtGroup===g?"selected":""}>${esc(g)}</option>`).join("")}</select>
+    ${lab("Disposition")}<div style="display:flex;gap:4px;flex-wrap:wrap">${pill("All",cdNtDisp==="ALL","cdNtSetDispF('ALL')")}${pill(`Not decided (${nNone})`,cdNtDisp==="NONE","cdNtSetDispF('NONE')")}${pill(`Deferred (${nDef})`,cdNtDisp==="Deferred","cdNtSetDispF('Deferred')")}${pill(`For test (${nTest})`,cdNtDisp==="For test","cdNtSetDispF('For test')")}</div>
+    ${(cdNtQ||cdNtPri!=="ALL"||cdNtCat!=="ALL"||cdNtGroup!=="ALL"||cdNtDisp!=="ALL")?`<button onclick="cdNtClear()" style="font-size:11px;color:#e2445c;background:none;border:1px solid #ffd5d5;cursor:pointer;font-weight:600;padding:4px 10px;border-radius:6px">✕ Clear all</button>`:""}</div>`;
+  const th=(t,w)=>`<th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:700;color:#667;text-transform:uppercase;letter-spacing:.3px;background:#f3f5f9;border-bottom:1.5px solid #dfe3ec;white-space:nowrap;${w?"width:"+w:""}">${t}</th>`;
+  const body=rows.map((r,i)=>{
+    const bg=r.disp==="Deferred"?"#fff8e8":r.disp==="For test"?"#eef5ff":"#fff";
+    return `<tr data-nt="${esc(r.rowId)}" style="background:${bg};border-bottom:1px solid #eef0f4">
+      <td style="padding:8px 10px;color:#999;font-size:11px;vertical-align:top;width:38px">${i+1}</td>
+      <td style="padding:8px 10px;vertical-align:top;min-width:230px"><div style="font-weight:700;color:#222;font-size:12.5px">${esc(r.name)}</div>${r.desc?`<div style="font-size:10.5px;color:#777;margin-top:1px;max-width:340px">${esc(r.desc)}</div>`:""}${r.status==="Queued"?`<div style="margin-top:3px"><span style="font-size:9.5px;font-weight:700;padding:1px 8px;border-radius:9px;background:#e3efff;color:#0055bb">In the New Entry queue</span> <a href="#" onclick="cdNtStartEntry('${esc(r.id)}');return false" style="font-size:10.5px;color:#0073ea;font-weight:700">Open in New Entry →</a></div>`:""}</td>
+      <td style="padding:8px 10px;vertical-align:top;width:90px">${r.pri?`<span style="background:#e8f2ff;color:#0055bb;border:1px solid #c0d8f8;border-radius:6px;font-size:11px;font-weight:700;padding:2px 7px">${esc(r.pri)}</span>`:`<span style="color:#ccc">—</span>`}</td>
+      <td style="padding:8px 10px;vertical-align:top;min-width:170px">${cdCategoryBadgeHtml(r.category)||`<span style="color:#ccc;font-size:11px">no category</span>`}<div style="font-size:10.5px;color:#888;margin-top:3px">${esc(r.group)}</div></td>
+      <td style="padding:6px 10px;vertical-align:top;min-width:260px"><input class="pmm-input" style="width:100%;padding:6px 9px;font-size:12px" placeholder="Add remarks…" value="${esc(r.remarks)}" ${edit?"":"disabled"} onchange="cdNtSetRemark('${esc(r.rowId)}',this.value)"/></td>
+      <td style="padding:6px 10px;vertical-align:top;width:170px"><select class="pmm-input" style="width:100%;padding:6px 8px;font-size:12px;font-weight:700;color:${r.disp==="Deferred"?"#a85b00":r.disp==="For test"?"#0055bb":"#777"}" ${edit?"":"disabled"} onchange="cdNtSetDisp('${esc(r.rowId)}',this.value)"><option value="">— choose —</option><option value="Deferred" ${r.disp==="Deferred"?"selected":""}>Deferred</option><option value="For test" ${r.disp==="For test"?"selected":""}>For test</option></select></td></tr>`; }).join("");
+  const empty=!GROUPS.length?"Connect &amp; Sync with Google to load the products.":all.length?"No SKU matches these filters.":"Every SKU has a test result, or has already been deferred. Nothing is waiting here.";
+  wrap.innerHTML=`<div style="max-width:1280px;margin:0 auto;padding:18px 0">
+    <div class="pmm-card" style="padding:14px 16px;margin-bottom:12px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap"><div><div style="font-size:15px;font-weight:800;color:#222">🚫 No Test <span style="font-weight:500;color:#888;font-size:12px">· ${all.length} SKU${all.length!==1?"s":""} without any test result</span></div>
+        <div style="font-size:11.5px;color:#777;margin-top:3px;max-width:760px">Decide for each SKU: <b style="color:#a85b00">Deferred</b> (moves to the Deferred Items tab) or <b style="color:#0055bb">For test</b> (a New Entry is prepared for it). Remarks and dispositions save as you go; nothing moves until you press <b>Submit dispositions</b>.</div></div>
+        <div id="cd-nt-saved" style="font-size:11.5px;min-height:16px"></div></div>${bar}</div>
+    <div class="pmm-card" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${th("#")}${th("SKU")}${th("Priority")}${th("Category / Group")}${th("Remarks")}${th("Disposition")}</tr></thead><tbody>${body||`<tr><td colspan="6" style="padding:34px;text-align:center;color:#999">${empty}</td></tr>`}</tbody></table></div></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px"><div style="font-size:11.5px;color:#666">Showing <b>${rows.length}</b> of ${all.length} · Not decided <b>${nNone}</b> · Deferred <b>${nDef}</b> · For test <b>${nTest}</b></div>
+      <button id="cd-nt-submit" onclick="cdNtSubmit()" ${edit&&(nSubDef+nSubTest)?"":"disabled"} title="${edit?"":"View only — only editors can submit"}" style="padding:11px 22px;font-size:13px;font-weight:700;color:#fff;background:${edit&&(nSubDef+nSubTest)?"#0073ea":"#b9c3d6"};border:none;border-radius:9px;cursor:${edit&&(nSubDef+nSubTest)?"pointer":"not-allowed"}">✓ Submit dispositions${(nSubDef+nSubTest)?` · ${nSubDef} to Deferred Items · ${nSubTest} to New Entry`:""}</button></div></div>`;
+  cdNtShowSaved(); cdNtUpdateBadge();
+  if(keep!=null){ const el=document.getElementById("cd-nt-q"); if(el){ el.focus(); try{ el.setSelectionRange(keep,keep); }catch(e){} } }
+}
+function cdNtShowSaved(){ const el=document.getElementById("cd-nt-saved"); if(el) el.innerHTML=cdNtErr?`<span style="color:#c0392b">⚠ Not saved: ${esc(cdNtErr)}</span>`:(cdNtSavedAt?`<span style="color:#0a7a46">✓ Saved ${esc(cdNtSavedAt)}</span>`:""); }
+function cdNtSetQ(v){ cdNtQ=String(v||""); cdRenderNoTest(); }
+function cdNtSetPri(v){ cdNtPri=v; cdRenderNoTest(); }
+function cdNtSetCat(v){ cdNtCat=v; cdRenderNoTest(); }
+function cdNtSetGroup(v){ cdNtGroup=v; cdRenderNoTest(); }
+function cdNtSetDispF(v){ cdNtDisp=v; cdRenderNoTest(); }
+function cdNtClear(){ cdNtQ=""; cdNtPri="ALL"; cdNtCat="ALL"; cdNtGroup="ALL"; cdNtDisp="ALL"; cdRenderNoTest(); }
+function cdNtSetRemark(rowId,v){ if(!cdCanEditNow()) return; cdNtState(rowId).remarks=String(v||"").trim(); cdNtQueueSave(rowId); }
+function cdNtSetDisp(rowId,v){
+  if(!cdCanEditNow()) return;
+  const st=cdNtState(rowId); st.disp=CD_NT_DISPS.includes(v)?v:"";
+  if(st.status==="Queued"&&st.disp!=="For test") st.status="";      // changed its mind: it is a draft again
+  cdNtQueueSave(rowId); cdRenderNoTest();
+}
+function cdNtQueueSave(rowId){
+  cdNtSaveChain=cdNtSaveChain.then(()=>cdNtUpsert(rowId)).then(()=>{ cdNtSavedAt=new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}); cdNtErr=""; cdNtShowSaved(); }).catch(e=>{ cdNtErr=String(e.message||e); cdNtShowSaved(); });
+  return cdNtSaveChain;
+}
+async function cdNtUpsert(rowId){
+  if(!accessToken) throw new Error('Please "Connect & Sync" with Google first.');
+  const f=cdNtFindItem(rowId); if(!f) return;
+  let map=null; for(const h of CD_NT_HEADERS) map=await cdEnsureColumn(CD_NT_SHEET,h);
+  const st=cdNtState(rowId), who=(cdIdentity&&cdIdentity.email)||"", now=new Date().toISOString().slice(0,16).replace("T"," ");
+  const row=cdBuildRow(map,{"Item ID":rowId,"SKU":f.item.name,"Priority SKU":f.item.prioritySku,"Category":f.item.category,"Group":f.group,"Remarks":st.remarks,"Disposition":st.disp,"Status":st.status,"Updated By":who,"Updated At":now});
+  const base=`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_NT_SHEET)}`, H={Authorization:"Bearer "+accessToken,"Content-Type":"application/json"};
+  if(st.row){
+    const r=await fetch(`${base}!A${st.row}?valueInputOption=USER_ENTERED`,{method:"PUT",headers:H,body:JSON.stringify({values:[row]})}); cdCheckAuthError(r);
+    if(!r.ok) throw new Error(`could not update "${CD_NT_SHEET}" (${r.status})`);
+  } else {
+    const r=await fetch(`${base}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,{method:"POST",headers:H,body:JSON.stringify({values:[row]})}); cdCheckAuthError(r);
+    if(!r.ok) throw new Error(`could not save to "${CD_NT_SHEET}" (${r.status})`);
+    const j=await r.json(), m=String((j.updates&&j.updates.updatedRange)||"").match(/(\d+)(?::[A-Z]+\d+)?$/); if(m) st.row=Number(m[1]);
+  }
+}
+async function cdNtLoad(){
+  if(!accessToken) return;
+  try{
+    const res=await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(CD_NT_SHEET)}?valueRenderOption=FORMATTED_VALUE`,{headers:{Authorization:"Bearer "+accessToken}});
+    cdCheckAuthError(res);
+    const vals=res.ok?((await res.json()).values||[]):[];      // no tab yet just means nothing has been saved
+    const head=(vals[0]||[]).map(h=>String(h||"").trim()), ix=n=>head.indexOf(n), cI=ix("Item ID"), cR=ix("Remarks"), cD=ix("Disposition"), cS=ix("Status"), map={};
+    if(cI>=0) vals.slice(1).forEach((r,k)=>{ const id=String(r[cI]||"").trim(); if(id) map[id]={row:k+2,remarks:cR>=0?String(r[cR]||""):"",disp:cD>=0?String(r[cD]||""):"",status:cS>=0?String(r[cS]||""):""}; });
+    cdNtMap=map; cdNtErr="";
+  }catch(e){ cdNtErr=String(e.message||e); }
+  cdNtLoaded=true;
+}
+async function cdNtSubmit(){
+  if(!cdCanEditNow()){ alert("View only — only editors can submit."); return; }
+  if(cdNtBusy) return;
+  const todo=cdNtItems().filter(r=>(r.disp==="Deferred")||(r.disp==="For test"&&r.status!=="Queued"));
+  if(!todo.length){ alert("Choose Deferred or For test for at least one SKU first."); return; }
+  const dfr=todo.filter(r=>r.disp==="Deferred"), tst=todo.filter(r=>r.disp==="For test");
+  if(!confirm(`Submit ${todo.length} disposition${todo.length!==1?"s":""}?\n\n• ${dfr.length} → Deferred Items tab${dfr.length?" (your remark becomes the deferral reason)":""}\n• ${tst.length} → New Entry${tst.length?" (queued; the first one opens now)":""}\n\nThis writes to the Google Sheet.`)) return;
+  if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
+  cdNtBusy=true; let moved=0, queued=0; const firstQueued=[];
+  try{
+    for(const r of dfr){
+      await cdWriteDeferredRow(r.item, r.remarks||"No test yet — deferred from the No Test tab.", []);
+      cdDeferredItemIds.add(r.item.id); localStorage.setItem(CD_DEFERRED_ITEMS_LS,JSON.stringify([...cdDeferredItemIds]));
+      cdNtState(r.rowId).status="Deferred"; await cdNtQueueSave(r.rowId); moved++;
+    }
+    for(const r of tst){ cdNtState(r.rowId).status="Queued"; await cdNtQueueSave(r.rowId); queued++; firstQueued.push(r.item.id); }
+  }catch(e){ alert(`Submitted ${moved+queued} of ${todo.length} before an error: ${e.message}`); }
+  cdNtBusy=false; cdNtUpdateBadge();
+  cdToast(`No Test: ${moved} moved to Deferred Items · ${queued} queued for New Entry.`);
+  if(firstQueued.length) cdNtStartEntry(firstQueued[0]); else cdRenderNoTest();
+}
+// New Entry, already searched for this SKU (the guided flow then asks to confirm the parent SKU)
+function cdNtStartEntry(itemId){
+  const it=cdFindItemById(itemId); if(!it) return;
+  cdNewMode="rhino"; cdWzReset(); cdWizard.query=it.name; switchTab("newentry");
+  const m=cdWzMatchesFor("SKU",it.name); if(m.length) cdWzGoStep2(m); else cdWzSearchGo();
+}
+function cdNtQueue(){
+  const out=[];
+  GROUPS.forEach(g=>g.items.forEach(i=>{ const st=cdNtMap[i.rowId]; if(st&&st.status==="Queued"&&st.disp==="For test"&&itemResultKind(i)==="none"&&!cdDeferredItemIds.has(i.id)) out.push(i); }));
+  return out.sort((a,b)=>(cdNtPriRank(a.prioritySku)-cdNtPriRank(b.prioritySku))||String(a.name).localeCompare(String(b.name)));
+}
+function cdNtQueueHtml(){
+  const q=cdNtQueue(); if(!q.length) return "";
+  const cur=String((cdWizard&&cdWizard.query)||"").toLowerCase();
+  return `<div class="pmm-card" style="padding:11px 14px;margin-bottom:12px;border-left:4px solid #0073ea"><div style="font-size:12px;font-weight:800;color:#0e1b3d">📥 From No Test · ${q.length} SKU${q.length!==1?"s":""} waiting for a New Entry</div><div style="font-size:11px;color:#777;margin:2px 0 8px">Click a SKU to start its entry. It leaves this list once it has a test result.</div><div style="display:flex;gap:6px;flex-wrap:wrap">${q.map(i=>`<button onclick="cdNtStartEntry('${esc(i.id)}')" style="padding:4px 11px;border-radius:16px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid ${String(i.name).toLowerCase()===cur?"#0073ea":"#cfe0f7"};background:${String(i.name).toLowerCase()===cur?"#0073ea":"#f3f8ff"};color:${String(i.name).toLowerCase()===cur?"#fff":"#0055bb"}">${esc(i.name)}${i.prioritySku?` · ${esc(i.prioritySku)}`:""}</button>`).join("")}</div></div>`;
+}
+// load the saved dispositions after every data sync, so drafts and the New Entry queue are always there
+(function(){ const f=window.fetchSheetData; if(typeof f!=="function") return; window.fetchSheetData=async function(){ const r=await f.apply(this,arguments); cdNtLoad().then(()=>{ if(activeTab==="notest") cdRenderNoTest(); else if(activeTab==="newentry") cdRenderNewEntry(); cdNtUpdateBadge(); }).catch(()=>{}); return r; }; })();
 // ═══ Round 28: a shareable link for every view ═══
 // The address bar always shows the view you are on, e.g.  …/#/compliance/tracking   …/#/pmm/compiled/insights   …/#/pca/approval
 // Paste that link to a teammate: after they sign in they land on exactly that tab. Back/forward and editing the #… also work.
 const CD_ROUTES={
-  compliance:{label:"Compliance Dashboard",tabs:{table:"Main Table",monitoring:"Annual Test",newentry:"New Entry",tracking:"Tracking",completedtest:"Completed Test",deferreditems:"Deferred Items",expense:"Test Expense"}},
+  compliance:{label:"Compliance Dashboard",tabs:{table:"Main Table",notest:"No Test",monitoring:"Annual Test",newentry:"New Entry",tracking:"Tracking",completedtest:"Completed Test",deferreditems:"Deferred Items",expense:"Test Expense"}},
   pmm:{label:"Product Material Matrix",tabs:{"new":"New Entry",compiled:"Compiled View",suppack:"Supplier Ack.",costsavings:"Cost Savings"}},
   pca:{label:"Pantone Color Approval",tabs:{tracking:"Tracking",approval:"Approval Process",completed:"Ticket Completed"}},
 };
@@ -11940,11 +12242,12 @@ function cdFilterSpecs(sec,tab,sub){
   const S=(k,get,set,def,inp,list)=>({k,get,set,def:def===undefined?"":def,inp,list:!!list});
   const q=(get,set,inp)=>S("q",get,set,"",inp);
   if(sec==="compliance"){
-    if(tab==="table") return [q(()=>searchQ,v=>{searchQ=v;},"searchBox"),S("country",()=>fCountry,v=>{fCountry=v;},"ALL"),S("result",()=>fResult,v=>{fResult=v;},"ALL"),S("pri",()=>fPriority,v=>{fPriority=v;},"ALL"),S("from",()=>fDateFrom,v=>{fDateFrom=v;}),S("to",()=>fDateTo,v=>{fDateTo=v;}),S("sku",()=>fSku,v=>{fSku=v;}),S("group",()=>fGroup,v=>{fGroup=v;},"ALL"),S("supplier",()=>fSupplier,v=>{fSupplier=v;},"ALL"),S("sort",()=>sortS?sortS.col+":"+sortS.dir:"",v=>{ const i=String(v).lastIndexOf(":"); sortS=i>0?{col:v.slice(0,i),dir:v.slice(i+1)==="desc"?"desc":"asc"}:null; })];
+    if(tab==="table") return [q(()=>searchQ,v=>{searchQ=v;},"searchBox"),S("country",()=>fCountry,v=>{fCountry=v;},"ALL"),S("result",()=>fResult,v=>{fResult=v;},"ALL"),S("pri",()=>fPriority,v=>{fPriority=v;},"ALL"),S("category",()=>fCategory,v=>{fCategory=v;},"ALL"),S("from",()=>fDateFrom,v=>{fDateFrom=v;}),S("to",()=>fDateTo,v=>{fDateTo=v;}),S("sku",()=>fSku,v=>{fSku=v;}),S("group",()=>fGroup,v=>{fGroup=v;},"ALL"),S("supplier",()=>fSupplier,v=>{fSupplier=v;},"ALL"),S("sort",()=>sortS?sortS.col+":"+sortS.dir:"",v=>{ const i=String(v).lastIndexOf(":"); sortS=i>0?{col:v.slice(0,i),dir:v.slice(i+1)==="desc"?"desc":"asc"}:null; })];
     if(tab==="monitoring") return [q(()=>monSearchQ,v=>{monSearchQ=v;},"mon-search-box"),S("status",()=>monFilterStatus,v=>{monFilterStatus=v;},"ALL"),S("decision",()=>monFilterDecision,v=>{monFilterDecision=v;},"ALL"),S("pri",()=>monFilterPriority,v=>{monFilterPriority=v;},"ALL"),S("focus",()=>monFocusParent,v=>{monFocusParent=v;})];
     if(tab==="tracking") return [q(()=>cdTrackingSearchQ,v=>{cdTrackingSearchQ=v;},"trk-search-box")];
     if(tab==="completedtest") return [q(()=>cdCompletedSearchQ,v=>{cdCompletedSearchQ=v;},"cmp-search-box")];
     if(tab==="deferreditems") return [q(()=>cdDeferredSearchQ,v=>{cdDeferredSearchQ=v;},"def-search-box")];
+    if(tab==="notest") return [q(()=>cdNtQ,v=>{cdNtQ=v;},"cd-nt-q"),S("pri",()=>cdNtPri,v=>{cdNtPri=v;},"ALL"),S("category",()=>cdNtCat,v=>{cdNtCat=v;},"ALL"),S("group",()=>cdNtGroup,v=>{cdNtGroup=v;},"ALL"),S("disp",()=>cdNtDisp,v=>{cdNtDisp=v;},"ALL")];
     if(tab==="expense") return [q(()=>expSearchQ,v=>{expSearchQ=v;},"exp-search-box"),S("pri",()=>expFilterPriority,v=>{expFilterPriority=v;},"ALL"),S("cat",()=>expFilterCategory,v=>{expFilterCategory=v;},"ALL"),S("year",()=>expFilterYear,v=>{expFilterYear=v;},"ALL")];
     return [];
   }
