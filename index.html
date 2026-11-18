@@ -12065,21 +12065,35 @@ const cdNtPriRank=p=>{ const i=["A","Retail","NPD","B","C"].indexOf(String(p||""
 const cdNtState=id=>cdNtMap[id]||(cdNtMap[id]={row:0,remarks:"",disp:"",status:""});
 function cdNtFindItem(rowId){ let f=null; GROUPS.forEach(g=>g.items.forEach(i=>{ if(!f&&String(i.rowId)===String(rowId)) f={item:i,group:g.title}; })); return f; }
 // SKUs with no test result (the same rule as the Main Table's "No test" filter), not already deferred and not already in Tracking
+// NPD only: colour variants of one product — same parent SKU, names differ only by the colour code — are ONE row.
+// The mother SKU (the one named like the parent SKU, else the one without a colour, else black) carries the decision; the others are listed under it.
+const CD_NT_COLORS=["BLK","BLU","GRN","GRY","RED","TAN","CAMO","PNK","PUR","ORG","YEL","WHT","MUL","APX","BRN","SLV","GLD","NVY"];
+function cdNtStem(name){ const t=String(name||"").trim().split("-"); return (t.length>1&&CD_NT_COLORS.includes(t[t.length-1].toUpperCase()))?t.slice(0,-1).join("-"):String(name||"").trim(); }
+const cdNtFamKey=i=>String(i.parentSku||i.name||"").trim().toLowerCase()+"|"+cdNtStem(i.name).toLowerCase();
+function cdNtPickMother(list){
+  const key=String(list[0].item.parentSku||"").trim().toLowerCase(), stem=cdNtStem(list[0].name).toLowerCase(), low=r=>String(r.name).trim().toLowerCase();
+  return list.find(r=>low(r)===key)||list.find(r=>low(r)===stem)||list.find(r=>/-BLK$/i.test(r.name))||list.slice().sort((a,b)=>String(a.name).localeCompare(String(b.name)))[0];
+}
+function cdNtVariantNames(item){ const k=cdNtFamKey(item), out=[]; GROUPS.forEach(g=>g.items.forEach(i=>{ if(i.id!==item.id&&String(i.prioritySku||"").trim()==="NPD"&&itemResultKind(i)==="none"&&!cdDeferredItemIds.has(i.id)&&cdNtFamKey(i)===k) out.push(i.name); })); return out.sort(); }
 function cdNtItems(){
-  const out=[];
+  const rows=[];
   GROUPS.forEach(g=>g.items.forEach(i=>{
     if(itemResultKind(i)!=="none") return;
     if(cdDeferredItemIds.has(i.id)||cdTrackingTransferredIds.has(i.id)) return;
     const st=cdNtMap[i.rowId]||{};
-    out.push({id:i.id,item:i,rowId:i.rowId,name:i.name,desc:i.description||"",pri:i.prioritySku||"",category:i.category||"",group:g.title,remarks:st.remarks||"",disp:st.disp||"",status:st.status||""});
+    rows.push({id:i.id,item:i,rowId:i.rowId,name:i.name,desc:i.description||"",pri:i.prioritySku||"",category:i.category||"",group:g.title,remarks:st.remarks||"",disp:st.disp||"",status:st.status||"",variants:[]});
   }));
+  const fam=new Map(), out=[];
+  rows.forEach(r=>{ if(String(r.pri).trim()!=="NPD"){ out.push(r); return; } const k=cdNtFamKey(r.item); if(!fam.has(k)) fam.set(k,[]); fam.get(k).push(r); });
+  fam.forEach(list=>{ if(list.length<2){ out.push(list[0]); return; } const m=cdNtPickMother(list); m.variants=list.filter(x=>x!==m).sort((a,b)=>String(a.name).localeCompare(String(b.name))); out.push(m); });
   out.sort((a,b)=>(cdNtPriRank(a.pri)-cdNtPriRank(b.pri))||String(a.name).localeCompare(String(b.name)));
   return out;
 }
+const cdNtSkuCount=rows=>rows.reduce((n,r)=>n+1+r.variants.length,0);
 function cdNtFiltered(all){
   const q=cdNtQ.trim().toLowerCase();
   return all.filter(r=>{
-    if(q&&![r.name,r.desc,r.group,r.remarks,cdCategoryName(r.category)].some(v=>String(v||"").toLowerCase().includes(q))) return false;
+    if(q&&![r.name,r.desc,r.group,r.remarks,cdCategoryName(r.category),...r.variants.map(v=>v.name)].some(v=>String(v||"").toLowerCase().includes(q))) return false;
     if(cdNtPri!=="ALL"&&r.pri!==cdNtPri) return false;
     if(cdNtCat!=="ALL"&&r.category!==cdNtCat) return false;
     if(cdNtGroup!=="ALL"&&r.group!==cdNtGroup) return false;
@@ -12092,6 +12106,7 @@ function cdNtUpdateBadge(){ const el=document.getElementById("subm-notest-n"); i
 function cdRenderNoTest(){
   const wrap=document.getElementById("board-wrap"); if(!wrap) return;
   if(!cdNtLoaded&&accessToken&&!cdNtBusy){ cdNtBusy=true; cdNtLoad().finally(()=>{ cdNtBusy=false; if(activeTab==="notest") cdRenderNoTest(); }); }
+  if(!cdIdentity&&accessToken&&!window.__cdNtIdent){ window.__cdNtIdent=true; cdLoadIdentity().then(()=>{ if(activeTab==="notest") cdRenderNoTest(); }).catch(()=>{}); }     // who may edit is not known yet: draw again once it is
   const act=document.activeElement, keep=(act&&act.id==="cd-nt-q")?act.selectionStart:null;
   const all=cdNtItems(), rows=cdNtFiltered(all), edit=cdCanEditNow();
   const pill=(label,active,fn)=>`<button onclick="${fn}" style="padding:4px 12px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid ${active?"#0073ea":"#e0e3ea"};background:${active?"#0073ea":"#fff"};color:${active?"#fff":"#555"};white-space:nowrap">${esc(label)}</button>`;
@@ -12100,7 +12115,7 @@ function cdRenderNoTest(){
   const cats=[...new Set(all.map(r=>r.category).filter(Boolean))]; const cOrder=[...CD_CATEGORY_ORDER.filter(c=>cats.includes(c)),...cats.filter(c=>!CD_CATEGORY_ORDER.includes(c)).sort()];
   const groups=[...new Set(all.map(r=>r.group))].sort();
   const nDef=all.filter(r=>r.disp==="Deferred").length, nTest=all.filter(r=>r.disp==="For test").length, nNone=all.length-nDef-nTest;
-  const nSubDef=all.filter(r=>r.disp==="Deferred").length, nSubTest=all.filter(r=>r.disp==="For test"&&r.status!=="Queued").length;
+  const nSubDef=all.filter(r=>r.disp==="Deferred").length, nSubTest=all.filter(r=>r.disp==="For test"&&r.status!=="Queued").length, nSubDefSku=cdNtSkuCount(all.filter(r=>r.disp==="Deferred"));
   const bar=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px">${lab("Search")}<input id="cd-nt-q" class="pmm-input" style="width:230px;padding:6px 10px;font-size:12px" placeholder="SKU, description, remark…" value="${esc(cdNtQ)}" oninput="cdNtSetQ(this.value)"/>
     ${lab("Priority")}<div style="display:flex;gap:4px;flex-wrap:wrap">${pill("All",cdNtPri==="ALL","cdNtSetPri('ALL')")}${pris.map(p=>pill(p==="Retail"?"★ Retail":p,cdNtPri===p,`cdNtSetPri('${esc(p)}')`)).join("")}</div></div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">${lab("Category")}<div style="display:flex;gap:4px;flex-wrap:wrap">${pill("All",cdNtCat==="ALL","cdNtSetCat('ALL')")}${cOrder.map(c=>pill(cdCategoryName(c),cdNtCat===c,`cdNtSetCat('${esc(c)}')`)).join("")}</div>
@@ -12112,7 +12127,7 @@ function cdRenderNoTest(){
     const bg=r.disp==="Deferred"?"#fff8e8":r.disp==="For test"?"#eef5ff":"#fff";
     return `<tr data-nt="${esc(r.rowId)}" style="background:${bg};border-bottom:1px solid #eef0f4">
       <td style="padding:8px 10px;color:#999;font-size:11px;vertical-align:top;width:38px">${i+1}</td>
-      <td style="padding:8px 10px;vertical-align:top;min-width:230px"><div style="font-weight:700;color:#222;font-size:12.5px">${esc(r.name)}</div>${r.desc?`<div style="font-size:10.5px;color:#777;margin-top:1px;max-width:340px">${esc(r.desc)}</div>`:""}${r.status==="Queued"?`<div style="margin-top:3px"><span style="font-size:9.5px;font-weight:700;padding:1px 8px;border-radius:9px;background:#e3efff;color:#0055bb">In the New Entry queue</span> <a href="#" onclick="cdNtStartEntry('${esc(r.id)}');return false" style="font-size:10.5px;color:#0073ea;font-weight:700">Open in New Entry →</a></div>`:""}</td>
+      <td style="padding:8px 10px;vertical-align:top;min-width:230px"><div style="font-weight:700;color:#222;font-size:12.5px">${esc(r.name)}</div>${r.desc?`<div style="font-size:10.5px;color:#777;margin-top:1px;max-width:340px">${esc(r.desc)}</div>`:""}${r.variants.length?`<div style="margin-top:6px;padding-left:9px;border-left:3px solid #a25ddc"><div style="font-size:9.5px;font-weight:700;color:#8a6bc4;text-transform:uppercase;letter-spacing:.3px">Same size · covers ${r.variants.length} other colour${r.variants.length!==1?"s":""}</div>${r.variants.map(v=>`<div style="font-size:10.5px;color:#9aa3b5;line-height:1.55" title="${esc(v.desc)}">${esc(v.name)}</div>`).join("")}</div>`:""}${r.status==="Queued"?`<div style="margin-top:3px"><span style="font-size:9.5px;font-weight:700;padding:1px 8px;border-radius:9px;background:#e3efff;color:#0055bb">In the New Entry queue</span> <a href="#" onclick="cdNtStartEntry('${esc(r.id)}');return false" style="font-size:10.5px;color:#0073ea;font-weight:700">Open in New Entry →</a></div>`:""}</td>
       <td style="padding:8px 10px;vertical-align:top;width:90px">${r.pri?`<span style="background:#e8f2ff;color:#0055bb;border:1px solid #c0d8f8;border-radius:6px;font-size:11px;font-weight:700;padding:2px 7px">${esc(r.pri)}</span>`:`<span style="color:#ccc">—</span>`}</td>
       <td style="padding:8px 10px;vertical-align:top;min-width:170px">${cdCategoryBadgeHtml(r.category)||`<span style="color:#ccc;font-size:11px">no category</span>`}<div style="font-size:10.5px;color:#888;margin-top:3px">${esc(r.group)}</div></td>
       <td style="padding:6px 10px;vertical-align:top;min-width:260px"><input class="pmm-input" style="width:100%;padding:6px 9px;font-size:12px" placeholder="Add remarks…" value="${esc(r.remarks)}" ${edit?"":"disabled"} onchange="cdNtSetRemark('${esc(r.rowId)}',this.value)"/></td>
@@ -12120,12 +12135,12 @@ function cdRenderNoTest(){
   const empty=!GROUPS.length?"Connect &amp; Sync with Google to load the products.":all.length?"No SKU matches these filters.":"Every SKU has a test result, or has already been deferred. Nothing is waiting here.";
   wrap.innerHTML=`<div style="max-width:1280px;margin:0 auto;padding:18px 0">
     <div class="pmm-card" style="padding:14px 16px;margin-bottom:12px">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap"><div><div style="font-size:15px;font-weight:800;color:#222">🚫 No Test <span style="font-weight:500;color:#888;font-size:12px">· ${all.length} SKU${all.length!==1?"s":""} without any test result</span></div>
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap"><div><div style="font-size:15px;font-weight:800;color:#222">🚫 No Test <span style="font-weight:500;color:#888;font-size:12px">· ${cdNtSkuCount(all)} SKU${cdNtSkuCount(all)!==1?"s":""} without any test result${cdNtSkuCount(all)!==all.length?` · ${all.length} to decide (NPD colour variants are grouped under their mother SKU)`:""}</span></div>
         <div style="font-size:11.5px;color:#777;margin-top:3px;max-width:760px">Decide for each SKU: <b style="color:#a85b00">Deferred</b> (moves to the Deferred Items tab) or <b style="color:#0055bb">For test</b> (a New Entry is prepared for it). Remarks and dispositions save as you go; nothing moves until you press <b>Submit dispositions</b>.</div></div>
         <div id="cd-nt-saved" style="font-size:11.5px;min-height:16px"></div></div>${bar}</div>
     <div class="pmm-card" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${th("#")}${th("SKU")}${th("Priority")}${th("Category / Group")}${th("Remarks")}${th("Disposition")}</tr></thead><tbody>${body||`<tr><td colspan="6" style="padding:34px;text-align:center;color:#999">${empty}</td></tr>`}</tbody></table></div></div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px"><div style="font-size:11.5px;color:#666">Showing <b>${rows.length}</b> of ${all.length} · Not decided <b>${nNone}</b> · Deferred <b>${nDef}</b> · For test <b>${nTest}</b></div>
-      <button id="cd-nt-submit" onclick="cdNtSubmit()" ${edit&&(nSubDef+nSubTest)?"":"disabled"} title="${edit?"":"View only — only editors can submit"}" style="padding:11px 22px;font-size:13px;font-weight:700;color:#fff;background:${edit&&(nSubDef+nSubTest)?"#0073ea":"#b9c3d6"};border:none;border-radius:9px;cursor:${edit&&(nSubDef+nSubTest)?"pointer":"not-allowed"}">✓ Submit dispositions${(nSubDef+nSubTest)?` · ${nSubDef} to Deferred Items · ${nSubTest} to New Entry`:""}</button></div></div>`;
+      <button id="cd-nt-submit" onclick="cdNtSubmit()" ${edit&&(nSubDef+nSubTest)?"":"disabled"} title="${edit?"":"View only — only editors can submit"}" style="padding:11px 22px;font-size:13px;font-weight:700;color:#fff;background:${edit&&(nSubDef+nSubTest)?"#0073ea":"#b9c3d6"};border:none;border-radius:9px;cursor:${edit&&(nSubDef+nSubTest)?"pointer":"not-allowed"}">✓ Submit dispositions${(nSubDef+nSubTest)?` · ${nSubDefSku} to Deferred Items · ${nSubTest} to New Entry`:""}</button></div></div>`;
   cdNtShowSaved(); cdNtUpdateBadge();
   if(keep!=null){ const el=document.getElementById("cd-nt-q"); if(el){ el.focus(); try{ el.setSelectionRange(keep,keep); }catch(e){} } }
 }
@@ -12180,20 +12195,22 @@ async function cdNtSubmit(){
   if(cdNtBusy) return;
   const todo=cdNtItems().filter(r=>(r.disp==="Deferred")||(r.disp==="For test"&&r.status!=="Queued"));
   if(!todo.length){ alert("Choose Deferred or For test for at least one SKU first."); return; }
-  const dfr=todo.filter(r=>r.disp==="Deferred"), tst=todo.filter(r=>r.disp==="For test");
-  if(!confirm(`Submit ${todo.length} disposition${todo.length!==1?"s":""}?\n\n• ${dfr.length} → Deferred Items tab${dfr.length?" (your remark becomes the deferral reason)":""}\n• ${tst.length} → New Entry${tst.length?" (queued; the first one opens now)":""}\n\nThis writes to the Google Sheet.`)) return;
+  const dfr=todo.filter(r=>r.disp==="Deferred"), tst=todo.filter(r=>r.disp==="For test"), dfrSkus=cdNtSkuCount(dfr);
+  if(!confirm(`Submit ${todo.length} disposition${todo.length!==1?"s":""}?\n\n• ${dfrSkus} SKU${dfrSkus!==1?"s":""} → Deferred Items tab${dfr.length?" (your remark becomes the deferral reason"+(dfrSkus!==dfr.length?"; a mother SKU takes its colours with it":"")+")":""}\n• ${tst.length} → New Entry${tst.length?" (queued; the first one opens now"+(tst.some(r=>r.variants.length)?"; testing a mother SKU covers its colours":"")+")":""}\n\nThis writes to the Google Sheet.`)) return;
   if(!accessToken){ alert('Please "Connect & Sync" with Google first.'); return; }
   cdNtBusy=true; let moved=0, queued=0; const firstQueued=[];
   try{
     for(const r of dfr){
-      await cdWriteDeferredRow(r.item, r.remarks||"No test yet — deferred from the No Test tab.", []);
-      cdDeferredItemIds.add(r.item.id); localStorage.setItem(CD_DEFERRED_ITEMS_LS,JSON.stringify([...cdDeferredItemIds]));
-      cdNtState(r.rowId).status="Deferred"; await cdNtQueueSave(r.rowId); moved++;
+      for(const it of [r.item,...r.variants.map(v=>v.item)]){
+        await cdWriteDeferredRow(it, r.remarks||"No test yet — deferred from the No Test tab.", []);
+        cdDeferredItemIds.add(it.id); localStorage.setItem(CD_DEFERRED_ITEMS_LS,JSON.stringify([...cdDeferredItemIds])); moved++;
+      }
+      cdNtState(r.rowId).status="Deferred"; await cdNtQueueSave(r.rowId);
     }
     for(const r of tst){ cdNtState(r.rowId).status="Queued"; await cdNtQueueSave(r.rowId); queued++; firstQueued.push(r.item.id); }
-  }catch(e){ alert(`Submitted ${moved+queued} of ${todo.length} before an error: ${e.message}`); }
+  }catch(e){ alert(`Submitted ${moved+queued} before an error: ${e.message}`); }
   cdNtBusy=false; cdNtUpdateBadge();
-  cdToast(`No Test: ${moved} moved to Deferred Items · ${queued} queued for New Entry.`);
+  cdToast(`No Test: ${moved} SKU${moved!==1?"s":""} moved to Deferred Items · ${queued} queued for New Entry.`);
   if(firstQueued.length) cdNtStartEntry(firstQueued[0]); else cdRenderNoTest();
 }
 // New Entry, already searched for this SKU (the guided flow then asks to confirm the parent SKU)
@@ -12210,7 +12227,7 @@ function cdNtQueue(){
 function cdNtQueueHtml(){
   const q=cdNtQueue(); if(!q.length) return "";
   const cur=String((cdWizard&&cdWizard.query)||"").toLowerCase();
-  return `<div class="pmm-card" style="padding:11px 14px;margin-bottom:12px;border-left:4px solid #0073ea"><div style="font-size:12px;font-weight:800;color:#0e1b3d">📥 From No Test · ${q.length} SKU${q.length!==1?"s":""} waiting for a New Entry</div><div style="font-size:11px;color:#777;margin:2px 0 8px">Click a SKU to start its entry. It leaves this list once it has a test result.</div><div style="display:flex;gap:6px;flex-wrap:wrap">${q.map(i=>`<button onclick="cdNtStartEntry('${esc(i.id)}')" style="padding:4px 11px;border-radius:16px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid ${String(i.name).toLowerCase()===cur?"#0073ea":"#cfe0f7"};background:${String(i.name).toLowerCase()===cur?"#0073ea":"#f3f8ff"};color:${String(i.name).toLowerCase()===cur?"#fff":"#0055bb"}">${esc(i.name)}${i.prioritySku?` · ${esc(i.prioritySku)}`:""}</button>`).join("")}</div></div>`;
+  return `<div class="pmm-card" style="padding:11px 14px;margin-bottom:12px;border-left:4px solid #0073ea"><div style="font-size:12px;font-weight:800;color:#0e1b3d">📥 From No Test · ${q.length} SKU${q.length!==1?"s":""} waiting for a New Entry</div><div style="font-size:11px;color:#777;margin:2px 0 8px">Click a SKU to start its entry. It leaves this list once it has a test result.</div><div style="display:flex;gap:6px;flex-wrap:wrap">${q.map(i=>{ const on=String(i.name).toLowerCase()===cur, n=cdNtVariantNames(i).length; return `<button onclick="cdNtStartEntry('${esc(i.id)}')" title="${n?esc(cdNtVariantNames(i).join(", ")):""}" style="padding:4px 11px;border-radius:16px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid ${on?"#0073ea":"#cfe0f7"};background:${on?"#0073ea":"#f3f8ff"};color:${on?"#fff":"#0055bb"}">${esc(i.name)}${i.prioritySku?` · ${esc(i.prioritySku)}`:""}${n?` · +${n} colour${n!==1?"s":""}`:""}</button>`; }).join("")}</div></div>`;
 }
 // load the saved dispositions after every data sync, so drafts and the New Entry queue are always there
 (function(){ const f=window.fetchSheetData; if(typeof f!=="function") return; window.fetchSheetData=async function(){ const r=await f.apply(this,arguments); cdNtLoad().then(()=>{ if(activeTab==="notest") cdRenderNoTest(); else if(activeTab==="newentry") cdRenderNewEntry(); cdNtUpdateBadge(); }).catch(()=>{}); return r; }; })();
