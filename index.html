@@ -12137,12 +12137,37 @@ function cdRenderNoTest(){
     <div class="pmm-card" style="padding:14px 16px;margin-bottom:12px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap"><div><div style="font-size:15px;font-weight:800;color:#222">🚫 No Test <span style="font-weight:500;color:#888;font-size:12px">· ${cdNtSkuCount(all)} SKU${cdNtSkuCount(all)!==1?"s":""} without any test result${cdNtSkuCount(all)!==all.length?` · ${all.length} to decide (NPD colour variants are grouped under their mother SKU)`:""}</span></div>
         <div style="font-size:11.5px;color:#777;margin-top:3px;max-width:760px">Decide for each SKU: <b style="color:#a85b00">Deferred</b> (moves to the Deferred Items tab) or <b style="color:#0055bb">For test</b> (a New Entry is prepared for it). Remarks and dispositions save as you go; nothing moves until you press <b>Submit dispositions</b>.</div></div>
-        <div id="cd-nt-saved" style="font-size:11.5px;min-height:16px"></div></div>${bar}</div>
+        <div style="display:flex;align-items:center;gap:14px"><div id="cd-nt-saved" style="font-size:11.5px;min-height:16px"></div><button id="cd-nt-export" onclick="cdNtExportExcel()" title="Downloads the SKUs shown below (the filters apply) as an Excel file" style="display:inline-flex;align-items:center;gap:5px;padding:6px 14px;font-size:11px;font-weight:600;color:#0a7a46;background:#f0fff8;border:1.5px solid #c3f0da;border-radius:7px;cursor:pointer;white-space:nowrap">📊 Export Excel</button></div></div>${bar}</div>
     <div class="pmm-card" style="padding:0;overflow:hidden"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${th("#")}${th("SKU")}${th("Priority")}${th("Category / Group")}${th("Remarks")}${th("Disposition")}</tr></thead><tbody>${body||`<tr><td colspan="6" style="padding:34px;text-align:center;color:#999">${empty}</td></tr>`}</tbody></table></div></div>
     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px"><div style="font-size:11.5px;color:#666">Showing <b>${rows.length}</b> of ${all.length} · Not decided <b>${nNone}</b> · Deferred <b>${nDef}</b> · For test <b>${nTest}</b></div>
       <button id="cd-nt-submit" onclick="cdNtSubmit()" ${edit&&(nSubDef+nSubTest)?"":"disabled"} title="${edit?"":"View only — only editors can submit"}" style="padding:11px 22px;font-size:13px;font-weight:700;color:#fff;background:${edit&&(nSubDef+nSubTest)?"#0073ea":"#b9c3d6"};border:none;border-radius:9px;cursor:${edit&&(nSubDef+nSubTest)?"pointer":"not-allowed"}">✓ Submit dispositions${(nSubDef+nSubTest)?` · ${nSubDefSku} to Deferred Items · ${nSubTest} to New Entry`:""}</button></div></div>`;
   cdNtShowSaved(); cdNtUpdateBadge();
   if(keep!=null){ const el=document.getElementById("cd-nt-q"); if(el){ el.focus(); try{ el.setSelectionRange(keep,keep); }catch(e){} } }
+}
+// Excel export of the No Test list — exactly what the filters show. Sheet 1: one row per decision (a mother SKU lists the colours it covers);
+// sheet 2: every SKU on its own row with its mother; sheet 3: when / by whom / which filters.
+function cdNtExportExcel(){
+  if(typeof XLSX==="undefined"){ alert("Excel library not loaded. Please check your internet connection."); return; }
+  const all=cdNtItems(), rows=cdNtFiltered(all);
+  if(!rows.length){ alert("Nothing to export — no SKU matches the current filters."); return; }
+  const catTxt=c=>c?(CD_CATEGORY_NAMES[c]?c+" — "+CD_CATEGORY_NAMES[c]:c):"";
+  const dispTxt=r=>r.disp||"Not decided", statTxt=r=>r.status==="Queued"?"In the New Entry queue":"";
+  const main=[["#","SKU","Description","Priority","Category","Group","SKUs in family","Colour variants covered","Remarks","Disposition","Status"]];
+  rows.forEach((r,i)=>main.push([i+1,r.name,r.desc,r.pri,catTxt(r.category),r.group,1+r.variants.length,r.variants.map(v=>v.name).join(", "),r.remarks,dispTxt(r),statTxt(r)]));
+  const skus=[["SKU","Mother SKU","Description","Priority","Category","Group","Remarks","Disposition","Status"]];
+  rows.forEach(r=>{
+    skus.push([r.name,r.variants.length?"(mother)":"",r.desc,r.pri,catTxt(r.category),r.group,r.remarks,dispTxt(r),statTxt(r)]);
+    r.variants.forEach(v=>skus.push([v.name,r.name,v.desc,v.pri,catTxt(v.category),v.group,r.remarks,dispTxt(r),statTxt(r)]));
+  });
+  const filt=[]; if(cdNtQ) filt.push(["Search",cdNtQ]); if(cdNtPri!=="ALL") filt.push(["Priority",cdNtPri]); if(cdNtCat!=="ALL") filt.push(["Category",catTxt(cdNtCat)]); if(cdNtGroup!=="ALL") filt.push(["Group",cdNtGroup]); if(cdNtDisp!=="ALL") filt.push(["Disposition",cdNtDisp==="NONE"?"Not decided":cdNtDisp]);
+  const info=[["No Test — export"],["Exported",new Date().toLocaleString()],["By",(cdIdentity&&cdIdentity.email)||""],["Rows exported",rows.length],["SKUs exported",cdNtSkuCount(rows)],["Rows without any filter",all.length],["SKUs without any filter",cdNtSkuCount(all)],[],["Filters applied"],...(filt.length?filt:[["(none)",""]])];
+  const wb=XLSX.utils.book_new(), w1=XLSX.utils.aoa_to_sheet(main), w2=XLSX.utils.aoa_to_sheet(skus), w3=XLSX.utils.aoa_to_sheet(info);
+  w1["!cols"]=[{wch:5},{wch:26},{wch:52},{wch:9},{wch:22},{wch:18},{wch:9},{wch:48},{wch:38},{wch:13},{wch:22}];
+  w2["!cols"]=[{wch:26},{wch:26},{wch:52},{wch:9},{wch:22},{wch:18},{wch:38},{wch:13},{wch:22}];
+  w3["!cols"]=[{wch:26},{wch:40}];
+  XLSX.utils.book_append_sheet(wb,w1,"No Test"); XLSX.utils.book_append_sheet(wb,w2,"All SKUs"); XLSX.utils.book_append_sheet(wb,w3,"Export info");
+  downloadXLSX(wb,"No-Test-"+new Date().toISOString().slice(0,10)+".xlsx");
+  cdToast(`Exported ${rows.length} row${rows.length!==1?"s":""} · ${cdNtSkuCount(rows)} SKU${cdNtSkuCount(rows)!==1?"s":""} to Excel.`);
 }
 function cdNtShowSaved(){ const el=document.getElementById("cd-nt-saved"); if(el) el.innerHTML=cdNtErr?`<span style="color:#c0392b">⚠ Not saved: ${esc(cdNtErr)}</span>`:(cdNtSavedAt?`<span style="color:#0a7a46">✓ Saved ${esc(cdNtSavedAt)}</span>`:""); }
 function cdNtSetQ(v){ cdNtQ=String(v||""); cdRenderNoTest(); }
